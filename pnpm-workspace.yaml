@@ -1,0 +1,10 @@
+packages:
+  - 'web-admin'
+  - 'web-user'
+  - 'packages/shared'
+
+# pnpm 12 默认不执行依赖构建脚本；esbuild / vue-demi 需要 postinstall 才能正常工作，
+# 显式放行，避免 `pnpm i` 报 ERR_PNPM_IGNORED_BUILDS。
+allowBuilds:
+  esbuild: true
+  vue-demi: true

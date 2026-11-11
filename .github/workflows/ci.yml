@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  backend:
+    name: Backend (Maven test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - name: Build & test
+        working-directory: server
+        run: mvn -B -q test
+
+  frontend:
+    name: Frontend (install, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - name: Install & build
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm -C web-admin build
+          pnpm -C web-user build
+
+  guardrails:
+    name: Guardrails (DDL / placeholder scan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # R-禁止 Flyway 迁移脚本出现 DROP TABLE / DROP DATABASE（破坏性语句需人工评审）
+      - name: Scan DDL for forbidden DROP
+        run: |
+          if grep -rniE 'DROP[[:space:]]+(TABLE|DATABASE|SCHEMA)' server/src/main/resources/db 2>/dev/null; then
+            echo "::error::检测到破坏性 DDL（DROP TABLE/DATABASE），Flyway 迁移禁止包含，请走评审流程"
+            exit 1
+          fi
+          echo "DDL 扫描通过：未发现破坏性 DROP 语句"
+      # 禁止配置/模板残留未替换的 ${...} 占位符（CI 注入项除外）
+      - name: Scan for leftover ${} placeholders
+        run: |
+          # 允许清单覆盖 prod profile 里故意「无默认值」的必填变量（缺失即启动失败）
+          if grep -rEn '\$\{([A-Z_][A-Z0-9_]*)\}' server/src/main/resources/application*.yml 2>/dev/null | grep -vE '\$\{(APP_|DB_|REDIS_|UPLOAD_|LOG_|FLYWAY_|SPRING_|MYBATIS_|JWT_|PAY_|SERVER_|INVOICE_|JOB_|PRESENCE_|WS_)[A-Z0-9_]*\}';
+          then
+            echo "::error::配置中发现未声明/未允许的 \${} 占位符"
+            exit 1
+          fi
+          echo "占位符扫描通过"

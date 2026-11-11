@@ -1,0 +1,14 @@
+{
+  "name": "@sent/e2e",
+  "version": "1.0.0",
+  "private": true,
+  "description": "森特体育用品管理系统 · 全流程 Playwright E2E 验收",
+  "scripts": {
+    "test": "playwright test",
+    "test:core": "playwright test e2e-core-flow.spec.ts",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.0"
+  }
+}

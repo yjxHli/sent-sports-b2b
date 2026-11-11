@@ -1,0 +1,78 @@
+# ==========================================================================
+# sent-sports-b2b · 开源仓库忽略规则
+# 原则：任何本地数据、密钥、构建产物、E2E 录屏/报告都不进入第一次提交。
+# 提交前务必复核：git status --ignored / git ls-files 二次检查（见 README）。
+# ==========================================================================
+
+# ---------- 构建产物与依赖 ----------
+target/
+node_modules/
+dist/
+dist-ssr/
+dist_prev_*/
+build/
+out/
+coverage/
+*.class
+*.jar
+*.war
+*.tsbuildinfo
+.vite/
+.mvn/wrapper/maven-wrapper.jar
+
+# ---------- 日志与运行期数据 ----------
+*.log
+logs/
+/data/upload/
+*.dump
+*.dumpstream
+
+# ---------- 本地数据库挂载目录 ----------
+# 这些目录含 MySQL 整库数据、binlog 以及 ca-key.pem / private_key.pem /
+# server-key.pem 等 TLS 私钥，一旦公开属于最高等级事故，必须整目录屏蔽。
+.mysql-data*/
+.mysql-undo*/
+.mysql-my.cnf
+mysql_data/
+mysql-data/
+redis_data/
+redis-data/
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+
+# ---------- 编辑器 / 操作系统 ----------
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ---------- 环境变量与密钥 ----------
+# 注意：web-admin/.env.development 与 web-user/.env.development 只含
+# 本地代理地址（无密钥），必须随仓库提交，故不在此忽略。
+.env
+.env.local
+.env.*.local
+.env.production
+!.env.example
+
+# ---------- 本地测试 / E2E 产物 ----------
+playwright-report/
+test-results/
+blob-report/
+e2e/runs/
+e2e/test-results*/
+e2e/playwright-report/
+e2e/screenshots/
+e2e/api-audit.json
+e2e/*.log
+*.webm
+*.mp4
+
+# ---------- 本机智能体 / 会话记忆 ----------
+# 内含开发环境笔记、本机路径与演示口令，不应出现在公开仓库。
+.workbuddy/

@@ -1,0 +1,134 @@
+spring:
+  application:
+    name: sent-server
+  profiles:
+    active: ${APP_PROFILE:dev}
+  # 时区：统一 Asia/Shanghai
+  jackson:
+    time-zone: Asia/Shanghai
+    date-format: yyyy-MM-dd HH:mm:ss
+  # 文件上传：上限 50MB
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+  # 数据源（具体库名由各 profile 覆盖；env 与库名后缀由 EnvironmentGuard 校验）
+  # 开源安全：仓库内不保存任何真实口令。dev/test 的 123456 仅是「本机演示用假口令」，
+  # prod profile 强制从环境变量读取，缺失即启动失败。请勿把本机真密码写进本文件。
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${DB_HOST:127.0.0.1}:3306/sent_dev?useUnicode=true&characterEncoding=UTF-8&connectionCollation=utf8mb4_unicode_ci&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+  # 数据库迁移
+  flyway:
+    enabled: ${FLYWAY_ENABLED:true}
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+  # Redis：本地默认无口令；若部署带鉴权的 Redis，请用 REDIS_PASSWORD 注入，勿写入仓库
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      database: ${REDIS_DB:0}
+      password: ${REDIS_PASSWORD:}
+      timeout: 3000ms
+
+# Web 容器端口
+# 默认 8088：8080 在本机常年被 Steam 的 steamwebhelper.exe 抢占（会导致
+# "Port 8080 was already in use" 或更隐蔽的「请求被 Steam 接走」）。
+# 需要临时改端口时用环境变量 SERVER_PORT 覆盖，无需改代码。
+server:
+  port: ${SERVER_PORT:8088}
+
+# 应用自定义参数
+app:
+  env: ${APP_ENV:dev}
+  upload:
+    base-dir: ${UPLOAD_BASE_DIR:/data/upload}
+  # CORS 白名单：默认只放行本机两个 Vite dev server。
+  # 部署时用 APP_CORS_ORIGINS 覆盖为真实前端域名（逗号分隔），生产环境禁止使用通配符。
+  cors:
+    allowed-origins: ${APP_CORS_ORIGINS:http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://127.0.0.1:5174}
+  # 发票 PDF（增值税电子普通发票，后端现场渲染；票面数据来自 invoice_request + orders + order_item）
+  # 【重要】下面 5 项销售方信息全部是虚构演示数据：公司名、税号、地址电话、银行账号、
+  # 发票代码前缀均不对应任何真实主体，禁止用于真实开票。
+  # 真实部署必须通过 INVOICE_SELLER_* 环境变量替换为合法开票主体信息。
+  invoice:
+    # 中文字体：留空则按常见系统路径自动探测（见 CjkFontProvider），必须为单体 .ttf/.otf
+    font-file: "${INVOICE_FONT_FILE:}"
+    # 销售方开票信息（本系统只有一个开票主体）
+    seller-name: "${INVOICE_SELLER_NAME:示例体育用品（演示）有限公司}"
+    seller-tax-no: "${INVOICE_SELLER_TAX_NO:DEMO-TAX-NO-0000000000000}"
+    seller-address-phone: "${INVOICE_SELLER_ADDRESS:示例市示例区演示路1号 000-00000000}"
+    seller-bank-account: "${INVOICE_SELLER_BANK:演示银行示例支行 0000 0000 0000 0000}"
+    # 发票代码前 7 位，与发票主键拼成 12 位（真实发票代码共 12 位）
+    code-prefix: "${INVOICE_CODE_PREFIX:0000000}"
+  jwt:
+    # 开源安全：绝不写入固定密钥。未设置 JWT_SECRET 时由 Spring 在启动时生成随机值，
+    # 因此公开仓库中的默认值无法被用来伪造令牌（代价：本地重启后旧令牌失效）。
+    # prod profile 覆盖为 ${JWT_SECRET}，未注入则启动失败。
+    secret: ${JWT_SECRET:${random.uuid}}
+    access-ttl-ms: ${JWT_ACCESS_TTL_MS:7200000}
+    refresh-ttl-ms: ${JWT_REFRESH_TTL_MS:604800000}
+    renew-threshold-ms: ${JWT_RENEW_THRESHOLD_MS:900000}
+  pay:
+    # 模拟支付回调签名密钥，同样不落固定值；prod 需注入 PAY_MOCK_SECRET
+    mock-secret: ${PAY_MOCK_SECRET:${random.uuid}}
+  job:
+    # 单线程调度器串行执行；下列间隔统一 60s，可用环境变量单独覆盖
+    order-timeout-ms: ${JOB_ORDER_TIMEOUT_MS:60000}
+    auto-confirm-ms: ${JOB_AUTO_CONFIRM_MS:60000}
+    overdue-ms: ${JOB_OVERDUE_MS:60000}
+    point-expire-ms: ${JOB_POINT_EXPIRE_MS:60000}
+    contract-remind-ms: ${JOB_CONTRACT_REMIND_MS:60000}
+    stock-warning-ms: ${JOB_STOCK_WARNING_MS:60000}
+    chat-timeout-ms: ${JOB_CHAT_TIMEOUT_MS:60000}
+    presence-reclaim-ms: ${JOB_PRESENCE_RECLAIM_MS:60000}
+    sla-remind-ms: ${JOB_SLA_REMIND_MS:60000}
+    ws-heartbeat-ms: ${JOB_WS_HEARTBEAT_MS:60000}
+    # 阈值而非间隔：坐席心跳 60s、WebSocket 空闲 5min
+    presence-heartbeat-timeout-ms: ${PRESENCE_HEARTBEAT_TIMEOUT_MS:60000}
+    ws-idle-timeout-ms: ${WS_IDLE_TIMEOUT_MS:300000}
+
+# MyBatis-Plus
+mybatis-plus:
+  mapper-locations: classpath*:mapper/**/*.xml
+  type-aliases-package: com.sent.sports
+  configuration:
+    map-underscore-to-camel-case: true
+    default-enum-type-handler: com.baomidou.mybatisplus.core.handlers.MybatisEnumTypeHandler
+  global-config:
+    db-config:
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+# 接口文档（仅非生产可用）
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+  api-docs:
+    enabled: true
+
+logging:
+  config: classpath:logback-spring.xml
+
+# 生产监控（Actuator）：base-path=/actuator，暴露 health / info / metrics
+management:
+  endpoints:
+    web:
+      base-path: /actuator
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+  # Redis 在本项目为可选进程内桩（未启独立实例），不应因缓存不可用而判定应用不健康
+  health:
+    redis:
+      enabled: false
+  info:
+    env:
+      enabled: false

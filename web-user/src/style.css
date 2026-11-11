@@ -1,0 +1,436 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   森特体育商城 · 全局主题（B2B 桌面商城风）
+   主色：深绿 #12664F    强调色：活力橙 #FF7A1A
+   ============================================================ */
+:root {
+  --sent-primary: #12664f;
+  --sent-primary-dark: #0d4d3b;
+  --sent-primary-soft: #e7f1ec;
+  --sent-accent: #ff7a1a;
+  --sent-accent-dark: #e8640a;
+  --sent-accent-soft: #fff1e6;
+  --sent-bg: #f5f5f5;
+  --sent-card: #ffffff;
+  --sent-text: #1f2329;
+  --sent-text-2: #4b5563;
+  --sent-muted: #8b93a1;
+  --sent-border: #ececec;
+  --sent-radius: 8px;
+  --sent-container: 1200px;
+
+  /* Element Plus 主色覆盖 */
+  --el-color-primary: #12664f;
+  --el-color-primary-light-3: #4a8a76;
+  --el-color-primary-light-5: #79a99a;
+  --el-color-primary-light-7: #a8c9be;
+  --el-color-primary-light-8: #c9ded7;
+  --el-color-primary-light-9: #e7f1ec;
+  --el-color-primary-dark-2: #0d4d3b;
+  --el-border-radius-base: 6px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', sans-serif;
+  background: var(--sent-bg);
+  color: var(--sent-text);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* 版心 */
+.container {
+  width: var(--sent-container);
+  max-width: calc(100% - 32px);
+  margin: 0 auto;
+}
+
+/* ============================ 顶部窄条 ============================ */
+.topbar {
+  height: 32px;
+  background: #f0f1f3;
+  border-bottom: 1px solid #e7e8ea;
+  font-size: 12px;
+  color: var(--sent-muted);
+}
+.topbar__inner {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.topbar__welcome {
+  letter-spacing: 0.2px;
+}
+.topbar__links {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.topbar__link {
+  color: var(--sent-text-2);
+  transition: color 0.15s;
+}
+.topbar__link:hover {
+  color: var(--sent-accent);
+}
+.topbar__sep {
+  width: 1px;
+  height: 11px;
+  background: #d7d9dd;
+}
+.topbar__cart {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--sent-accent);
+  font-weight: 600;
+}
+.cart-badge {
+  font-style: normal;
+  min-width: 16px;
+  height: 16px;
+  line-height: 16px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--sent-accent);
+  color: #fff;
+  font-size: 11px;
+  text-align: center;
+}
+
+/* ============================ 搜索区 ============================ */
+.searchbar {
+  background: #fff;
+  padding: 20px 0 14px;
+}
+.searchbar__inner {
+  display: flex;
+  align-items: flex-start;
+  gap: 28px;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 4px;
+  flex: 0 0 auto;
+}
+.brand__mark {
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, var(--sent-primary), #1a8c6a);
+  color: #fff;
+  font-size: 26px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(18, 102, 79, 0.28);
+}
+.brand__text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+.brand__text b {
+  font-size: 20px;
+  letter-spacing: 2px;
+  color: var(--sent-primary);
+}
+.brand__text i {
+  font-style: normal;
+  font-size: 10px;
+  letter-spacing: 3px;
+  color: var(--sent-muted);
+}
+
+.searchbox {
+  flex: 1;
+  max-width: 640px;
+  padding-top: 4px;
+}
+.searchbox__field {
+  display: flex;
+  height: 44px;
+  border: 2px solid var(--sent-primary);
+  border-radius: 6px;
+  overflow: hidden;
+  background: #fff;
+}
+.searchbox__input {
+  flex: 1;
+  border: none;
+  outline: none;
+  padding: 0 16px;
+  font-size: 14px;
+  color: var(--sent-text);
+}
+.searchbox__input::placeholder {
+  color: #b6bcc6;
+}
+.searchbox__btn {
+  width: 96px;
+  border: none;
+  cursor: pointer;
+  background: var(--sent-primary);
+  color: #fff;
+  font-size: 15px;
+  letter-spacing: 2px;
+  transition: background 0.15s;
+}
+.searchbox__btn:hover {
+  background: var(--sent-primary-dark);
+}
+.searchbox__hot {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--sent-muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+.searchbox__hot a {
+  cursor: pointer;
+  color: #7b8494;
+  transition: color 0.15s;
+}
+.searchbox__hot a:hover {
+  color: var(--sent-accent);
+}
+
+.searchbar__right {
+  flex: 0 0 auto;
+  padding-top: 8px;
+}
+.mini-cart {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--sent-border);
+  border-radius: 6px;
+  color: var(--sent-text-2);
+  font-size: 13px;
+  background: #fafafa;
+}
+.mini-cart em {
+  font-style: normal;
+}
+.mini-cart b {
+  color: var(--sent-accent);
+}
+
+/* ============================ 主导航 ============================ */
+.mainnav {
+  background: var(--sent-primary);
+  box-shadow: 0 2px 8px rgba(18, 102, 79, 0.18);
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
+.mainnav__inner {
+  display: flex;
+  align-items: center;
+  height: 44px;
+}
+.mainnav__item {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding: 0 22px;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 15px;
+  transition: background 0.15s;
+}
+.mainnav__item:hover,
+.mainnav__item.active {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+/* ============================ 主体 ============================ */
+.site {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+.site-main {
+  flex: 1;
+  padding: 18px 0 40px;
+}
+
+/* ============================ 商品卡片（列表/首页共用） ============================ */
+.goods-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+@media (max-width: 1240px) {
+  .goods-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+.good-card {
+  background: var(--sent-card);
+  border-radius: var(--sent-radius);
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  border: 1px solid #f0f0f0;
+}
+.good-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 10px 26px rgba(18, 102, 79, 0.14);
+  border-color: #e3ece8;
+}
+.good-card__body {
+  padding: 12px 14px 14px;
+}
+.good-card__title {
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--sent-text);
+  height: 40px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  transition: color 0.15s;
+}
+.good-card:hover .good-card__title {
+  color: var(--sent-primary);
+}
+.good-card__price {
+  margin-top: 10px;
+  color: var(--sent-accent);
+  font-weight: 700;
+  display: flex;
+  align-items: baseline;
+}
+.good-card__price .sym {
+  font-size: 14px;
+  margin-right: 1px;
+}
+.good-card__price .num {
+  font-size: 22px;
+  letter-spacing: -0.5px;
+}
+.good-card__tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--sent-muted);
+}
+.tag {
+  padding: 1px 6px;
+  border-radius: 3px;
+  line-height: 16px;
+}
+.tag--ship {
+  color: var(--sent-primary);
+  background: var(--sent-primary-soft);
+}
+.tag--custom {
+  color: var(--sent-accent);
+  background: var(--sent-accent-soft);
+}
+.good-card__sales {
+  margin-left: auto;
+}
+
+/* 通用价格样式 */
+.sent-price {
+  color: var(--sent-accent);
+  font-weight: 700;
+}
+
+/* ============================ 页脚 ============================ */
+.site-footer {
+  background: #1f2329;
+  color: #9aa1ad;
+  padding: 34px 0 20px;
+  font-size: 13px;
+}
+.footer__cols {
+  display: flex;
+  gap: 80px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid #2f343c;
+}
+.footer__col h4 {
+  color: #fff;
+  font-size: 14px;
+  margin: 0 0 12px;
+  font-weight: 600;
+}
+.footer__col p {
+  margin: 0 0 8px;
+  line-height: 1.6;
+}
+.footer__copy {
+  padding-top: 16px;
+  text-align: center;
+  color: #6b7280;
+  font-size: 12px;
+}
+
+/* 通用空状态/加载 */
+.list-hint {
+  text-align: center;
+  color: #b5b9c0;
+  padding: 40px 0;
+}
+
+/* ============ 兼容旧业务页（购物车/结算/订单等）的通用类 ============ */
+.sent-card {
+  background: #fff;
+  border-radius: var(--sent-radius);
+  padding: 16px 18px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+.sent-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 12px;
+  color: var(--sent-text);
+}
+.sent-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: #fff;
+  border-radius: var(--sent-radius);
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  border-bottom: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+

@@ -1,0 +1,52 @@
+# 生产环境
+# 【安全红线】以下 4 个变量故意不提供默认值：容器/机房未注入时 Spring 直接启动失败，
+# 避免有人拿仓库里的演示口令或演示密钥把服务跑到公网。
+# 部署前请在宿主环境注入：DB_USERNAME / DB_PASSWORD / JWT_SECRET / PAY_MOCK_SECRET
+app:
+  env: prod
+  jwt:
+    secret: ${JWT_SECRET}
+  pay:
+    mock-secret: ${PAY_MOCK_SECRET}
+
+spring:
+  datasource:
+    url: jdbc:mysql://${DB_HOST:mysql}:3306/sent_prod?useUnicode=true&characterEncoding=UTF-8&connectionCollation=utf8mb4_unicode_ci&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  flyway:
+    enabled: true
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: 6379
+
+# 生产关闭 swagger
+springdoc:
+  swagger-ui:
+    enabled: false
+  api-docs:
+    enabled: false
+
+logging:
+  level:
+    root: info
+    com.sent.sports: warn
+
+# 生产监控（Actuator）：公网部署时 health 仅返回状态不泄露细节
+management:
+  endpoints:
+    web:
+      base-path: /actuator
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: never
+  # Redis 为可选缓存（生产可独立部署），不将其纳入健康检查聚合
+  health:
+    redis:
+      enabled: false
+  info:
+    env:
+      enabled: false

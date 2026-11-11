@@ -1,0 +1,26 @@
+# 测试环境（CI 集成测试使用，一般由 Testcontainers 注入真实连接）
+app:
+  env: test
+  # 集成测试上下文同样需要种子账号（FullBusinessFlowIT 的登录链路）
+  seed-accounts:
+    enabled: true
+  # 测试上下文严禁触发演示数据生成器（避免污染 IT 隔离 / 拖慢启动）
+  demo-data:
+    enabled: false
+
+spring:
+  datasource:
+    url: jdbc:mysql://127.0.0.1:3306/sent_test?useUnicode=true&characterEncoding=UTF-8&connectionCollation=utf8mb4_unicode_ci&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    # 与 dev 一致：仅为本机集成测试库的演示用假口令，CI 请用 DB_PASSWORD 注入。
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:123456}
+  flyway:
+    enabled: true
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl

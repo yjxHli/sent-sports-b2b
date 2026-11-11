@@ -1,0 +1,73 @@
+# 森特体育用品管理系统 · 容器编排骨架
+# 启动：docker compose up -d
+# 说明：mysql/redis 为基础设施；server 为后端；nginx 反向代理并托管两个前端静态产物。
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: sent-mysql
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    environment:
+      # 强制要求注入强密码：未设置时 compose 直接报错，绝不使用弱默认口令
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:?请在 docker/.env 或宿主环境设置 DB_PASSWORD}
+      MYSQL_DATABASE: sent_prod
+      TZ: Asia/Shanghai
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${DB_PASSWORD:?请在 docker/.env 或宿主环境设置 DB_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7
+    container_name: sent-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: sent-server
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      APP_ENV: prod
+      DB_HOST: mysql
+      DB_PASSWORD: ${DB_PASSWORD:?请在 docker/.env 或宿主环境设置 DB_PASSWORD}
+      REDIS_HOST: redis
+      # 8080 在本机会被 Steam 的 steamwebhelper.exe 抢占，统一用 8088
+      SERVER_PORT: 8088
+    ports:
+      - "8088:8088"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  nginx:
+    image: nginx:1.27
+    container_name: sent-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ../web-admin/dist:/usr/share/nginx/html/admin:ro
+      - ../web-user/dist:/usr/share/nginx/html/user:ro
+    depends_on:
+      - server
+
+volumes:
+  mysql-data:
+  redis-data:

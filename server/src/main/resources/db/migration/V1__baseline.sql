@@ -1,0 +1,14 @@
+-- =====================================================================
+-- V1 基线（plan §6.2）：仅约定公共字段规范，不建业务表、不含任何 DROP。
+-- 公共约定：
+--   id            BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY（自然主键表除外）
+--   created_at    DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
+--   updated_at    DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)
+--   created_by    BIGINT NULL（操作人）
+--   deleted       TINYINT NOT NULL DEFAULT 0（仅主数据软删除：sys_staff/customer/product）
+--   金额          一律 BIGINT（单位：分）
+--   时间          DATETIME(3)（毫秒精度）
+--   字符集        utf8mb4 / utf8mb4_unicode_ci
+--   无物理外键，靠索引 + 应用层保证，便于后续分库与数据修复
+-- =====================================================================
+SET NAMES utf8mb4;

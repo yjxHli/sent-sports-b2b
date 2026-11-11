@@ -1,0 +1,29 @@
+# 开发环境
+app:
+  env: dev
+  # 验收种子账号（管理端 admin/123456、用户端手机号 13800138000/123456）同步进进程内账号仓储
+  seed-accounts:
+    enabled: true
+  # 演示数据生成器：仅非生产 + 该开关为 true 时，在应用启动时灌入半年量级演示数据
+  demo-data:
+    enabled: true
+
+spring:
+  flyway:
+    # 本地 dev 库历史上改过 V5 迁移文件，校验和不匹配会阻断启动；
+    # 仅关闭本机开发库校验，CI / test 库仍保持严格校验。
+    validate-on-migrate: false
+  datasource:
+    url: jdbc:mysql://${DB_HOST:127.0.0.1}:3306/sent_dev?useUnicode=true&characterEncoding=UTF-8&connectionCollation=utf8mb4_unicode_ci&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    # 123456 仅为本机 MySQL 的演示用假口令，不是任何真实环境凭证；
+    # 换机请用 DB_PASSWORD 环境变量覆盖，切勿把真密码提交到仓库。
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:123456}
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
