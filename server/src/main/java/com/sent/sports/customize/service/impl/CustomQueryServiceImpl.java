@@ -10,7 +10,9 @@ import com.sent.sports.customize.mapper.po.CustomOrderPO;
 import com.sent.sports.customize.service.CustomQueryService;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.List;
 
 /**
  * 定制查询实现（收口阶段）：详情与「我的定制单」均接入真实查询。
@@ -34,17 +36,52 @@ public class CustomQueryServiceImpl implements CustomQueryService {
             throw new com.sent.sports.common.error.BizException(
                     com.sent.sports.common.error.ErrorCode.NOT_FOUND);
         }
-        long deadlineMillis = po.getReviewDeadline() == null ? 0L
-                : po.getReviewDeadline().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+        long deadlineMillis = toMillis(po.getReviewDeadline());
         // 表无独立驳回原因列，remark 只在 REJECTED 状态作为驳回原因对外暴露，避免把普通备注误报成驳回原因
         String rejectReason = "REJECTED".equals(po.getStatus()) ? po.getRemark() : null;
+
+        // 详情页要「看得见图稿、看得懂驳回」，把图稿版本与审图记录一起带出，省掉前端 N 次请求
+        CustomOrderMapper.OrderRefRow orderRef = customOrderMapper.selectOrderRef(customOrderId);
+        long pk = po.getId() == null ? 0L : po.getId();
+        List<CustomOrderMapper.DraftRow> draftRows =
+                pk == 0L ? List.of() : customOrderMapper.selectDrafts(pk);
+        List<CustomOrderMapper.ReviewRow> logRows =
+                pk == 0L ? List.of() : customOrderMapper.selectReviewLogs(pk);
+
         return new CustomDtos.CustomVO(
                 po.getCustomNo(),
                 po.getStatus(),
                 po.getCurrentVersion() == null ? 0 : po.getCurrentVersion(),
                 po.getRejectCount() == null ? 0 : po.getRejectCount(),
                 rejectReason,
-                deadlineMillis);
+                deadlineMillis,
+                orderRef == null ? null : orderRef.getOrderNo(),
+                orderRef == null ? null : orderRef.getOrderStatus(),
+                po.getServiceType(),
+                po.getPrintSide(),
+                po.getQty() == null ? 0 : po.getQty(),
+                po.getFeeCent() == null ? 0L : po.getFeeCent(),
+                po.getExpectShipDate() == null ? 0L
+                        : po.getExpectShipDate().atStartOfDay(ZoneId.systemDefault())
+                        .toInstant().toEpochMilli(),
+                toMillis(po.getCreatedAt()),
+                draftRows.stream().map(d -> new CustomDtos.DraftItemVO(
+                        d.getVersion() == null ? 0 : d.getVersion(),
+                        d.getFileId(),
+                        d.getFileName(),
+                        d.getFileSize() == null ? 0L : d.getFileSize(),
+                        toMillis(d.getUploadedAt()))).toList(),
+                logRows.stream().map(r -> new CustomDtos.ReviewLogVO(
+                        r.getDraftVersion() == null ? 0 : r.getDraftVersion(),
+                        r.getResult(),
+                        r.getReasonCode(),
+                        r.getRemark(),
+                        toMillis(r.getCreatedAt()))).toList());
+    }
+
+    /** DATETIME → 毫秒；null 一律按「未设置」返回 0（前端据此显示占位，不显示 1970）。 */
+    private static long toMillis(LocalDateTime time) {
+        return time == null ? 0L : time.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
     }
 
     @Override

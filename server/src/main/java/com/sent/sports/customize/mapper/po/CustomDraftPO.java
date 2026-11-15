@@ -14,7 +14,8 @@ public class CustomDraftPO extends BasePO {
 
     private Long customOrderId;
     private Integer version;
-    private Long fileId;
+    /** 文件服务返回的相对路径（fileId），如 {@code 2026/11/79/<sha256>.png}。 */
+    private String fileId;
     private String fileName;
     private Long fileSize;
     private LocalDateTime uploadedAt;
@@ -35,11 +36,11 @@ public class CustomDraftPO extends BasePO {
         this.version = version;
     }
 
-    public Long getFileId() {
+    public String getFileId() {
         return fileId;
     }
 
-    public void setFileId(Long fileId) {
+    public void setFileId(String fileId) {
         this.fileId = fileId;
     }
 

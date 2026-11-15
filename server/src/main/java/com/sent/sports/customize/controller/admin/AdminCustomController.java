@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -44,9 +45,11 @@ public class AdminCustomController {
         this.customAdminQueryService = customAdminQueryService;
     }
 
+    /** 审核台列表：customNo 支持按定制单号模糊搜索，空白表示不限。 */
     @GetMapping
-    public R<PageResult<?>> pending(@ModelAttribute PageQuery page) {
-        return R.ok(customAdminQueryService.pendingList(page));
+    public R<PageResult<?>> pending(@ModelAttribute PageQuery page,
+                                    @RequestParam(required = false) String customNo) {
+        return R.ok(customAdminQueryService.pendingList(page, customNo));
     }
 
     @GetMapping("/{id}")

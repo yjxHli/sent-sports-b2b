@@ -31,9 +31,10 @@ public class CustomAdminQueryServiceImpl implements CustomAdminQueryService {
     }
 
     @Override
-    public PageResult<AdminCustomDtos.PendingItemVO> pendingList(PageQuery pageQuery) {
+    public PageResult<AdminCustomDtos.PendingItemVO> pendingList(PageQuery pageQuery, String customNo) {
+        String normalizedCustomNo = (customNo == null || customNo.isBlank()) ? null : customNo.trim();
         Page<CustomOrderPO> page = new Page<>(pageQuery.getPage(), pageQuery.getSize());
-        IPage<CustomOrderPO> rows = customOrderMapper.selectAdminPage(page);
+        IPage<CustomOrderPO> rows = customOrderMapper.selectAdminPage(page, normalizedCustomNo);
         List<AdminCustomDtos.PendingItemVO> list = rows.getRecords().stream().map(this::toPending).toList();
         return PageResult.of(list, rows.getTotal(), pageQuery.getPage(), pageQuery.getSize());
     }

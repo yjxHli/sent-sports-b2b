@@ -146,9 +146,20 @@ public interface CustomOrderMapper extends BaseMapper<CustomOrderPO> {
                         @Param("reviewerId") Long reviewerId,
                         @Param("createdAt") LocalDateTime createdAt);
 
-    /** 审核台列表：全部定制单按创建时间倒序（MyBatis-Plus 分页拦截器自动 count + LIMIT）。 */
-    @Select("SELECT * FROM custom_order ORDER BY created_at DESC, id DESC")
-    IPage<CustomOrderPO> selectAdminPage(Page<CustomOrderPO> page);
+    /**
+     * 审核台列表：全部定制单按创建时间倒序（MyBatis-Plus 分页拦截器自动 count + LIMIT）。
+     * <p>customNo 为模糊匹配：定制单号形如 {@code CU20261110901584}，运营手上往往只有后几位，
+     * 要求全等会逼他们先去复制完整单号。</p>
+     */
+    @Select("<script>"
+            + "SELECT * FROM custom_order WHERE 1 = 1 "
+            + "<if test=\"customNo != null and customNo != ''\">"
+            + " AND custom_no LIKE CONCAT('%', #{customNo}, '%')"
+            + "</if> "
+            + "ORDER BY created_at DESC, id DESC"
+            + "</script>")
+    IPage<CustomOrderPO> selectAdminPage(Page<CustomOrderPO> page,
+                                         @Param("customNo") String customNo);
 
     @Select("SELECT COUNT(*) FROM custom_draft WHERE custom_order_id = #{customOrderId}")
     long countDrafts(@Param("customOrderId") long customOrderId);
@@ -160,14 +171,26 @@ public interface CustomOrderMapper extends BaseMapper<CustomOrderPO> {
             + "ORDER BY version DESC LIMIT 1")
     String selectLatestFileId(@Param("customOrderId") long customOrderId);
 
-    @Select("SELECT version AS version, file_id AS fileId, file_name AS fileName, file_size AS fileSize "
+    @Select("SELECT version AS version, file_id AS fileId, file_name AS fileName, file_size AS fileSize, "
+            + "uploaded_at AS uploadedAt "
             + "FROM custom_draft WHERE custom_order_id = #{customOrderId} ORDER BY version")
     List<DraftRow> selectDrafts(@Param("customOrderId") long customOrderId);
 
     @Select("SELECT draft_version AS draftVersion, result, reason_code AS reasonCode, remark, "
-            + "reviewer_id AS reviewerId FROM custom_review_log "
+            + "reviewer_id AS reviewerId, created_at AS createdAt FROM custom_review_log "
             + "WHERE custom_order_id = #{customOrderId} ORDER BY id")
     List<ReviewRow> selectReviewLogs(@Param("customOrderId") long customOrderId);
+
+    /**
+     * 定制单 → 关联订单（用户端详情页要能跳回订单详情）。
+     * 表间无物理外键，归属由 custom_order.order_item_id → order_item.order_id 保证。
+     */
+    @Select("SELECT o.order_no AS orderNo, o.status AS orderStatus "
+            + "FROM custom_order co "
+            + "LEFT JOIN order_item oi ON oi.id = co.order_item_id "
+            + "LEFT JOIN orders o ON o.id = oi.order_id "
+            + "WHERE co.custom_no = #{customNo}")
+    OrderRefRow selectOrderRef(@Param("customNo") String customNo);
 
     /** 发货 / 退款门禁的轻量视图：按订单号 + SKU 联查该订单行对应定制单状态。 */
     @Select("SELECT co.status FROM custom_order co "
@@ -205,12 +228,14 @@ public interface CustomOrderMapper extends BaseMapper<CustomOrderPO> {
         public void setFinishedAt(LocalDateTime finishedAt) { this.finishedAt = finishedAt; }
     }
 
-    /** 图稿版本行（审核台详情用）。 */
+    /** 图稿版本行（审核台详情 / 用户端详情共用）。 */
     class DraftRow {
         private Integer version;
         private String fileId;
         private String fileName;
         private Long fileSize;
+        /** 该版本提交时间（用户端详情页按时间排版本流） */
+        private LocalDateTime uploadedAt;
 
         public Integer getVersion() { return version; }
         public void setVersion(Integer version) { this.version = version; }
@@ -220,15 +245,19 @@ public interface CustomOrderMapper extends BaseMapper<CustomOrderPO> {
         public void setFileName(String fileName) { this.fileName = fileName; }
         public Long getFileSize() { return fileSize; }
         public void setFileSize(Long fileSize) { this.fileSize = fileSize; }
+        public LocalDateTime getUploadedAt() { return uploadedAt; }
+        public void setUploadedAt(LocalDateTime uploadedAt) { this.uploadedAt = uploadedAt; }
     }
 
-    /** 审图日志行（审核台详情用）。 */
+    /** 审图日志行（审核台详情 / 用户端详情共用）。 */
     class ReviewRow {
         private Integer draftVersion;
         private String result;
         private String reasonCode;
         private String remark;
         private Long reviewerId;
+        /** 审核时间（用户端详情页展示「哪天通过的/驳回的」） */
+        private LocalDateTime createdAt;
 
         public Integer getDraftVersion() { return draftVersion; }
         public void setDraftVersion(Integer draftVersion) { this.draftVersion = draftVersion; }
@@ -240,6 +269,19 @@ public interface CustomOrderMapper extends BaseMapper<CustomOrderPO> {
         public void setRemark(String remark) { this.remark = remark; }
         public Long getReviewerId() { return reviewerId; }
         public void setReviewerId(Long reviewerId) { this.reviewerId = reviewerId; }
+        public LocalDateTime getCreatedAt() { return createdAt; }
+        public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+    }
+
+    /** 定制单所属订单的轻量引用（订单号 + 订单状态）。 */
+    class OrderRefRow {
+        private String orderNo;
+        private String orderStatus;
+
+        public String getOrderNo() { return orderNo; }
+        public void setOrderNo(String orderNo) { this.orderNo = orderNo; }
+        public String getOrderStatus() { return orderStatus; }
+        public void setOrderStatus(String orderStatus) { this.orderStatus = orderStatus; }
     }
 
     /** 发货落账时联查得到的定制行快照（非表映射对象，只承载写入参数）。 */

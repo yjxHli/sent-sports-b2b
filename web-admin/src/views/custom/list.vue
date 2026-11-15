@@ -17,6 +17,13 @@
         @refresh="load"
       >
         <template #toolbar>
+          <el-input
+            v-model="query.customNo"
+            placeholder="定制单号"
+            clearable
+            style="width: 200px"
+            @keyup.enter="onSearch"
+          />
           <el-select v-model="query.status" placeholder="定制状态" clearable style="width: 170px">
             <el-option
               v-for="s in customStatuses"
@@ -82,7 +89,7 @@ const rows = ref<any[]>([]);
 const total = ref(0);
 const { page, size } = usePagination();
 const loading = ref(false);
-const query = reactive<{ status?: string }>({});
+const query = reactive<{ status?: string; customNo?: string }>({});
 
 function isOverdue(deadline: number | undefined): boolean {
   return typeof deadline === 'number' && deadline > 0 && Date.now() > deadline;
@@ -91,7 +98,11 @@ function isOverdue(deadline: number | undefined): boolean {
 async function load(): Promise<void> {
   loading.value = true;
   try {
-    const data = await unwrap(customApi.pending({ page: page.value, size: size.value }));
+    const data = await unwrap(customApi.pending({
+      page: page.value,
+      size: size.value,
+      customNo: (query.customNo ?? '').trim() || undefined,
+    }));
     const list = data?.list ?? [];
     // 后端 pending 暂不按状态过滤，前端仅做展示层筛选，不伪造服务端查询能力
     rows.value = query.status ? list.filter((item: any) => item.status === query.status) : list;

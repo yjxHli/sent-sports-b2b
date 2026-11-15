@@ -13,6 +13,36 @@ export interface CustomVO {
   rejectCount: number;
   rejectReason?: string | null;
   reviewDeadlineMillis: number;
+  /** 关联订单号（可跳订单详情）；查不到订单时为 null */
+  orderNo?: string | null;
+  orderStatus?: string | null;
+  serviceType?: string | null;
+  printSide?: string | null;
+  qty?: number | null;
+  /** 定制费（分）。后端把 Long 序列化成字符串，用前必须 Number() */
+  feeCent?: number | string | null;
+  expectShipDateMillis?: number | string | null;
+  createdAtMillis?: number | string | null;
+  drafts?: CustomDraftItemVO[];
+  reviewLogs?: CustomReviewLogVO[];
+}
+
+/** 图稿版本项：fileId 直接拼 /api/files/{fileId} 预览 */
+export interface CustomDraftItemVO {
+  version: number;
+  fileId: string;
+  fileName?: string | null;
+  fileSize?: number | string | null;
+  uploadedAtMillis?: number | string | null;
+}
+
+/** 审图记录项：result = APPROVED / REJECTED */
+export interface CustomReviewLogVO {
+  draftVersion: number;
+  result: string;
+  reasonCode?: string | null;
+  remark?: string | null;
+  reviewedAtMillis?: number | string | null;
 }
 
 export interface DraftVO {
@@ -40,4 +70,40 @@ export const customApi = {
   my: (query: PageQuery) =>
     http.get<PageResult<MyCustomOrderVO>>('/custom-orders/my', query),
 };
+
+/** 商品页选图后暂存的图稿（下单成功再补交到刚生成的定制单，避免用户白选） */
+export interface PendingDraft {
+  fileId: string;
+  fileName: string;
+  fileSize: number;
+}
+
+const PENDING_DRAFT_KEY = 'sent_user.pending_custom_draft';
+
+export function savePendingDraft(draft: PendingDraft): void {
+  try {
+    localStorage.setItem(PENDING_DRAFT_KEY, JSON.stringify(draft));
+  } catch {
+    /* 隐私模式下写不进去也不影响主流程 */
+  }
+}
+
+export function readPendingDraft(): PendingDraft | null {
+  try {
+    const raw = localStorage.getItem(PENDING_DRAFT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PendingDraft;
+    return parsed?.fileId ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export function clearPendingDraft(): void {
+  try {
+    localStorage.removeItem(PENDING_DRAFT_KEY);
+  } catch {
+    /* ignore */
+  }
+}
 

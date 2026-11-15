@@ -56,7 +56,8 @@ export interface CustomDetailVO extends CustomVO {
 }
 
 export const customApi = {
-  pending: (query: PageQuery) => http.get<PageResult<CustomVO>>('/admin/custom-orders', query),
+  pending: (query: PageQuery & { customNo?: string }) =>
+    http.get<PageResult<CustomVO>>('/admin/custom-orders', query),
   detail: (id: string) => http.get<CustomDetailVO>(`/admin/custom-orders/${id}`),
   pass: (id: string) => http.post<ReviewVO>(`/admin/custom-orders/${id}/pass`),
   reject: (id: string, cmd: RejectCmd) =>

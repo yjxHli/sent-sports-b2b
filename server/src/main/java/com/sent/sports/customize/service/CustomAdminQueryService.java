@@ -12,7 +12,7 @@ import com.sent.sports.common.web.PageResult;
 public interface CustomAdminQueryService {
 
     /** 待审列表：按状态/超时筛选 + 分页。 */
-    PageResult<?> pendingList(PageQuery pageQuery);
+    PageResult<?> pendingList(PageQuery pageQuery, String customNo);
 
     /** 审核详情：图稿 + 订单上下文。 */
     Object detail(String customOrderId);

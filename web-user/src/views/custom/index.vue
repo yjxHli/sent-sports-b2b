@@ -1,9 +1,12 @@
 <template>
-  <div>
-    <div class="sent-bar"><strong>我的定制</strong></div>
+  <div class="container my-custom">
+    <div class="sent-bar">
+      <strong>我的定制</strong>
+      <span class="sent-bar__sub">点任意一条可查看图稿与审核记录</span>
+    </div>
 
     <div class="sent-card">
-      <el-input v-model="orderId" placeholder="输入定制单号直接查询" @keyup.enter="query">
+      <el-input v-model="orderId" placeholder="输入定制单号直接查询，如 CU20261115001" @keyup.enter="query">
         <template #append>
           <el-button @click="query">查询</el-button>
         </template>
@@ -21,18 +24,23 @@
         v-for="row in rows"
         :key="row.customOrderId"
         class="custom-row"
-        :class="{ active: custom?.customOrderId === row.customOrderId }"
-        @click="select(row)"
+        role="link"
+        tabindex="0"
+        @click="openDetail(row.customOrderId)"
+        @keyup.enter="openDetail(row.customOrderId)"
       >
         <div class="row-main">
           <strong>{{ row.customOrderId }}</strong>
-          <el-tag :type="tone(row.status)" size="small">{{ label(row.status) }}</el-tag>
+          <span class="row-right">
+            <el-tag :type="tone(row.status)" size="small">{{ label(row.status) }}</el-tag>
+            <span class="row-go">查看详情 ›</span>
+          </span>
         </div>
         <div class="row-sub">
           <span>订单 {{ row.orderStatus || '--' }}</span>
           <span>图稿 v{{ row.version }}</span>
           <span>驳回 {{ row.rejectCount }}</span>
-          <span v-if="row.reviewDeadlineMillis > 0">截止 {{ fmtDateTime(row.reviewDeadlineMillis) }}</span>
+          <span v-if="Number(row.reviewDeadlineMillis) > 0">截止 {{ fmtDateTime(Number(row.reviewDeadlineMillis)) }}</span>
         </div>
       </div>
 
@@ -43,51 +51,44 @@
       </div>
     </div>
 
-    <div v-if="custom" class="sent-card">
-      <div class="list-head"><strong>{{ custom.customOrderId }}</strong></div>
-      <div class="row"><span>状态</span><el-tag :type="tone(custom.status)" size="small">{{ label(custom.status) }}</el-tag></div>
-      <div class="row"><span>图稿版本</span><span>v{{ custom.version }}</span></div>
-      <div class="row"><span>驳回次数</span><span>{{ custom.rejectCount }}</span></div>
-      <div v-if="custom.rejectReason" class="row"><span>驳回原因</span><span>{{ custom.rejectReason }}</span></div>
-      <div class="row"><span>审核截止</span><span>{{ fmtDateTime(custom.reviewDeadlineMillis) }}</span></div>
-
-      <el-button
-        class="up-btn"
-        type="primary"
-        :loading="uploading"
-        @click="upload"
-      >上传图稿</el-button>
-    </div>
-
-    <p class="custom-tip">列表与详情均来自后端真实查询；图稿上传仅提交文件元数据（演示生成占位 fileId）。</p>
+    <p class="custom-tip">列表与详情均来自后端真实查询；详情页可查看每一版图稿、审核记录并重新上传。</p>
   </div>
 </template>
 
 <script setup lang="ts">
+/**
+ * 我的定制（列表）：每一行点进去到独立详情页 `/custom/:customOrderId`。
+ * 详情（图稿版本 / 审核记录 / 重新上传）都在详情页做，列表只负责定位与状态概览。
+ */
 import { onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { unwrap } from '@/utils/http';
-import { customApi, type CustomVO, type MyCustomOrderVO } from '@/api/custom';
+import { customApi, type MyCustomOrderVO } from '@/api/custom';
 import { fmtDateTime, statusLabel, statusTone, type StatusTone } from '@sent/shared';
 
+const router = useRouter();
+
 const orderId = ref('');
-const custom = ref<CustomVO | null>(null);
 const rows = ref<MyCustomOrderVO[]>([]);
 const total = ref(0);
 const page = ref(1);
 const size = 20;
 const loading = ref(false);
-const uploading = ref(false);
 
-function label(s: string): string { return statusLabel(s); }
-function tone(s: string): StatusTone { return statusTone(s); }
+function label(s: string): string {
+  return statusLabel(s);
+}
+function tone(s: string): StatusTone {
+  return statusTone(s);
+}
 
 async function load(): Promise<void> {
   loading.value = true;
   try {
     const data = await unwrap(customApi.my({ page: page.value, size }));
     rows.value = data?.list ?? [];
-    total.value = data?.total ?? 0;
+    total.value = Number(data?.total ?? 0);
   } catch {
     rows.value = [];
     total.value = 0;
@@ -97,48 +98,19 @@ async function load(): Promise<void> {
   }
 }
 
-async function select(row: MyCustomOrderVO): Promise<void> {
-  orderId.value = row.customOrderId;
-  await query();
+/** 点一行 → 详情页 */
+function openDetail(customOrderId: string): void {
+  router.push(`/custom/${customOrderId}`);
 }
 
-async function query(): Promise<void> {
+/** 手输单号：合法就直接进详情页，非法给提示（不再原地展开） */
+function query(): void {
   const id = orderId.value.trim();
   if (!id) {
     ElMessage.warning('请输入定制单号');
     return;
   }
-  loading.value = true;
-  try {
-    custom.value = await unwrap(customApi.detail(id));
-  } catch {
-    custom.value = null;
-    ElMessage.error('未找到该定制单');
-  } finally {
-    loading.value = false;
-  }
-}
-
-async function upload(): Promise<void> {
-  if (!custom.value) return;
-  uploading.value = true;
-  try {
-    const res = await unwrap(customApi.uploadDraft(custom.value.customOrderId, {
-      fileId: `f_${Date.now()}`, fileName: 'draft.png', fileSize: 1024,
-    }));
-    custom.value = {
-      ...custom.value,
-      version: res.version,
-      status: res.status,
-      reviewDeadlineMillis: res.reviewDeadlineMillis,
-    };
-    ElMessage.success('图稿已上传');
-    await load();
-  } catch (e) {
-    ElMessage.error((e as Error).message || '上传失败');
-  } finally {
-    uploading.value = false;
-  }
+  openDetail(id);
 }
 
 function prevPage(): void {
@@ -152,10 +124,20 @@ function nextPage(): void {
   void load();
 }
 
-onMounted(() => { void load(); });
+onMounted(() => {
+  void load();
+});
 </script>
 
 <style scoped>
+.my-custom {
+  padding-top: 14px;
+}
+.sent-bar__sub {
+  font-size: 12px;
+  color: var(--sent-muted);
+  font-weight: 400;
+}
 .list-head {
   display: flex;
   justify-content: space-between;
@@ -165,15 +147,39 @@ onMounted(() => { void load(); });
 }
 .custom-row {
   border-top: 1px solid #f0f1f3;
-  padding: 10px 0;
+  padding: 12px 10px;
+  margin: 0 -10px;
+  border-radius: 6px;
   cursor: pointer;
+  transition: background 0.15s;
 }
-.custom-row.active { color: #c4382f; }
+.custom-row:hover {
+  background: var(--sent-primary-soft);
+}
+.custom-row:focus-visible {
+  outline: 2px solid var(--sent-primary);
+  outline-offset: -2px;
+}
 .row-main {
   display: flex;
   justify-content: space-between;
   align-items: center;
   font-size: 13px;
+}
+.row-main strong {
+  color: var(--sent-text);
+}
+.row-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.row-go {
+  font-size: 12px;
+  color: var(--sent-muted);
+}
+.custom-row:hover .row-go {
+  color: var(--sent-primary);
 }
 .row-sub {
   display: flex;
@@ -181,14 +187,7 @@ onMounted(() => { void load(); });
   gap: 10px;
   font-size: 12px;
   color: #909399;
-  margin-top: 4px;
-}
-.row {
-  display: flex;
-  justify-content: space-between;
-  font-size: 13px;
-  color: #555;
-  padding: 5px 0;
+  margin-top: 5px;
 }
 .pager {
   display: flex;
@@ -197,16 +196,12 @@ onMounted(() => { void load(); });
   gap: 12px;
   font-size: 12px;
   color: #909399;
-  padding-top: 10px;
-}
-.up-btn {
-  width: 100%;
-  margin-top: 12px;
+  padding-top: 12px;
 }
 .custom-tip {
   font-size: 12px;
   color: #b5b9c0;
-  padding: 8px 16px;
+  padding: 8px 4px;
   line-height: 1.5;
 }
 </style>

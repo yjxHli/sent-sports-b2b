@@ -33,7 +33,18 @@
           <el-descriptions-item label="剩余时间">
             <span :class="{ overdue: expired }">{{ remainingText }}</span>
           </el-descriptions-item>
-          <el-descriptions-item label="图稿文件">{{ detail.fileId ?? '--' }}</el-descriptions-item>
+          <el-descriptions-item label="图稿文件">
+            <el-image
+              v-if="detail.fileId"
+              class="draft-thumb"
+              :src="fileUrl(detail.fileId)"
+              :preview-src-list="draftPreviewList"
+              :initial-index="0"
+              fit="cover"
+              preview-teleported
+            />
+            <span v-else>--</span>
+          </el-descriptions-item>
           <el-descriptions-item label="锁定版本">{{ detail.lockedVersion ?? '--' }}</el-descriptions-item>
         </el-descriptions>
 
@@ -44,8 +55,16 @@
               图稿 {{ detail.draftCount ?? 0 }} 版 · 审图记录 {{ detail.reviewLogCount ?? 0 }} 条
             </span>
           </div>
-          <div v-for="d in detail.drafts ?? []" :key="`draft-${d.version}`" class="ledger-row">
-            <span>v{{ d.version }} · {{ d.fileName || '--' }}</span><span>{{ d.fileId || '--' }}</span>
+          <div v-for="d in detail.drafts ?? []" :key="`draft-${d.version}`" class="ledger-row ledger-row--draft">
+            <el-image
+              v-if="d.fileId"
+              class="draft-thumb draft-thumb--sm"
+              :src="fileUrl(d.fileId)"
+              :preview-src-list="draftPreviewList"
+              fit="cover"
+              preview-teleported
+            />
+            <span class="ledger-row__text">v{{ d.version }} · {{ d.fileName || '--' }}</span>
           </div>
           <div v-for="(r, idx) in detail.reviews ?? []" :key="`review-${idx}`" class="ledger-row">
             <span>v{{ r.draftVersion }} · {{ r.result }}</span>
@@ -61,8 +80,18 @@
         <el-row :gutter="16" class="review-body">
           <el-col :xs="24" :md="10">
             <div class="draft-preview">
+              <el-image
+                v-if="latestDraftFileId"
+                class="draft-preview__img"
+                :src="fileUrl(latestDraftFileId)"
+                :preview-src-list="draftPreviewList"
+                :initial-index="draftPreviewList.indexOf(fileUrl(latestDraftFileId))"
+                fit="contain"
+                preview-teleported
+              />
               <el-empty
-                description="图稿由文件服务提供访问 URL，后端返回 fileId 后在此渲染预览"
+                v-else
+                description="该定制单还没有上传图稿"
                 :image-size="70"
               />
             </div>
@@ -152,6 +181,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { unwrap } from '@/utils/http';
 import { customApi } from '@/api';
+import { fileApi } from '@/api/file';
 import type { CustomVO } from '@sent/shared';
 import { CustomStatus, fmtDateTime, statusLabel } from '@sent/shared';
 import StatusTag from '@/components/StatusTag.vue';
@@ -169,6 +199,27 @@ const router = useRouter();
 
 const pending = ref<CustomVO[]>([]);
 const detail = ref<any>(null);
+
+/** fileId → 可直接给 <img> / el-image 用的地址（读接口匿名可访问） */
+function fileUrl(fileId?: string | null): string {
+  return fileApi.url(fileId);
+}
+
+/** 当前定制单所有图稿的可预览地址（按版本顺序，支持左右切换） */
+const draftPreviewList = computed<string[]>(() =>
+  ((detail.value?.drafts ?? []) as Array<{ fileId?: string | null }>)
+    .filter((d) => Boolean(d.fileId))
+    .map((d) => fileUrl(d.fileId)),
+);
+
+/** 最新一版图稿（列表按 version 升序，取最后一张） */
+const latestDraftFileId = computed<string>(() => {
+  const drafts = (detail.value?.drafts ?? []) as Array<{ fileId?: string | null }>;
+  for (let i = drafts.length - 1; i >= 0; i -= 1) {
+    if (drafts[i]?.fileId) return drafts[i].fileId as string;
+  }
+  return detail.value?.fileId ? String(detail.value.fileId) : '';
+});
 const selectedId = ref<string>('');
 const loading = ref(false);
 const submitting = ref(false);
@@ -291,6 +342,29 @@ onUnmounted(() => { if (timer) clearInterval(timer); });
   display: flex; justify-content: space-between; gap: 12px;
   font-size: 12px; color: #60706a; padding: 4px 0;
   border-bottom: 1px solid #f2f5f3;
+}
+.ledger-row--draft {
+  justify-content: flex-start;
+  align-items: center;
+  gap: 10px;
+}
+.ledger-row__text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.draft-thumb {
+  width: 64px;
+  height: 64px;
+  border-radius: 6px;
+  border: 1px solid #e6efe9;
+  cursor: zoom-in;
+}
+.draft-thumb--sm {
+  width: 34px;
+  height: 34px;
+}
+.draft-preview__img {
+  width: 100%;
+  height: 100%;
+  min-height: 240px;
+  cursor: zoom-in;
 }
 .section-title { margin: 0 0 14px; font-size: 15px; color: #33463f; }
 .review-body { margin-top: 18px; }
