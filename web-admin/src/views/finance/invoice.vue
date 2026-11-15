@@ -25,7 +25,15 @@
         @refresh="load"
       >
         <template #toolbar>
-          <el-button type="primary" @click="openCreate">开具发票</el-button>
+          <el-input
+            v-model="keyword"
+            placeholder="发票 ID / 发票号 / 客户 ID"
+            clearable
+            style="width: 240px"
+            @keyup.enter="onSearch"
+          />
+          <el-button type="primary" @click="onSearch">查询</el-button>
+          <el-button @click="openCreate">开具发票</el-button>
         </template>
         <template #col-status="{ row }">
           <StatusTag :status="row.status" />
@@ -166,6 +174,8 @@ const total = ref(0);
 const { page, size } = usePagination();
 const loading = ref(false);
 const submitting = ref(false);
+/** 发票 ID / 发票号 / 客户 ID 三选一模糊搜索，条件由后端 SQL 收敛（前端只负责传参） */
+const keyword = ref('');
 
 const visible = ref(false);
 const mode = ref<Mode>('create');
@@ -184,7 +194,11 @@ const form = reactive({
 async function load(): Promise<void> {
   loading.value = true;
   try {
-    const data = await unwrap(financeApi.invoices({ page: page.value, size: size.value }));
+    const data = await unwrap(financeApi.invoices({
+      page: page.value,
+      size: size.value,
+      keyword: keyword.value.trim() || undefined,
+    }));
     rows.value = data?.list ?? [];
     total.value = Number(data?.total ?? 0);
   } catch (error) {
@@ -194,6 +208,12 @@ async function load(): Promise<void> {
   } finally {
     loading.value = false;
   }
+}
+
+/** 换关键字必须回到第 1 页，否则会停在一个不存在的页码上看到空表 */
+function onSearch(): void {
+  page.value = 1;
+  void load();
 }
 
 async function loadOrderOptions(): Promise<void> {

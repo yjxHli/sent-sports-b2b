@@ -32,6 +32,10 @@ export interface ExclusiveProductVO {
   productName: string;
   priceCent: number;
   priceYuan: string;
+  /** 主图相对路径，缺失时卡片用占位图 */
+  mainImage?: string | null;
+  /** AGREEMENT 一客一价 / LEVEL 等级专属，用于卡片角标 */
+  source?: string | null;
 }
 
 export const memberApi = {

@@ -64,73 +64,71 @@
       </el-col>
     </el-row>
 
-    <el-row :gutter="16">
-      <el-col :xs="24" :lg="12">
-        <div class="sent-panel">
-          <h3 class="section-title">积分调整</h3>
-          <p class="target-line">目标客户：{{ targetText }}</p>
-          <el-form label-width="100px">
-            <el-form-item label="增减积分">
-              <el-input-number v-model="pointForm.delta" :min="-100000" :max="100000" style="width: 100%" />
-            </el-form-item>
-            <el-form-item label="原因">
-              <el-input v-model="pointForm.reason" type="textarea" :rows="2" placeholder="必填" />
-            </el-form-item>
-          </el-form>
-          <el-button type="primary" :loading="submitting" @click="adjustPoints">提交调整</el-button>
-        </div>
+    <div class="member-grid">
+      <!-- 第一行：积分调整 | 等级规则（展示用） -->
+      <div class="sent-panel">
+        <h3 class="section-title">积分调整</h3>
+        <p class="target-line">目标客户：{{ targetText }}</p>
+        <el-form label-width="100px">
+          <el-form-item label="增减积分">
+            <el-input-number v-model="pointForm.delta" :min="-100000" :max="100000" style="width: 100%" />
+          </el-form-item>
+          <el-form-item label="原因">
+            <el-input v-model="pointForm.reason" type="textarea" :rows="2" placeholder="必填" />
+          </el-form-item>
+        </el-form>
+        <el-button type="primary" :loading="submitting" @click="adjustPoints">提交调整</el-button>
+      </div>
 
-        <div class="sent-panel">
-          <h3 class="section-title">授予等级</h3>
-          <p class="target-line">目标客户：{{ targetText }}</p>
-          <el-form label-width="100px">
-            <el-form-item label="目标等级">
-              <el-select v-model="grantForm.level" style="width: 100%">
-                <el-option
-                  v-for="l in CUSTOMER_LEVELS"
-                  :key="l.value"
-                  :label="`${l.label}（${l.value}）`"
-                  :value="l.value"
-                />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="有效期至">
-              <el-date-picker v-model="grantForm.validTo" type="datetime" style="width: 100%" />
-            </el-form-item>
-            <el-form-item label="原因">
-              <el-input v-model="grantForm.reason" type="textarea" :rows="2" placeholder="必填" />
-            </el-form-item>
-          </el-form>
-          <el-button type="primary" :loading="submitting" @click="grantLevel">确认授级</el-button>
-        </div>
-      </el-col>
+      <div class="sent-panel">
+        <h3 class="section-title">等级规则（展示用）</h3>
+        <el-table :data="LEVEL_RULES" border size="small">
+          <el-table-column prop="level" label="等级" width="120" />
+          <el-table-column prop="growth" label="成长值门槛" width="130" align="right" />
+          <el-table-column prop="discount" label="折扣说明" min-width="150" />
+        </el-table>
+        <p class="sent-hint">实际等级计算与折扣以后端 LevelCalculator / 取价引擎为准，此处仅作运营说明。</p>
+      </div>
 
-      <el-col :xs="24" :lg="12">
-        <div class="sent-panel">
-          <h3 class="section-title">等级规则（展示用）</h3>
-          <el-table :data="LEVEL_RULES" border size="small">
-            <el-table-column prop="level" label="等级" width="120" />
-            <el-table-column prop="growth" label="成长值门槛" width="130" align="right" />
-            <el-table-column prop="discount" label="折扣说明" min-width="150" />
-          </el-table>
-          <p class="sent-hint">实际等级计算与折扣以后端 LevelCalculator / 取价引擎为准，此处仅作运营说明。</p>
-        </div>
+      <!-- 第二行：授予等级 | 会员专属商品 -->
+      <div class="sent-panel">
+        <h3 class="section-title">授予等级</h3>
+        <p class="target-line">目标客户：{{ targetText }}</p>
+        <el-form label-width="100px">
+          <el-form-item label="目标等级">
+            <el-select v-model="grantForm.level" style="width: 100%">
+              <el-option
+                v-for="l in CUSTOMER_LEVELS"
+                :key="l.value"
+                :label="`${l.label}（${l.value}）`"
+                :value="l.value"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="有效期至">
+            <el-date-picker v-model="grantForm.validTo" type="datetime" style="width: 100%" />
+          </el-form-item>
+          <el-form-item label="原因">
+            <el-input v-model="grantForm.reason" type="textarea" :rows="2" placeholder="必填" />
+          </el-form-item>
+        </el-form>
+        <el-button type="primary" :loading="submitting" @click="grantLevel">确认授级</el-button>
+      </div>
 
-        <div class="sent-panel">
-          <h3 class="section-title">会员专属商品</h3>
-          <el-table v-loading="loading" :data="exclusive" border size="small">
-            <el-table-column prop="productId" label="商品 ID" width="150" />
-            <el-table-column prop="productName" label="商品名称" min-width="160" />
-            <el-table-column label="专属价" width="130" align="right">
-              <template #default="scope">{{ fmtMoney(scope.row.priceCent) }}</template>
-            </el-table-column>
-            <template #empty>
-              <el-empty description="暂无专属商品" :image-size="60" />
-            </template>
-          </el-table>
-        </div>
-      </el-col>
-    </el-row>
+      <div class="sent-panel">
+        <h3 class="section-title">会员专属商品</h3>
+        <el-table v-loading="loading" :data="exclusive" border size="small">
+          <el-table-column prop="productId" label="商品 ID" width="150" />
+          <el-table-column prop="productName" label="商品名称" min-width="160" />
+          <el-table-column label="专属价" width="130" align="right">
+            <template #default="scope">{{ fmtMoney(scope.row.priceCent) }}</template>
+          </el-table-column>
+          <template #empty>
+            <el-empty description="暂无专属商品" :image-size="60" />
+          </template>
+        </el-table>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -328,4 +326,20 @@ onMounted(() => { void initDefaultCustomer(); });
 .metric-value { font-size: 26px; color: #12664f; }
 .metric-sub { color: #93a29c; font-size: 12px; }
 .section-title { margin: 0 0 14px; font-size: 15px; color: #33463f; }
+
+/*
+ * 四个运营卡片按 2×2 网格排布（原先左右两列各自纵向堆叠，行高互不影响）：
+ * 同一行的两张由 Grid 自动拉伸成等高 ——「积分调整」对齐「等级规则」、
+ * 「授予等级」对齐「会员专属商品」。窄屏单列堆叠，不再强行对齐。
+ */
+.member-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+/* grid 已有 16px 间距，去掉 sent-panel 自带的 16px 下边距，避免叠加成 32px */
+.member-grid > .sent-panel { margin-bottom: 0; }
+@media (min-width: 1200px) {
+  .member-grid { grid-template-columns: 1fr 1fr; }
+}
 </style>
