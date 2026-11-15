@@ -47,7 +47,7 @@ public final class AdminChatDtos {
     public record SessionActionVO(long sessionId, String status, Long staffId) {
     }
 
-    /** 关闭会话响应。 */
-    public record CloseVO(long sessionId, String status) {
+    /** 关闭会话响应：关闭的会话号、状态、被自动补位的排队会话号（无则 null）。 */
+    public record CloseVO(long sessionId, String status, Long promotedSessionId) {
     }
 }

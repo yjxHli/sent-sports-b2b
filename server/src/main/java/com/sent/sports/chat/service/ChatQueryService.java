@@ -17,4 +17,10 @@ public interface ChatQueryService {
 
     /** 已读上报：记录该会话已读到的消息序号。 */
     void reportRead(long sessionId, int seq);
+
+    /**
+     * 排队状态：会话当前状态 + 排队位置（1 开始，已接入为 0）。
+     * <p>位置口径：排在它前面的 WAITING 会话数 + 1（按创建时间先来后到）。
+     */
+    ChatDtos.QueueVO queue(long sessionId);
 }

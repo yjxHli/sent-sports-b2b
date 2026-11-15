@@ -8,10 +8,12 @@ import com.sent.sports.chat.service.ChatQueryService;
 import com.sent.sports.chat.service.CreateSessionUseCase;
 import com.sent.sports.chat.service.SendMessageUseCase;
 import com.sent.sports.chat.service.dto.CreateSessionResult;
+import com.sent.sports.chat.service.dto.SendMessageCmd;
 import com.sent.sports.chat.service.dto.SendMessageResult;
 import com.sent.sports.support.BaseApiTest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
@@ -22,10 +24,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -89,12 +93,34 @@ class ChatApiTest extends BaseApiTest {
     @DisplayName("afterSeq 补拉历史消息 200")
     void historyAfterSeqReturns200() throws Exception {
         when(chatQueryService.history(anyLong(), anyInt())).thenReturn(List.of(
-                new ChatDtos.MessageVO("CM1", 100L, "CUSTOMER", "你好", "c-1", 7, 1_700_000_000_000L)));
+                new ChatDtos.MessageVO("CM1", 100L, "CUSTOMER", "TEXT", "你好", "c-1", 7, 1_700_000_000_000L)));
         mvc.perform(get("/api/chat/sessions/100/messages").param("afterSeq", "5"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data[0].messageId").value("CM1"))
+                .andExpect(jsonPath("$.data[0].msgType").value("TEXT"))
                 .andExpect(jsonPath("$.data[0].seq").value(7));
+    }
+
+    @Test
+    @DisplayName("发图片消息：msgType=IMAGE 透传到用例，历史里也能读回 IMAGE")
+    void sendImageMessageCarriesMsgType() throws Exception {
+        when(sendMessageUseCase.send(any())).thenReturn(new SendMessageResult("CM9", 3, 100L));
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("senderType", "CUSTOMER");
+        body.put("content", "2026/11/ab/shot.png");
+        body.put("clientMsgId", "c-img");
+        body.put("msgType", "IMAGE");
+        mvc.perform(post("/api/chat/sessions/100/messages")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(toJson(body)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.msgType").value("IMAGE"));
+
+        ArgumentCaptor<SendMessageCmd> captor = ArgumentCaptor.forClass(SendMessageCmd.class);
+        verify(sendMessageUseCase).send(captor.capture());
+        assertEquals("IMAGE", captor.getValue().msgType());
+        assertEquals("2026/11/ab/shot.png", captor.getValue().content());
     }
 
     @Test

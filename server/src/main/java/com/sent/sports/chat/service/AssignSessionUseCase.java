@@ -24,9 +24,11 @@ import org.springframework.stereotype.Service;
 public class AssignSessionUseCase {
 
     private final ChatSessionRepository sessionRepository;
+    private final ChatNotifier notifier;
 
-    public AssignSessionUseCase(ChatSessionRepository sessionRepository) {
+    public AssignSessionUseCase(ChatSessionRepository sessionRepository, ChatNotifier notifier) {
         this.sessionRepository = sessionRepository;
+        this.notifier = notifier;
     }
 
     @UseCase
@@ -38,6 +40,8 @@ public class AssignSessionUseCase {
                     .orElseThrow(() -> new BizException(ErrorCode.NOT_FOUND));
             target.assign(cmd.staffId()); // 非 WAITING → STATE_CONFLICT(40901)
             sessionRepository.save(target);
+            // 用户端据此隐藏排队提示、解锁输入框
+            notifier.sessionAssigned(target.getCustomerId(), target.getId(), target.getStaffId());
             return new AssignSessionResult(target.getId(), target.getStatus(), target.getStaffId());
         }
         List<ChatSession> waiting = sessionRepository.findWaiting();
@@ -48,6 +52,7 @@ public class AssignSessionUseCase {
                 .orElseThrow(() -> new BizException(ErrorCode.BIZ_REJECT));
         next.assign(cmd.staffId());
         sessionRepository.save(next);
+        notifier.sessionAssigned(next.getCustomerId(), next.getId(), next.getStaffId());
         return new AssignSessionResult(next.getId(), next.getStatus(), next.getStaffId());
     }
 

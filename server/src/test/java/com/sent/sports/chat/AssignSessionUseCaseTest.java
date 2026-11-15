@@ -4,6 +4,7 @@ import com.sent.sports.chat.domain.ChatSession;
 import com.sent.sports.chat.domain.ChatSessionStatus;
 import com.sent.sports.chat.repository.ChatSessionRepository;
 import com.sent.sports.chat.service.AssignSessionUseCase;
+import com.sent.sports.chat.service.ChatNotifier;
 import com.sent.sports.chat.service.dto.AssignCmd;
 import com.sent.sports.chat.service.dto.AssignSessionResult;
 import com.sent.sports.chat.service.dto.TransferCmd;
@@ -34,10 +35,23 @@ class AssignSessionUseCaseTest extends BaseUseCaseTest {
 
     @Mock
     private ChatSessionRepository sessionRepository;
+    @Mock
+    private ChatNotifier notifier;
     @InjectMocks
     private AssignSessionUseCase useCase;
     @Captor
     private ArgumentCaptor<ChatSession> sessionCaptor;
+
+    /** 接待成功后必须推送「已接入客服」，否则用户端排队提示不会消失。 */
+    @Test
+    void assignNotifiesCustomer() {
+        ChatSession target = new ChatSession(42L, 200L, false, ChatSessionStatus.WAITING, null, 500L, 500L, 0);
+        when(sessionRepository.findById(42L)).thenReturn(Optional.of(target));
+
+        useCase.assign(new AssignCmd(42L, 9L, 1L));
+
+        verify(notifier).sessionAssigned(200L, 42L, 9L);
+    }
 
     @Test
     void assignTargetsGivenSession() {

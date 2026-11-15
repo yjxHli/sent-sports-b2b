@@ -3,7 +3,8 @@
  *
  * 协议对齐 server/chat/ws/WsEnvelope.java 与 ChatWebSocketHandler：
  * - 握手 `/ws/chat?token=<user 端 accessToken>`，后端收口后已接受 aud=user 并注册到客户维度。
- * - 报文 { type, sessionId, seq, payload, timestamp }，type ∈ MSG/ACK/READ/QUEUE。
+ * - 报文 { type, sessionId, seq, payload, timestamp }，type ∈ MSG/ACK/READ/QUEUE/ASSIGNED/TYPING。
+ * - TYPING 是「对方正在输入」提示：只转发不落库，页面上显示几秒后自动消失。
  * - 发送 MSG 时 payload 为 JSON 字符串 { clientMsgId, content }，clientMsgId 是后端
  *   `uk_msg_client` 幂等键；落库 SenderType 由后端按连接身份写 CUSTOMER，不信任报文里的 senderType。
  * - 客服回复由后端广播到本客户连接；ACK 携带 ACCEPTED / DUPLICATE 或错误码。
@@ -14,7 +15,7 @@ import { onUnmounted, ref, type Ref } from 'vue';
 import { getAccessToken } from '@/utils/auth';
 import { newIdempotencyKey } from '@/utils/idempotent';
 
-export type WsType = 'MSG' | 'ACK' | 'READ' | 'QUEUE';
+export type WsType = 'MSG' | 'ACK' | 'READ' | 'QUEUE' | 'ASSIGNED' | 'TYPING';
 
 export interface WsEnvelope {
   type: WsType;
@@ -30,6 +31,8 @@ export interface IncomingMessage {
   clientMsgId: string;
   content: string;
   senderType: string;
+  /** TEXT / IMAGE；IMAGE 时 content 是 fileId，页面拼 fileApi.url() 渲染 */
+  msgType?: string;
 }
 
 export interface IncomingAck {
@@ -46,14 +49,20 @@ export interface ChatSocketOptions {
   onAck: (ack: IncomingAck) => void;
   onConnected?: (onlineCount: number) => void;
   onDisconnected?: () => void;
+  /** 服务端通知「会话已被客服接入」：用户端据此隐藏排队提示、解锁输入 */
+  onAssigned?: (sessionId: number, staffId: number | null) => void;
+  /** 客服正在输入：页面显示「客服正在回复中」，3s 无新帧自动消失 */
+  onTyping?: (sessionId: number) => void;
 }
 
 export interface ChatSocket {
   connected: Ref<boolean>;
   connect: () => void;
   close: () => void;
-  /** 返回 clientMsgId；未连接时返回 null，调用方据此走 REST 兜底 */
-  send: (sessionId: number, content: string) => string | null;
+  /** 返回 clientMsgId；未连接时返回 null，调用方据此走 REST 兜底。IMAGE 时 content 传 fileId */
+  send: (sessionId: number, content: string, msgType?: string) => string | null;
+  /** 发送「我正在输入」提示；未连接时静默丢弃（弱语义，不重试） */
+  sendTyping: (sessionId: number) => void;
 }
 
 function socketUrl(): string {
@@ -94,11 +103,21 @@ export function useChatSocket(options: ChatSocketOptions): ChatSocket {
         clientMsgId: String(body.clientMsgId ?? ''),
         content: String(body.content ?? envelope.payload ?? ''),
         senderType: String(body.senderType ?? 'STAFF'),
+        msgType: String(body.msgType ?? 'TEXT'),
       });
       return;
     }
     if (envelope.type === 'QUEUE' && body.event === 'CONNECTED') {
       options.onConnected?.(Number(body.online ?? body.onlineCount ?? 0));
+      return;
+    }
+    if (envelope.type === 'ASSIGNED') {
+      options.onAssigned?.(Number(envelope.sessionId || body.sessionId || 0),
+        body.staffId === undefined || body.staffId === null ? null : Number(body.staffId));
+      return;
+    }
+    if (envelope.type === 'TYPING') {
+      options.onTyping?.(Number(envelope.sessionId));
       return;
     }
     if (envelope.type === 'ACK') {
@@ -167,7 +186,7 @@ export function useChatSocket(options: ChatSocketOptions): ChatSocket {
     connected.value = false;
   }
 
-  function send(sessionId: number, content: string): string | null {
+  function send(sessionId: number, content: string, msgType = 'TEXT'): string | null {
     if (!socket || socket.readyState !== WebSocket.OPEN) return null;
     const clientMsgId = `ws_${newIdempotencyKey('chat')}`;
     localSeq += 1;
@@ -175,13 +194,26 @@ export function useChatSocket(options: ChatSocketOptions): ChatSocket {
       type: 'MSG',
       sessionId,
       seq: localSeq,
-      payload: JSON.stringify({ clientMsgId, content, senderType: 'CUSTOMER' }),
+      payload: JSON.stringify({ clientMsgId, content, senderType: 'CUSTOMER', msgType }),
       timestamp: Date.now(),
     };
     socket.send(JSON.stringify(envelope));
     return clientMsgId;
   }
 
+  function sendTyping(sessionId: number): void {
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    localSeq += 1;
+    const envelope: WsEnvelope = {
+      type: 'TYPING',
+      sessionId,
+      seq: localSeq,
+      payload: JSON.stringify({ typing: true, senderType: 'CUSTOMER' }),
+      timestamp: Date.now(),
+    };
+    socket.send(JSON.stringify(envelope));
+  }
+
   onUnmounted(close);
-  return { connected, connect, close, send };
+  return { connected, connect, close, send, sendTyping };
 }

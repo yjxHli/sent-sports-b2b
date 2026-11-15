@@ -30,6 +30,23 @@ class WsEnvelopeTest {
     }
 
     @Test
+    void assignedTypeRoundTrip() {
+        WsEnvelope assigned = WsEnvelope.assigned(101L, "{\"event\":\"ASSIGNED\",\"staffId\":9001}");
+
+        assertThat(assigned.type()).isEqualTo(WsEnvelope.ASSIGNED);
+        assertThat(WsEnvelope.parse(assigned.toJson())).isEqualTo(assigned);
+    }
+
+    /** 「正在输入」帧：双向提示专用，必须是合法类型且能无损往返。 */
+    @Test
+    void typingTypeRoundTrip() {
+        WsEnvelope typing = WsEnvelope.typing(101L, "{\"typing\":true}");
+
+        assertThat(typing.type()).isEqualTo(WsEnvelope.TYPING);
+        assertThat(WsEnvelope.parse(typing.toJson())).isEqualTo(typing);
+    }
+
+    @Test
     void roundTripPreservesAllFields() {
         WsEnvelope original = new WsEnvelope(WsEnvelope.MSG, 999L, 42L, "payload-中文", 123456789L);
 

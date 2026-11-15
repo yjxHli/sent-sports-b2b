@@ -126,4 +126,38 @@ class CreateSessionUseCaseTest extends BaseUseCaseTest {
         assertEquals(ChatSessionStatus.WAITING, sessionCaptor.getValue().getStatus());
         assertEquals(ChatSessionStatus.WAITING, r.status());
     }
+
+    /** 坐席已满 3 人时必须排队（不再分配给该客服）。 */
+    @Test
+    void createsWaitingWhenOnlyStaffReachedMaxSessions() {
+        when(sessionRepository.findByCustomerId(7L)).thenReturn(List.of());
+        when(presenceRepository.findAll()).thenReturn(List.of(
+                new AgentPresence(5L, PresenceStatus.ONLINE, 3, 3, 0L)));
+        when(sessionRepository.countActive()).thenReturn(3);
+        when(sessionRepository.nextId()).thenReturn(100L);
+        when(clock.instant()).thenReturn(NOW);
+
+        CreateSessionResult r = useCase.create(new CreateSessionCmd(7L, false, 1L));
+
+        assertEquals(ChatSessionStatus.WAITING, r.status());
+        assertEquals(null, r.staffId());
+        verify(presenceRepository, never()).findByStaffId(anyLong());
+    }
+
+    /** 分配成功后必须把客服负载 +1，否则并发上限永远判不满。 */
+    @Test
+    void assigningIncrementsStaffActiveSessions() {
+        AgentPresence presence = new AgentPresence(5L, PresenceStatus.ONLINE, 1, 3, 0L);
+        when(sessionRepository.findByCustomerId(7L)).thenReturn(List.of());
+        when(presenceRepository.findAll()).thenReturn(List.of(presence));
+        when(presenceRepository.findByStaffId(5L)).thenReturn(Optional.of(presence));
+        when(sessionRepository.countActive()).thenReturn(1);
+        when(sessionRepository.nextId()).thenReturn(100L);
+        when(clock.instant()).thenReturn(NOW);
+
+        useCase.create(new CreateSessionCmd(7L, false, 1L));
+
+        assertEquals(2, presence.getActiveSessions());
+        verify(presenceRepository).save(presence);
+    }
 }

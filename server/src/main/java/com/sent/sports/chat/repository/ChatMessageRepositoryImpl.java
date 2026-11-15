@@ -1,6 +1,7 @@
 package com.sent.sports.chat.repository;
 
 import com.sent.sports.chat.domain.ChatMessage;
+import com.sent.sports.chat.domain.ChatMsgType;
 import com.sent.sports.chat.domain.SenderType;
 import com.sent.sports.chat.mapper.ChatMessageMapper;
 import com.sent.sports.chat.mapper.po.ChatMessagePO;
@@ -35,7 +36,7 @@ public class ChatMessageRepositoryImpl implements ChatMessageRepository {
         po.setSessionId(message.getSessionId());
         po.setSeq((long) message.getSeq());
         po.setSenderType(message.getSenderType().name());
-        po.setMsgType("TEXT");
+        po.setMsgType(message.getMsgType().name());
         po.setContent(message.getContent());
         po.setClientMsgId(message.getClientMsgId());
         chatMessageMapper.insert(po);
@@ -60,7 +61,8 @@ public class ChatMessageRepositoryImpl implements ChatMessageRepository {
     private ChatMessage toDomain(ChatMessagePO po) {
         return new ChatMessage(po.getMessageNo(), po.getSessionId(),
                 SenderType.valueOf(po.getSenderType()), po.getContent(), po.getClientMsgId(),
-                po.getSeq() == null ? 0 : po.getSeq().intValue(), toMillis(po.getCreatedAt()));
+                po.getSeq() == null ? 0 : po.getSeq().intValue(), toMillis(po.getCreatedAt()),
+                ChatMsgType.of(po.getMsgType()));
     }
 
     private long toMillis(LocalDateTime time) {

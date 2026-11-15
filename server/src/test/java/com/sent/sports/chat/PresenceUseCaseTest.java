@@ -93,4 +93,33 @@ class PresenceUseCaseTest extends BaseUseCaseTest {
         assertEquals(PresenceStatus.ONLINE, presenceCaptor.getValue().getPresence());
         assertEquals(0, r.releasedSessions());
     }
+
+    /** 首次上线的坐席默认并发上限为 3，且负载以库里的 ACTIVE 会话数为准（重启后不漂移）。 */
+    @Test
+    void onlineSeedsLoadFromDbAndDefaultsThreeSlots() {
+        when(presenceRepository.findByStaffId(5L)).thenReturn(Optional.empty());
+        when(clock.instant()).thenReturn(NOW);
+        when(sessionRepository.countActiveByStaff(5L)).thenReturn(2);
+
+        useCase.setPresence(new SetPresenceCmd(5L, PresenceStatus.ONLINE, 1L));
+
+        verify(presenceRepository).save(presenceCaptor.capture());
+        assertEquals(3, presenceCaptor.getValue().getMaxSessions(), "默认并发上限应为 3");
+        assertEquals(2, presenceCaptor.getValue().getActiveSessions(), "负载应以库里 ACTIVE 会话数为准");
+    }
+
+    /** 离线释放全部会话后，负载必须归零，否则补位时会误判「已满」。 */
+    @Test
+    void offlineResetsLoadToZero() {
+        when(presenceRepository.findByStaffId(5L)).thenReturn(
+                Optional.of(new AgentPresence(5L, PresenceStatus.ONLINE, 3, 3, 0L)));
+        when(clock.instant()).thenReturn(NOW);
+        when(sessionRepository.findActiveByStaff(5L)).thenReturn(
+                List.of(new ChatSession(1L, 100L, ChatSessionStatus.ACTIVE, 5L)));
+
+        useCase.setPresence(new SetPresenceCmd(5L, PresenceStatus.OFFLINE, 1L));
+
+        verify(presenceRepository).save(presenceCaptor.capture());
+        assertEquals(0, presenceCaptor.getValue().getActiveSessions());
+    }
 }

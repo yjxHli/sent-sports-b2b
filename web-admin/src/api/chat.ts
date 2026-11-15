@@ -20,6 +20,8 @@ export interface SessionActionVO {
 export interface CloseVO {
   sessionId: number;
   status: string;
+  /** 结束会话后自动补位的排队会话号（无则 null） */
+  promotedSessionId?: number | null;
 }
 
 export interface WorkloadVO {
@@ -27,12 +29,42 @@ export interface WorkloadVO {
   staffName?: string;
   activeSessions: number;
   presence?: string;
+  maxSessions?: number;
+}
+
+/** 工作台左侧两栏的会话行（与后端 OpenSessionsResult.Row 对齐）。 */
+export interface OpenSessionRow {
+  sessionId: number;
+  status: string;
+  staffId: number | null;
+  customerId: number;
+  waitingSinceMillis: number;
+  /** 排队位置，1 开始；进行中为 0 */
+  queuePosition: number;
+}
+
+/** 工作台「今日完成接待数」：服务端按本地自然日统计，跨零点自动归零 */
+export interface TodayStatsVO {
+  staffId: number;
+  date: string;
+  closedCount: number;
+}
+
+export interface OpenSessionsVO {
+  active: OpenSessionRow[];
+  waiting: OpenSessionRow[];
 }
 
 export const chatApi = {
   sessions: (query: PageQuery & { status?: string }) =>
     http.get<PageResult<ChatSessionVO>>('/admin/chat/sessions', query),
+  /** 工作台左侧两栏：我的进行中 + 全员排队中（不分页，服务端限长） */
+  openSessions: (staffId: number) =>
+    http.get<OpenSessionsVO>('/admin/chat/sessions/open', { staffId }),
   workload: () => http.get<WorkloadVO[]>('/admin/chat/workload'),
+  /** 今日完成接待数（顶栏右侧常驻） */
+  todayStats: (staffId: number) =>
+    http.get<TodayStatsVO>('/admin/chat/stats/today', { staffId }),
   presence: (staffId: number, presence: string) =>
     http.post<PresenceVO>('/admin/chat/presence', { staffId, presence }),
   accept: (id: number, staffId: number) =>

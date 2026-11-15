@@ -8,6 +8,7 @@ import com.sent.sports.chat.domain.ChatSessionStatus;
 import com.sent.sports.chat.domain.SenderType;
 import com.sent.sports.chat.repository.ChatMessageRepository;
 import com.sent.sports.chat.repository.ChatSessionRepository;
+import com.sent.sports.chat.service.ChatNotifier;
 import com.sent.sports.common.util.IdGen;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -49,10 +50,12 @@ class ChatWebSocketHandlerTest {
     @Mock
     private IdGen idGen;
     @Mock
+    private ChatNotifier notifier;
+    @Mock
     private WebSocketSession wsSession;
 
     private ChatWebSocketHandler handler() {
-        return new ChatWebSocketHandler(broadcaster, tokenService, new ObjectMapper(),
+        return new ChatWebSocketHandler(broadcaster, notifier, tokenService, new ObjectMapper(),
                 chatSessionRepository, chatMessageRepository, idGen, FIXED_CLOCK);
     }
 
@@ -192,6 +195,70 @@ class ChatWebSocketHandlerTest {
         assertEquals(SenderType.CUSTOMER, captor.getValue().getSenderType());
     }
 
+    /**
+     * 回归：客服直接回复一条「未分配（WAITING）」会话时，必须由该客服自动接管。
+     * <p>历史缺陷：客服回复虽然能落库并送达客户，但会话一直停在 WAITING / staffId=null，
+     * 于是客户后续每条消息都走 {@code broadcastAll(QUEUE)}，客服端收不到——表现为「客户发的消息
+     * 客服要刷新才看得到」。修复后第一条客服回复即完成分配（谁回复谁接待）。
+     */
+    @Test
+    void staffReplyToWaitingSessionTakesOverAssignment() throws Exception {
+        ChatSession session = new ChatSession(10L, 100L);
+        when(chatSessionRepository.findById(10L)).thenReturn(Optional.of(session));
+        when(chatMessageRepository.findBySessionAndClientMsgId(eq(10L), any())).thenReturn(Optional.empty());
+        when(idGen.next("MSG")).thenReturn("MSG-9");
+        when(wsSession.isOpen()).thenReturn(true);
+
+        handler().handleChatMessage(wsSession,
+                WsEnvelope.msg(10L, 0L, "{\"clientMsgId\":\"c-5\",\"content\":\"在的\"}"), null, 7L);
+
+        assertEquals(7L, session.getStaffId(), "客服回复未分配会话后应由该客服接管");
+        assertEquals(ChatSessionStatus.ACTIVE, session.getStatus(), "接管后会话应转为 ACTIVE");
+        verify(chatSessionRepository).save(session);
+        verify(broadcaster).broadcastToCustomer(eq(100L), any(WsEnvelope.class));
+        verify(notifier).sessionAssigned(100L, 10L, 7L);
+    }
+
+    /** 回归：接管后的会话里客户再发消息，必须直达该客服（MSG，而不是 QUEUE 广播）。 */
+    @Test
+    void customerMsgAfterTakeoverRoutesToAcceptingStaff() throws Exception {
+        ChatSession session = new ChatSession(10L, 100L);
+        when(chatSessionRepository.findById(10L)).thenReturn(Optional.of(session));
+        when(chatMessageRepository.findBySessionAndClientMsgId(eq(10L), any())).thenReturn(Optional.empty());
+        when(idGen.next("MSG")).thenReturn("MSG-9", "MSG-10");
+        when(wsSession.isOpen()).thenReturn(true);
+
+        // 1) 客服回复 → 接管为 ACTIVE/7
+        handler().handleChatMessage(wsSession,
+                WsEnvelope.msg(10L, 0L, "{\"clientMsgId\":\"c-5\",\"content\":\"在的\"}"), null, 7L);
+        // 2) 客户接着发消息 → 应直达 7
+        handler().handleChatMessage(wsSession,
+                WsEnvelope.msg(10L, 0L, "{\"clientMsgId\":\"c-6\",\"content\":\"我要印校徽\"}"), 100L, null);
+
+        verify(broadcaster).broadcast(eq(7L), any(WsEnvelope.class));
+        verify(broadcaster, never()).broadcastAll(any());
+    }
+
+    /**
+     * 回归：会话被释放回队列但库里还残留 staffId（历史脏数据）时，
+     * 客户消息必须按 WAITING 走 QUEUE 广播，而不是投给那个（可能已离线的）坐席。
+     */
+    @Test
+    void waitingSessionWithStaleStaffStillBroadcastsToQueue() throws Exception {
+        ChatSession session = ChatSession.rehydrate(10L, 100L, false,
+                ChatSessionStatus.WAITING, 7L, null, 0L, 0L, 4);
+        when(chatSessionRepository.findById(10L)).thenReturn(Optional.of(session));
+        when(chatMessageRepository.findBySessionAndClientMsgId(eq(10L), any())).thenReturn(Optional.empty());
+        when(idGen.next("MSG")).thenReturn("MSG-11");
+        when(wsSession.isOpen()).thenReturn(true);
+
+        handler().handleChatMessage(wsSession,
+                WsEnvelope.msg(10L, 0L, "{\"clientMsgId\":\"c-7\",\"content\":\"在吗\"}"), 100L, null);
+
+        verify(broadcaster).broadcastAll(any(WsEnvelope.class));
+        verify(broadcaster, never()).broadcast(anyLong(), any());
+    }
+
     @Test
     void customerConnectionRegistersToBroadcaster() throws Exception {
         when(wsSession.getUri()).thenReturn(new URI("ws://localhost/ws/chat?token=user-token"));
@@ -217,5 +284,59 @@ class ChatWebSocketHandlerTest {
         verify(broadcaster, never()).register(anyLong(), any());
         verify(broadcaster, never()).registerCustomer(anyLong(), any());
         verify(wsSession).close(any());
+    }
+
+    // ------------------------------------------------------------------
+    // 「正在输入」：TYPING 帧只在两端之间转发，绝不允许落库（不进 chat_message）
+    // ------------------------------------------------------------------
+
+    /** 客户打字 → 直达接待客服，且不产生任何消息记录。 */
+    @Test
+    void customerTypingRoutesToAssignedStaffWithoutPersisting() throws Exception {
+        ChatSession session = new ChatSession(10L, 100L, ChatSessionStatus.ACTIVE, 7L);
+        when(chatSessionRepository.findById(10L)).thenReturn(Optional.of(session));
+
+        handler().handleTyping(wsSession, WsEnvelope.typing(10L, "{\"typing\":true}"), 100L, null);
+
+        verify(broadcaster).broadcast(eq(7L), any(WsEnvelope.class));
+        verify(chatMessageRepository, never()).save(any());
+        verify(chatSessionRepository, never()).save(any());
+    }
+
+    /** 客服打字 → 直达会话所属客户。 */
+    @Test
+    void staffTypingRoutesToCustomerWithoutPersisting() throws Exception {
+        ChatSession session = new ChatSession(10L, 100L, ChatSessionStatus.ACTIVE, 7L);
+        when(chatSessionRepository.findById(10L)).thenReturn(Optional.of(session));
+
+        handler().handleTyping(wsSession, WsEnvelope.typing(10L, "{\"typing\":true}"), null, 7L);
+
+        verify(broadcaster).broadcastToCustomer(eq(100L), any(WsEnvelope.class));
+        verify(chatMessageRepository, never()).save(any());
+    }
+
+    /** 会话还没分配（排队中）时客户打字：走队列广播，让任一空闲坐席看到「客户在输入」。 */
+    @Test
+    void waitingCustomerTypingBroadcastsToQueue() throws Exception {
+        ChatSession session = new ChatSession(10L, 100L);
+        when(chatSessionRepository.findById(10L)).thenReturn(Optional.of(session));
+
+        handler().handleTyping(wsSession, WsEnvelope.typing(10L, "{\"typing\":true}"), 100L, null);
+
+        verify(broadcaster).broadcastAll(any(WsEnvelope.class));
+        verify(broadcaster, never()).broadcast(anyLong(), any());
+        verify(chatMessageRepository, never()).save(any());
+    }
+
+    /** 会话已结束/不存在：静默忽略，不回错误帧、不打扰任何一方。 */
+    @Test
+    void typingOnUnknownSessionIsIgnored() throws Exception {
+        when(chatSessionRepository.findById(404L)).thenReturn(Optional.empty());
+
+        handler().handleTyping(wsSession, WsEnvelope.typing(404L, "{\"typing\":true}"), 100L, null);
+
+        verify(broadcaster, never()).broadcast(anyLong(), any());
+        verify(broadcaster, never()).broadcastToCustomer(anyLong(), any());
+        verify(broadcaster, never()).broadcastAll(any());
     }
 }

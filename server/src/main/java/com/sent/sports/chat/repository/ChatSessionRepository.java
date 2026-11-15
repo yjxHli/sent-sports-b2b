@@ -35,4 +35,14 @@ public interface ChatSessionRepository {
 
     /** 当前进行中会话总数（用于并发上限判断）。 */
     int countActive();
+
+    /** 某客服当前进行中的会话数（在线状态上线时用它校准负载，避免进程重启后漂移）。 */
+    int countActiveByStaff(long staffId);
+
+    /**
+     * 排在指定会话之前的 WAITING 会话数（排队位置 = 返回值 + 1）。
+     * <p>口径：{@code status='WAITING'} 且创建时间更早（同一毫秒按主键先后）；
+     * 已分配的会话（ACTIVE）不参与排队计数。
+     */
+    int countWaitingBefore(long sessionId, long createdAtMillis);
 }

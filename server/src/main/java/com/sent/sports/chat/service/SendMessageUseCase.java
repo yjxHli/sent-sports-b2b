@@ -1,6 +1,7 @@
 package com.sent.sports.chat.service;
 
 import com.sent.sports.chat.domain.ChatMessage;
+import com.sent.sports.chat.domain.ChatMsgType;
 import com.sent.sports.chat.domain.ChatSession;
 import com.sent.sports.chat.domain.ChatSessionStatus;
 import com.sent.sports.chat.repository.ChatMessageRepository;
@@ -28,13 +29,16 @@ public class SendMessageUseCase {
     private final ChatMessageRepository messageRepository;
     private final IdGen idGen;
     private final Clock clock;
+    private final ChatNotifier notifier;
 
     public SendMessageUseCase(ChatSessionRepository sessionRepository,
-                              ChatMessageRepository messageRepository, IdGen idGen, Clock clock) {
+                              ChatMessageRepository messageRepository, IdGen idGen, Clock clock,
+                              ChatNotifier notifier) {
         this.sessionRepository = sessionRepository;
         this.messageRepository = messageRepository;
         this.idGen = idGen;
         this.clock = clock;
+        this.notifier = notifier;
     }
 
     @UseCase
@@ -57,9 +61,11 @@ public class SendMessageUseCase {
         session.touch(now);
         String messageId = idGen.next("CM");
         ChatMessage msg = new ChatMessage(messageId, cmd.sessionId(), cmd.senderType(), cmd.content(),
-                cmd.clientMsgId(), seq, now);
+                cmd.clientMsgId(), seq, now, ChatMsgType.of(cmd.msgType()));
         messageRepository.save(msg);
         sessionRepository.save(session);
+        // REST 兜底发送（用户端 WS 断开时走这条）也必须推送，否则客服端要刷新才看得到
+        notifier.messagePublished(session, msg);
         return new SendMessageResult(messageId, seq, cmd.sessionId());
     }
 }

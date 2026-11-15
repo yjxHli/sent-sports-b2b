@@ -64,6 +64,11 @@ public class CreateSessionUseCase {
         if (picked.isPresent() && underCap) {
             session = new ChatSession(sessionId, cmd.customerId(), cmd.vip(), ChatSessionStatus.ACTIVE,
                     picked.get().staffId(), now, now, 0);
+            // 分配成功即占用一个接待名额：负载不 +1 的话并发上限永远判不满，队伍会无限增长
+            presenceRepository.findByStaffId(picked.get().staffId()).ifPresent(presence -> {
+                presence.increaseActive();
+                presenceRepository.save(presence);
+            });
         } else {
             session = new ChatSession(sessionId, cmd.customerId(), cmd.vip(), ChatSessionStatus.WAITING,
                     null, now, now, 0);

@@ -4,7 +4,8 @@
  * 协议严格对齐 server/chat/ws/WsEnvelope.java 与 ChatWebSocketHandler：
  * - 握手 `/ws/chat?token=<accessToken>`；后端收口后同时接受 aud=admin（客服维度）与
  *   aud=user（客户维度），本端使用 admin 令牌；开发态由 vite 代理 /ws 转发。
- * - 报文 { type, sessionId, seq, payload, timestamp }，type ∈ MSG/ACK/READ/QUEUE。
+ * - 报文 { type, sessionId, seq, payload, timestamp }，type ∈ MSG/ACK/READ/QUEUE/ASSIGNED/TYPING。
+ * - TYPING 是「对方正在输入」提示：只转发不落库，页面上显示几秒后自动消失。
  * - 发送 MSG 时 payload 为 JSON 字符串 { clientMsgId, content }，clientMsgId 是后端
  *   `uk_msg_client` 幂等键；ACK 携带 ACCEPTED / DUPLICATE 或错误码。
  *
@@ -15,7 +16,7 @@ import { onUnmounted, ref, type Ref } from 'vue';
 import { getAccessToken } from '@/utils/auth';
 import { newIdempotencyKey } from '@/utils/idempotent';
 
-export type WsType = 'MSG' | 'ACK' | 'READ' | 'QUEUE';
+export type WsType = 'MSG' | 'ACK' | 'READ' | 'QUEUE' | 'ASSIGNED' | 'TYPING';
 
 export interface WsEnvelope {
   type: WsType;
@@ -31,6 +32,8 @@ export interface IncomingMessage {
   clientMsgId: string;
   content: string;
   senderType: string;
+  /** TEXT / IMAGE；IMAGE 时 content 是 fileId，页面拼 fileApi.url() 渲染 */
+  msgType?: string;
   self?: boolean;
 }
 
@@ -47,14 +50,18 @@ export interface ChatSocketOptions {
   onMessage: (message: IncomingMessage) => void;
   onAck: (ack: IncomingAck) => void;
   onConnected?: (onlineCount: number) => void;
+  /** 对方（客户）正在输入：page 侧起 3s 定时器自行淡出 */
+  onTyping?: (sessionId: number) => void;
 }
 
 export interface ChatSocket {
   connected: Ref<boolean>;
   connect: () => void;
   close: () => void;
-  /** 返回 clientMsgId；未连接时返回 null，调用方据此提示 */
-  send: (sessionId: number, content: string) => string | null;
+  /** 返回 clientMsgId；未连接时返回 null，调用方据此提示。IMAGE 时 content 传 fileId */
+  send: (sessionId: number, content: string, msgType?: string) => string | null;
+  /** 发送「我正在输入」提示；未连接时静默丢弃（弱语义，不重试） */
+  sendTyping: (sessionId: number) => void;
 }
 
 function socketUrl(): string {
@@ -95,11 +102,32 @@ export function useChatSocket(options: ChatSocketOptions): ChatSocket {
         clientMsgId: String(body.clientMsgId ?? ''),
         content: String(body.content ?? envelope.payload ?? ''),
         senderType: String(body.senderType ?? 'STAFF'),
+        msgType: String(body.msgType ?? 'TEXT'),
       });
       return;
     }
-    if (envelope.type === 'QUEUE' && body.event === 'CONNECTED') {
-      options.onConnected?.(Number(body.online ?? body.onlineCount ?? 0));
+    if (envelope.type === 'QUEUE') {
+      // CONNECTED 是握手回执：只用来点亮「已连接 + 在线数」
+      if (body.event === 'CONNECTED') {
+        options.onConnected?.(Number(body.online ?? body.onlineCount ?? 0));
+        return;
+      }
+      // 未分配（WAITING）会话的客户消息，后端以 QUEUE 广播（见 ChatWebSocketHandler）。
+      // 这里必须当普通消息投给页面——历史缺陷是「QUEUE 非 CONNECTED 一律 return」，
+      // 导致客户消息在客服端被整体丢弃，表现为「客服要刷新才看得到客户的新消息」。
+      if (!Number(envelope.sessionId)) return;
+      options.onMessage({
+        sessionId: Number(envelope.sessionId),
+        seq: Number(envelope.seq),
+        clientMsgId: String(body.clientMsgId ?? ''),
+        content: String(body.content ?? envelope.payload ?? ''),
+        senderType: String(body.senderType ?? 'CUSTOMER'),
+        msgType: String(body.msgType ?? 'TEXT'),
+      });
+      return;
+    }
+    if (envelope.type === 'TYPING') {
+      options.onTyping?.(Number(envelope.sessionId));
       return;
     }
     if (envelope.type === 'ACK') {
@@ -166,7 +194,7 @@ export function useChatSocket(options: ChatSocketOptions): ChatSocket {
     connected.value = false;
   }
 
-  function send(sessionId: number, content: string): string | null {
+  function send(sessionId: number, content: string, msgType = 'TEXT'): string | null {
     if (!socket || socket.readyState !== WebSocket.OPEN) return null;
     const clientMsgId = `ws_${newIdempotencyKey('chat')}`;
     localSeq += 1;
@@ -174,13 +202,26 @@ export function useChatSocket(options: ChatSocketOptions): ChatSocket {
       type: 'MSG',
       sessionId,
       seq: localSeq,
-      payload: JSON.stringify({ clientMsgId, content, senderType: 'STAFF' }),
+      payload: JSON.stringify({ clientMsgId, content, senderType: 'STAFF', msgType }),
       timestamp: Date.now(),
     };
     socket.send(JSON.stringify(envelope));
     return clientMsgId;
   }
 
+  function sendTyping(sessionId: number): void {
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    localSeq += 1;
+    const envelope: WsEnvelope = {
+      type: 'TYPING',
+      sessionId,
+      seq: localSeq,
+      payload: JSON.stringify({ typing: true, senderType: 'STAFF' }),
+      timestamp: Date.now(),
+    };
+    socket.send(JSON.stringify(envelope));
+  }
+
   onUnmounted(close);
-  return { connected, connect, close, send };
+  return { connected, connect, close, send, sendTyping };
 }

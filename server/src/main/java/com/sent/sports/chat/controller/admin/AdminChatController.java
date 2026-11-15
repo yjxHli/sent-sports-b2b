@@ -9,8 +9,10 @@ import com.sent.sports.chat.service.dto.AssignCmd;
 import com.sent.sports.chat.service.dto.AssignSessionResult;
 import com.sent.sports.chat.service.dto.CloseCmd;
 import com.sent.sports.chat.service.dto.CloseSessionResult;
+import com.sent.sports.chat.service.dto.OpenSessionsResult;
 import com.sent.sports.chat.service.dto.SetPresenceCmd;
 import com.sent.sports.chat.service.dto.PresenceResult;
+import com.sent.sports.chat.service.dto.TodayStatsResult;
 import com.sent.sports.chat.service.dto.TransferCmd;
 import com.sent.sports.common.anno.RequirePerm;
 import com.sent.sports.common.web.PageQuery;
@@ -23,6 +25,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -58,9 +61,27 @@ public class AdminChatController {
         return R.ok(chatAdminQueryService.sessions(page));
     }
 
+    /**
+     * 工作台左侧两栏：该客服进行中 + 全员排队中（带排队位置）。
+     * <p>不做分页：进行中上限就是并发上限（3），排队栏由服务端限长。
+     */
+    @GetMapping("/sessions/open")
+    public R<OpenSessionsResult> openSessions(@RequestParam long staffId) {
+        return R.ok(chatAdminQueryService.openSessions(staffId));
+    }
+
     @GetMapping("/workload")
     public R<java.util.List<?>> workload() {
         return R.ok(chatAdminQueryService.workload());
+    }
+
+    /**
+     * 今日完成接待数（工作台顶栏右侧常驻，跨零点自动归零）。
+     * <p>口径：该客服今天结束（CLOSED）的会话数，按本地自然日 half-open 区间统计。
+     */
+    @GetMapping("/stats/today")
+    public R<TodayStatsResult> todayStats(@RequestParam long staffId) {
+        return R.ok(chatAdminQueryService.todayStats(staffId));
     }
 
     @PostMapping("/presence")
@@ -94,6 +115,6 @@ public class AdminChatController {
     public R<AdminChatDtos.CloseVO> close(@PathVariable long id,
                                           @Valid @RequestBody AdminChatDtos.CloseCmd cmd) {
         CloseSessionResult r = closeSessionUseCase.close(new CloseCmd(id, cmd.reason(), OPERATOR_PLACEHOLDER));
-        return R.ok(new AdminChatDtos.CloseVO(r.sessionId(), r.status().name()));
+        return R.ok(new AdminChatDtos.CloseVO(r.sessionId(), r.status().name(), r.promotedSessionId()));
     }
 }

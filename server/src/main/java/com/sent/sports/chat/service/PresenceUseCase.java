@@ -22,7 +22,8 @@ import org.springframework.stereotype.Service;
 @Service
 public class PresenceUseCase {
 
-    static final int DEFAULT_MAX_SESSIONS = 50;
+    /** 单客服默认并发接待上限：与工作台同时最多打开 3 个会话 Tab 对齐。 */
+    static final int DEFAULT_MAX_SESSIONS = 3;
 
     private final AgentPresenceRepository presenceRepository;
     private final ChatSessionRepository sessionRepository;
@@ -52,6 +53,11 @@ public class PresenceUseCase {
                 sessionRepository.save(session);
                 released++;
             }
+            // 全部释放回队列，名额归零
+            presence.resetActive(0);
+        } else {
+            // 上线/忙碌：负载以库里真实 ACTIVE 会话数为准，避免进程重启或异常退出后负载漂移
+            presence.resetActive(sessionRepository.countActiveByStaff(cmd.staffId()));
         }
         presenceRepository.save(presence);
         return new PresenceResult(cmd.staffId(), cmd.presence(), released);

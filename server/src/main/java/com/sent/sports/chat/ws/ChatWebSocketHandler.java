@@ -4,10 +4,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sent.sports.auth.token.TokenService;
 import com.sent.sports.chat.domain.ChatMessage;
+import com.sent.sports.chat.domain.ChatMsgType;
 import com.sent.sports.chat.domain.ChatSession;
+import com.sent.sports.chat.domain.ChatSessionStatus;
 import com.sent.sports.chat.domain.SenderType;
 import com.sent.sports.chat.repository.ChatMessageRepository;
 import com.sent.sports.chat.repository.ChatSessionRepository;
+import com.sent.sports.chat.service.ChatNotifier;
 import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
 import com.sent.sports.common.util.IdGen;
@@ -54,6 +57,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     private final Map<String, Long> customerBySession = new ConcurrentHashMap<>();
 
     private final SessionBroadcaster broadcaster;
+    private final ChatNotifier notifier;
     private final TokenService tokenService;
     private final ObjectMapper objectMapper;
     private final ChatSessionRepository chatSessionRepository;
@@ -61,10 +65,12 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     private final IdGen idGen;
     private final Clock clock;
 
-    public ChatWebSocketHandler(SessionBroadcaster broadcaster, TokenService tokenService,
-                                ObjectMapper objectMapper, ChatSessionRepository chatSessionRepository,
+    public ChatWebSocketHandler(SessionBroadcaster broadcaster, ChatNotifier notifier,
+                                TokenService tokenService, ObjectMapper objectMapper,
+                                ChatSessionRepository chatSessionRepository,
                                 ChatMessageRepository chatMessageRepository, IdGen idGen, Clock clock) {
         this.broadcaster = broadcaster;
+        this.notifier = notifier;
         this.tokenService = tokenService;
         this.objectMapper = objectMapper;
         this.chatSessionRepository = chatSessionRepository;
@@ -125,9 +131,41 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         }
         if (WsEnvelope.MSG.equals(envelope.type())) {
             handleChatMessage(session, envelope, customerId, staffId);
+        } else if (WsEnvelope.TYPING.equals(envelope.type())) {
+            // 「正在输入」只转发不落库：客户上行 → 接待客服；客服上行 → 会话所属客户
+            handleTyping(session, envelope, customerId, staffId);
         } else {
             // ACK / READ / QUEUE 一律直接回显给发送方
             reply(session, envelope);
+        }
+    }
+
+    /**
+     * TYPING：把「对方正在输入」提示转发给对方，不写库、不分配序号。
+     * <p>路由口径与 MSG 对齐——客户上行且会话已分配才直投接待客服，
+     * 否则走队列广播（让空闲坐席看到排队客户正在打字）；客服上行直达会话所属客户。
+     * 会话不存在（已删/坏报文）时静默忽略：输入提示属于弱语义，不值得回错误帧打扰用户。
+     */
+    void handleTyping(WebSocketSession session, WsEnvelope envelope, Long customerId, Long staffId) {
+        long sessionId = envelope.sessionId();
+        Optional<ChatSession> found = chatSessionRepository.findById(sessionId);
+        if (found.isEmpty()) {
+            return;
+        }
+        ChatSession chatSession = found.get();
+        String payload = envelope.payload() == null ? "{}" : envelope.payload();
+        WsEnvelope outbound = WsEnvelope.typing(sessionId, payload);
+        if (customerId != null) {
+            Long assignedStaffId = chatSession.getStaffId();
+            if (chatSession.getStatus() == ChatSessionStatus.ACTIVE && assignedStaffId != null) {
+                broadcaster.broadcast(assignedStaffId, outbound);
+            } else {
+                broadcaster.broadcastAll(outbound);
+            }
+            return;
+        }
+        if (staffId != null) {
+            broadcaster.broadcastToCustomer(chatSession.getCustomerId(), outbound);
         }
     }
 
@@ -155,6 +193,8 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         String defaultClientId = "ws:" + senderId + ":" + sessionId + ":" + envelope.seq();
         String clientMsgId = textOrDefault(body, "clientMsgId", defaultClientId);
         String content = textOrDefault(body, "content", rawPayload);
+        // 图片消息：content 是文件服务返回的 fileId，落库时 msg_type=IMAGE，渲染由前端拼 /api/files/{fileId}
+        String msgType = textOrDefault(body, "msgType", "TEXT");
 
         if (chatMessageRepository.findBySessionAndClientMsgId(sessionId, clientMsgId).isPresent()) {
             reply(session, WsEnvelope.ack(sessionId, envelope.seq(),
@@ -165,13 +205,24 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
             int seq = chatSession.appendMessage();
             long now = clock.instant().toEpochMilli();
             chatSession.touch(now);
+            // 客服直接回复「未分配」会话时自动接管（谁回复谁接待）。
+            // 不接管的话会话会一直停在 WAITING / staffId=null，客户后续每条消息都走
+            // broadcastAll(QUEUE)，客服端收不到——表现为「客户发的消息客服要刷新才看得到」。
+            // 会话状态不是 WAITING（已分配 / 已结束）时 assign 抛 STATE_CONFLICT，忽略即可：
+            // 已分配走原有接待人路由，已结束仍按既有语义落库并由 appendMessage 拦截。
+            if (!fromCustomer && takeOverIfUnassigned(chatSession, senderId)) {
+                // 首次回复即接管：通知客户「已接入」，用户端排队提示随之消失
+                notifier.sessionAssigned(chatSession.getCustomerId(), sessionId, senderId);
+            }
             chatSessionRepository.save(chatSession);
             chatMessageRepository.save(new ChatMessage(idGen.next("MSG"), sessionId, senderType,
-                    content, clientMsgId, seq, now));
+                    content, clientMsgId, seq, now, ChatMsgType.of(msgType)));
             WsEnvelope outbound = WsEnvelope.msg(sessionId, seq, rawPayload);
             if (fromCustomer) {
                 Long assignedStaffId = chatSession.getStaffId();
-                if (assignedStaffId != null) {
+                // 只有「ACTIVE 且已分配」才直投接待客服；WAITING（含释放回队列但库里残留
+                // staff_id 的脏数据）一律排队广播，否则消息会投给已离线的坐席而无人收到。
+                if (chatSession.getStatus() == ChatSessionStatus.ACTIVE && assignedStaffId != null) {
                     broadcaster.broadcast(assignedStaffId, outbound);
                 } else {
                     broadcaster.broadcastAll(WsEnvelope.queue(sessionId, seq, rawPayload));
@@ -197,9 +248,28 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
+    /**
+     * 未分配会话被客服回复时，把会话接管给该客服（WAITING → ACTIVE, staffId = sender）。
+     * <p>已分配（ACTIVE）/ 已结束（CLOSED）时 {@link ChatSession#assign(long)} 抛
+     * STATE_CONFLICT，此处吞掉：不改变既有接待人与既有语义，只是不做接管。
+     *
+     * @return 是否真的完成了接管（调用方据此决定是否下发「已接入客服」通知）
+     */
+    private boolean takeOverIfUnassigned(ChatSession chatSession, long staffId) {
+        if (chatSession.getStaffId() != null || staffId <= 0) {
+            return false;
+        }
+        try {
+            chatSession.assign(staffId);
+            return true;
+        } catch (BizException ignored) {
+            // 非 WAITING（已结束）无需接管
+            return false;
+        }
+    }
+
     @Override
-    public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
-        Long staffId = staffBySession.remove(session.getId());
+    public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {        Long staffId = staffBySession.remove(session.getId());
         if (staffId != null) {
             broadcaster.unregister(staffId, session);
         }

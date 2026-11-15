@@ -11,10 +11,20 @@ export interface SessionVO {
   reused: boolean;
 }
 
+/** 排队状态：status=WAITING 时 position 为排队位置（1 开始），已接入为 0。 */
+export interface QueueVO {
+  sessionId: number;
+  status: string;
+  position: number;
+  staffId?: number | null;
+}
+
 export interface MessageVO {
   messageId: string;
   sessionId: number;
   senderType: string;
+  /** TEXT / IMAGE；IMAGE 时 content 是 fileId */
+  msgType?: string | null;
   content: string;
   clientMsgId?: string | null;
   seq: number;
@@ -24,10 +34,15 @@ export interface MessageVO {
 export const chatApi = {
   createSession: (customerId: number, vip: boolean) =>
     http.post<SessionVO>('/chat/sessions', { customerId, vip }),
-  sendMessage: (sessionId: number, cmd: { senderType: string; content: string; clientMsgId: string }) =>
-    http.post<MessageVO>(`/chat/sessions/${sessionId}/messages`, cmd),
+  sendMessage: (
+    sessionId: number,
+    cmd: { senderType: string; content: string; clientMsgId: string; msgType?: string },
+  ) => http.post<MessageVO>(`/chat/sessions/${sessionId}/messages`, cmd),
   history: (sessionId: number, afterSeq = 0) =>
     http.get<MessageVO[]>(`/chat/sessions/${sessionId}/messages`, { afterSeq }),
   reportRead: (sessionId: number, seq: number) =>
     http.post<void>(`/chat/sessions/${sessionId}/read`, { seq }),
+  /** 排队位置（WAITING 时轮询）：前方人数 +1，已接入返回 position=0 */
+  queue: (sessionId: number) =>
+    http.get<QueueVO>(`/chat/sessions/${sessionId}/queue`),
 };

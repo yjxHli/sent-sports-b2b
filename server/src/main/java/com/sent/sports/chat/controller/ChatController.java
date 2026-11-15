@@ -59,14 +59,22 @@ public class ChatController {
     public R<ChatDtos.MessageVO> sendMessage(@PathVariable long sessionId,
                                             @Valid @RequestBody ChatDtos.SendCmd cmd) {
         SendMessageResult r = sendMessageUseCase.send(new SendMessageCmd(
-                sessionId, cmd.senderType(), cmd.content(), cmd.clientMsgId(), CURRENT_USER_PLACEHOLDER));
-        return R.ok(new ChatDtos.MessageVO(r.messageId(), r.sessionId(), null, null, null, r.seq(), 0L));
+                sessionId, cmd.senderType(), cmd.content(), cmd.clientMsgId(), CURRENT_USER_PLACEHOLDER,
+                cmd.msgType()));
+        return R.ok(new ChatDtos.MessageVO(r.messageId(), r.sessionId(), cmd.senderType().name(),
+                cmd.msgType() == null ? "TEXT" : cmd.msgType(), cmd.content(), cmd.clientMsgId(), r.seq(), 0L));
     }
 
     @GetMapping("/sessions/{sessionId}/messages")
     public R<List<ChatDtos.MessageVO>> history(@PathVariable long sessionId,
                                                @RequestParam(defaultValue = "0") int afterSeq) {
         return R.ok(chatQueryService.history(sessionId, afterSeq));
+    }
+
+    /** 排队状态（用户端轮询）：WAITING 时返回前方人数 +1 的位置，已接入返回 position=0。 */
+    @GetMapping("/sessions/{sessionId}/queue")
+    public R<ChatDtos.QueueVO> queue(@PathVariable long sessionId) {
+        return R.ok(chatQueryService.queue(sessionId));
     }
 
     @PostMapping("/sessions/{sessionId}/read")

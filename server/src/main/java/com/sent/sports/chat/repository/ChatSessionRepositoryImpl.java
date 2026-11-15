@@ -53,6 +53,16 @@ public class ChatSessionRepositoryImpl implements ChatSessionRepository {
         if (chatSessionMapper.updateById(po) == 0) {
             throw new BizException(ErrorCode.NOT_FOUND, "会话不存在，请先通过 nextId 分配主键");
         }
+        // updateById 跳过 null 字段：释放回队列（staffId=null）时必须显式清空，
+        // 否则 WAITING 会话仍挂着旧接待客服，客户消息会被误投给已离线的坐席。
+        if (session.getStaffId() == null) {
+            chatSessionMapper.clearStaffId(session.getId());
+        }
+        // 结束打点：域对象没有 ended_at 字段，toPO 不会写；不补这一下工作台的
+        // 「今日完成接待数」按 ended_at 统计永远是 0。
+        if (session.getStatus() == ChatSessionStatus.CLOSED) {
+            chatSessionMapper.markEnded(session.getId());
+        }
     }
 
     @Override
@@ -84,6 +94,16 @@ public class ChatSessionRepositoryImpl implements ChatSessionRepository {
     @Override
     public int countActive() {
         return chatSessionMapper.countActive();
+    }
+
+    @Override
+    public int countActiveByStaff(long staffId) {
+        return chatSessionMapper.countActiveByStaff(staffId);
+    }
+
+    @Override
+    public int countWaitingBefore(long sessionId, long createdAtMillis) {
+        return chatSessionMapper.countWaitingBefore(sessionId, fromMillis(createdAtMillis));
     }
 
     private List<ChatSession> toDomainList(List<ChatSessionPO> pos) {

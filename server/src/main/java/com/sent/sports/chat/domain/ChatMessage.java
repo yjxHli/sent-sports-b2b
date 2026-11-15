@@ -13,9 +13,17 @@ public class ChatMessage {
     private final String clientMsgId;
     private final int seq;
     private final long createdAtMillis;
+    /** TEXT / IMAGE；IMAGE 时 content 为 fileId。 */
+    private final ChatMsgType msgType;
 
+    /** 兼容旧调用：默认 TEXT。 */
     public ChatMessage(String messageId, long sessionId, SenderType senderType, String content,
                        String clientMsgId, int seq, long createdAtMillis) {
+        this(messageId, sessionId, senderType, content, clientMsgId, seq, createdAtMillis, ChatMsgType.TEXT);
+    }
+
+    public ChatMessage(String messageId, long sessionId, SenderType senderType, String content,
+                       String clientMsgId, int seq, long createdAtMillis, ChatMsgType msgType) {
         this.messageId = messageId;
         this.sessionId = sessionId;
         this.senderType = senderType;
@@ -23,6 +31,11 @@ public class ChatMessage {
         this.clientMsgId = clientMsgId;
         this.seq = seq;
         this.createdAtMillis = createdAtMillis;
+        this.msgType = msgType == null ? ChatMsgType.TEXT : msgType;
+    }
+
+    public ChatMsgType getMsgType() {
+        return msgType;
     }
 
     public String getMessageId() {
