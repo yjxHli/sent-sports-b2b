@@ -33,7 +33,9 @@
           </el-popconfirm>
         </template>
       </SentTable>
-      <p class="sent-hint">强制全端下线端点后端 P4 待补；操作前需输入确认短语换取一次性令牌。</p>
+      <p class="sent-hint">
+        新增员工初始口令为 123456，请提醒本人首次登录后修改；强制全端下线端点后端 P4 待补。
+      </p>
     </div>
 
     <el-dialog v-model="formVisible" :title="editing ? '编辑员工' : '新增员工'" width="440px">
@@ -44,8 +46,25 @@
         <el-form-item label="姓名">
           <el-input v-model="staffForm.name" placeholder="必填" />
         </el-form-item>
-        <el-form-item label="角色编码">
-          <el-input v-model="staffForm.roleCode" placeholder="如 ADMIN / FINANCE" />
+        <el-form-item label="手机号">
+          <el-input v-model="staffForm.phone" placeholder="必填，登录与找回凭据" />
+        </el-form-item>
+        <el-form-item label="角色">
+          <el-select
+            v-model="staffForm.roleCode"
+            filterable
+            allow-create
+            default-first-option
+            placeholder="选择角色，留空默认 SALES"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="opt in roleOptions"
+              :key="opt.value"
+              :label="opt.label"
+              :value="opt.value"
+            />
+          </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -73,9 +92,10 @@ const router = useRouter();
 const columns: TableColumn[] = [
   { prop: 'staffId', label: '员工 ID', width: 130 },
   { prop: 'username', label: '登录名', minWidth: 150 },
-  { prop: 'name', label: '姓名', minWidth: 150 },
-  { prop: 'roleCode', label: '角色', width: 150 },
-  { prop: 'enabled', label: '状态', width: 120, align: 'center' },
+  { prop: 'name', label: '姓名', minWidth: 120 },
+  { prop: 'phone', label: '手机号', width: 140 },
+  { prop: 'roleCode', label: '角色', width: 180 },
+  { prop: 'enabled', label: '状态', width: 110, align: 'center' },
 ];
 
 const rows = ref<any[]>([]);
@@ -83,11 +103,13 @@ const total = ref(0);
 const { page, size } = usePagination();
 const loading = ref(false);
 const submitting = ref(false);
+/** 角色下拉：编码与中文名同源 sys_role，避免运营手敲出库里不存在的角色编码 */
+const roleOptions = ref<{ value: string; label: string }[]>([]);
 
 const formVisible = ref(false);
 const editing = ref<number | null>(null);
-const staffForm = reactive<{ username: string; name: string; roleCode: string }>({
-  username: '', name: '', roleCode: '',
+const staffForm = reactive<{ username: string; name: string; phone: string; roleCode: string }>({
+  username: '', name: '', phone: '', roleCode: '',
 });
 
 async function load(): Promise<void> {
@@ -95,7 +117,7 @@ async function load(): Promise<void> {
   try {
     const data = await unwrap(systemApi.staffList({ page: page.value, size: size.value }));
     rows.value = data?.list ?? [];
-    total.value = data?.total ?? 0;
+    total.value = Number(data?.total ?? 0);
   } catch (error) {
     rows.value = [];
     total.value = 0;
@@ -105,11 +127,25 @@ async function load(): Promise<void> {
   }
 }
 
+async function loadRoles(): Promise<void> {
+  try {
+    const list = await unwrap(systemApi.roles());
+    roleOptions.value = (list ?? []).map((role) => ({
+      value: String(role.roleCode),
+      label: `${role.roleCode} · ${role.roleName}`,
+    }));
+  } catch {
+    roleOptions.value = [];
+  }
+}
+
 function openCreate(): void {
   editing.value = null;
   staffForm.username = '';
   staffForm.name = '';
+  staffForm.phone = '';
   staffForm.roleCode = '';
+  void loadRoles();
   formVisible.value = true;
 }
 
@@ -117,7 +153,9 @@ function openEdit(row: any): void {
   editing.value = Number(row.staffId);
   staffForm.username = String(row.username ?? '');
   staffForm.name = String(row.name ?? '');
+  staffForm.phone = String(row.phone ?? '');
   staffForm.roleCode = String(row.roleCode ?? '');
+  void loadRoles();
   formVisible.value = true;
 }
 
@@ -126,9 +164,14 @@ async function submitForm(): Promise<void> {
     ElMessage.warning('请填写登录名与姓名');
     return;
   }
+  if (!staffForm.phone.trim()) {
+    ElMessage.warning('请填写手机号（登录与找回凭据，不能为空）');
+    return;
+  }
   const payload = {
     username: staffForm.username.trim(),
     name: staffForm.name.trim(),
+    phone: staffForm.phone.trim(),
     roleCode: staffForm.roleCode.trim() || undefined,
   };
   submitting.value = true;

@@ -43,8 +43,9 @@ class AdminSystemApiTest extends BaseApiTest {
     @DisplayName("新增员工返回 200")
     void createStaffReturns200() throws Exception {
         when(systemService.createStaff(any())).thenReturn(
-                new AdminSystemDtos.StaffVO(1L, "zhang", "张三", "SALES"));
-        Map<String, Object> body = Map.of("username", "zhang", "name", "张三", "roleCode", "SALES");
+                new AdminSystemDtos.StaffVO(1L, "zhang", "张三", "SALES", "13800009999", true));
+        Map<String, Object> body = Map.of("username", "zhang", "name", "张三",
+                "phone", "13800009999", "roleCode", "SALES");
         mvc.perform(post("/api/admin/staff").contentType(MediaType.APPLICATION_JSON).content(toJson(body)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))

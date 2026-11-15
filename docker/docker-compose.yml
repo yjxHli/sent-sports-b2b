@@ -37,7 +37,8 @@ services:
 
   server:
     build:
-      context: ./server
+      # 注意：context 相对本文件所在目录（docker/），Dockerfile 在仓库根 server/ 下
+      context: ../server
       dockerfile: Dockerfile
     container_name: sent-server
     environment:

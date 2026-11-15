@@ -53,7 +53,7 @@ class DbRefundRepositoryTest {
         repo.save(o);
 
         verify(mapper).insert(any(RefundOrderPO.class));
-        verify(mapper, never()).updateRefundState(anyString(), anyString(), anyInt(), isNull());
+        verify(mapper, never()).updateRefundState(anyString(), anyString(), anyInt(), isNull(), any());
     }
 
     @Test
@@ -68,8 +68,23 @@ class DbRefundRepositoryTest {
         o.setAppealCount(1);
         repo.save(o);
 
-        verify(mapper).updateRefundState(eq("RF1"), eq("REFUNDING"), eq(1), isNull());
+        verify(mapper).updateRefundState(eq("RF1"), eq("REFUNDING"), eq(1), isNull(), isNull());
         verify(mapper, never()).insert(any(RefundOrderPO.class));
+    }
+
+    @Test
+    @DisplayName("save 已存在单：驳回原因随 UPDATE 写入 audit_remark（不覆盖为空）")
+    void savePassesAuditRemarkOnReject() {
+        RefundOrderPO existing = new RefundOrderPO();
+        existing.setRefundNo("RF1");
+        when(mapper.selectByRefundNo("RF1")).thenReturn(existing);
+
+        RefundOrder o = new RefundOrder("RF1", "SO1", 11L, 5000L, "REFUND", "质量原因",
+                RefundStatus.CLOSED, 0L);
+        o.setAuditRemark("凭证不足");
+        repo.save(o);
+
+        verify(mapper).updateRefundState(eq("RF1"), eq("CLOSED"), eq(0), isNull(), eq("凭证不足"));
     }
 
     @Test

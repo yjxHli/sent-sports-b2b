@@ -17,7 +17,7 @@ public interface MemberOverviewMapper {
 
     /** 客户快照：不存在或已软删时返回 null。 */
     @Select("SELECT c.id AS customer_id, c.nickname, c.phone, c.type, c.level_code, "
-            + "c.growth_value, c.points_balance, "
+            + "c.level_valid_to, c.growth_value, c.points_balance, "
             + "e.credit_limit_cent, e.credit_used_cent, e.status AS enterprise_status "
             + "FROM customer c LEFT JOIN enterprise_profile e ON e.customer_id = c.id "
             + "WHERE c.id = #{customerId} AND c.deleted = 0")

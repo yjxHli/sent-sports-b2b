@@ -13,6 +13,8 @@ public class RefundAuditItemPO {
     private String status;
     private Long amountCent;
     private String reason;
+    /** 用户申请时上传的凭证图片（JSON 数组原文），由查询层解码成 fileId 列表后再出参。 */
+    private String imagesJson;
     private LocalDateTime createdAt;
 
     public String getRefundNo() {
@@ -53,6 +55,14 @@ public class RefundAuditItemPO {
 
     public void setReason(String reason) {
         this.reason = reason;
+    }
+
+    public String getImagesJson() {
+        return imagesJson;
+    }
+
+    public void setImagesJson(String imagesJson) {
+        this.imagesJson = imagesJson;
     }
 
     public LocalDateTime getCreatedAt() {

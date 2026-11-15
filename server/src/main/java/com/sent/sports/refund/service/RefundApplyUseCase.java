@@ -80,6 +80,7 @@ public class RefundApplyUseCase {
         String refundNo = idGen.next("RF");
         RefundOrder ro = new RefundOrder(refundNo, cmd.orderNo(), view.orderId(), totalRequested, "REFUND",
                 cmd.reason(), RefundStatus.PENDING, clock.instant().toEpochMilli());
+        ro.setImages(cmd.images());
         refundRepository.save(ro);
         return new RefundApplyResult(refundNo, cmd.orderNo(), ro.getStatus().name(), totalRequested);
     }

@@ -3,9 +3,11 @@ package com.sent.sports.refund.mapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.sent.sports.refund.mapper.po.RefundAuditDetailPO;
 import com.sent.sports.refund.mapper.po.RefundAuditItemPO;
 import com.sent.sports.refund.mapper.po.RefundDetailPO;
 import com.sent.sports.refund.mapper.po.RefundListPO;
+import com.sent.sports.refund.mapper.po.RefundOrderLinePO;
 import com.sent.sports.refund.mapper.po.RefundOrderPO;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
@@ -61,21 +63,32 @@ public interface RefundOrderMapper extends BaseMapper<RefundOrderPO> {
 
     /**
      * 管理端退款审核列表（收口阶段）：左联 orders 取订单号，状态为空时返回全部。
+     * <p>关键字同时匹配退款单号与订单号：客服拿到的往往只有其中一种号，
+     * 让他们先判断「这是哪个号」再选输入框没有意义。</p>
      * 由 MyBatis-Plus {@link Page} 追加 LIMIT/OFFSET，总数另由 {@link #countAudit} 统计。
      */
     @Select("SELECT r.refund_no AS refundNo, o.order_no AS orderNo, r.status AS status, "
             + "r.amount_cent AS amountCent, "
-            + "COALESCE(r.audit_remark, r.remark, r.reason_code) AS reason, r.created_at AS createdAt "
+            + "COALESCE(r.audit_remark, r.remark, r.reason_code) AS reason, "
+            + "r.images_json AS imagesJson, r.created_at AS createdAt "
             + "FROM refund_order r LEFT JOIN orders o ON o.id = r.order_id "
             + "WHERE (#{status} IS NULL OR #{status} = '' OR r.status = #{status}) "
+            + "AND (#{keyword} IS NULL OR #{keyword} = '' "
+            + "     OR r.refund_no LIKE CONCAT('%', #{keyword}, '%') "
+            + "     OR o.order_no LIKE CONCAT('%', #{keyword}, '%')) "
             + "ORDER BY r.created_at DESC, r.id DESC")
     IPage<RefundAuditItemPO> selectAuditPage(Page<RefundAuditItemPO> page,
-                                             @Param("status") String status);
+                                             @Param("status") String status,
+                                             @Param("keyword") String keyword);
 
-    /** 管理端退款审核列表总数（与 selectAuditPage 同一过滤条件）。 */
+    /** 管理端退款审核列表总数（与 selectAuditPage 同一过滤条件，含关键字联查）。 */
     @Select("SELECT COUNT(*) FROM refund_order r "
-            + "WHERE (#{status} IS NULL OR #{status} = '' OR r.status = #{status})")
-    long countAudit(@Param("status") String status);
+            + "LEFT JOIN orders o ON o.id = r.order_id "
+            + "WHERE (#{status} IS NULL OR #{status} = '' OR r.status = #{status}) "
+            + "AND (#{keyword} IS NULL OR #{keyword} = '' "
+            + "     OR r.refund_no LIKE CONCAT('%', #{keyword}, '%') "
+            + "     OR o.order_no LIKE CONCAT('%', #{keyword}, '%'))")
+    long countAudit(@Param("status") String status, @Param("keyword") String keyword);
 
     /** 条件迁移：返回 0 行表示状态已被并发推进。 */
     @Update("UPDATE refund_order SET status = #{to} WHERE refund_no = #{refundNo} AND status = #{from}")
@@ -96,7 +109,15 @@ public interface RefundOrderMapper extends BaseMapper<RefundOrderPO> {
      * status 为空时返回全部。由 MyBatis-Plus {@link Page} 追加 LIMIT/OFFSET。
      */
     @Select("SELECT r.refund_no AS refundNo, o.order_no AS orderNo, r.status AS status, "
-            + "r.amount_cent AS amountCent, r.created_at AS createdAt "
+            + "r.amount_cent AS amountCent, r.created_at AS createdAt, "
+            + "COALESCE(r.audit_remark, r.remark, r.reason_code) AS reason, "
+            // 商品名优先取下单快照；历史演示单的 spu_title_snap 为空，回退到商品当前标题
+            + "(SELECT COALESCE(NULLIF(oi.spu_title_snap, ''), p.title) FROM order_item oi "
+            + " LEFT JOIN sku s ON s.id = oi.sku_id LEFT JOIN product p ON p.id = s.spu_id "
+            + " WHERE oi.order_id = r.order_id ORDER BY oi.id LIMIT 1) AS itemName, "
+            + "(SELECT COALESCE(SUM(oi.qty), 0) FROM order_item oi WHERE oi.order_id = r.order_id) AS itemQty, "
+            + "(SELECT s.spu_id FROM order_item oi JOIN sku s ON s.id = oi.sku_id "
+            + " WHERE oi.order_id = r.order_id ORDER BY oi.id LIMIT 1) AS productId "
             + "FROM refund_order r LEFT JOIN orders o ON o.id = r.order_id "
             + "WHERE o.customer_id = #{customerId} "
             + "AND (#{status} IS NULL OR #{status} = '' OR r.status = #{status}) "
@@ -111,6 +132,11 @@ public interface RefundOrderMapper extends BaseMapper<RefundOrderPO> {
             + "AND (#{status} IS NULL OR #{status} = '' OR r.status = #{status})")
     long countMy(@Param("customerId") long customerId, @Param("status") String status);
 
+    /** 在途售后单数（待审核 + 退款中）：个人中心角标只关心「还没结案」的那几笔。 */
+    @Select("SELECT COUNT(*) FROM refund_order r LEFT JOIN orders o ON o.id = r.order_id "
+            + "WHERE o.customer_id = #{customerId} AND r.status IN ('PENDING', 'REFUNDING')")
+    long countMyInFlight(@Param("customerId") long customerId);
+
     /**
      * 用户端售后详情投影：联查订单号与归属客户，供控制器做归属隔离（非本人 → NOT_FOUND）。
      * reason 优先取自由文本 remark，回退到结构化 reason_code。
@@ -119,20 +145,74 @@ public interface RefundOrderMapper extends BaseMapper<RefundOrderPO> {
             + "r.amount_cent AS amountCent, r.type AS type, "
             + "COALESCE(r.remark, r.reason_code) AS reason, "
             + "r.applicant_type AS applicantType, r.appeal_count AS appealCount, "
+            + "r.images_json AS imagesJson, "
             + "o.customer_id AS customerId, r.created_at AS createdAt, r.refunded_at AS refundedAt "
             + "FROM refund_order r LEFT JOIN orders o ON o.id = r.order_id "
             + "WHERE r.refund_no = #{refundNo}")
     RefundDetailPO selectDetailByRefundNo(@Param("refundNo") String refundNo);
 
     /**
+     * 管理端退款审核详情（单笔联查）：退款单 + 订单头 + 客户 + 最近一条物流。
+     * <p>审核员在一屏内判断该不该退，所以「谁买的、给了多少钱、发没发货、发货单号」
+     * 必须跟退款单一起到位；全部用 LEFT JOIN，订单/客户被软删也不会让详情整页 404。</p>
+     * <p>{@code reason} 与列表同口径（audit_remark → remark → reason_code 依次回退），
+     * 保证列表与详情显示的是同一句话；{@code audit_remark} 单独出一列供详情页展示审核结论。</p>
+     */
+    @Select("SELECT r.refund_no AS refundNo, o.order_no AS orderNo, r.status AS status, "
+            + "r.amount_cent AS amountCent, r.point_refund AS pointRefund, r.type AS type, "
+            + "COALESCE(r.remark, r.reason_code) AS reason, r.applicant_type AS applicantType, "
+            + "r.appeal_count AS appealCount, r.images_json AS imagesJson, "
+            + "r.audit_remark AS auditRemark, r.order_item_id AS orderItemId, "
+            + "r.created_at AS createdAt, r.refunded_at AS refundedAt, "
+            + "o.id AS orderId, o.status AS orderStatus, o.pay_status AS payStatus, "
+            + "o.after_sale_status AS afterSaleStatus, "
+            + "o.goods_amount_cent AS goodsAmountCent, o.freight_cent AS freightCent, "
+            + "o.point_deduct_cent AS pointDeductCent, o.discount_cent AS discountCent, "
+            + "o.payable_cent AS payableCent, o.paid_cent AS paidCent, "
+            + "o.created_at AS orderCreatedAt, o.paid_at AS paidAt, o.completed_at AS completedAt, "
+            + "o.remark AS orderRemark, o.address_snapshot_json AS addressJson, "
+            + "o.customer_id AS customerId, c.nickname AS customerName, c.phone AS customerPhone, "
+            + "c.customer_no AS customerNo, c.type AS customerType, c.level_code AS customerLevel, "
+            + "sh.carrier AS carrier, sh.tracking_no AS trackingNo, sh.shipped_at AS shippedAt "
+            + "FROM refund_order r "
+            + "LEFT JOIN orders o ON o.id = r.order_id "
+            + "LEFT JOIN customer c ON c.id = o.customer_id "
+            + "LEFT JOIN shipment sh ON sh.id = "
+            + "  (SELECT MAX(s2.id) FROM shipment s2 WHERE s2.order_id = o.id) "
+            + "WHERE r.refund_no = #{refundNo}")
+    RefundAuditDetailPO selectAuditDetail(@Param("refundNo") String refundNo);
+
+    /**
+     * 审核详情的订单行：与订单详情同一取值口径（快照优先，缺失回退 sku/product 当前值）。
+     * <p>{@code linePaidCent} 直接由 SQL 算出「行金额 − 分摊优惠」：退款上限与审核对账都用它，
+     * 前端不需要再猜折扣怎么摊。</p>
+     */
+    @Select("SELECT oi.sku_id AS skuId, "
+            + "COALESCE(oi.spu_title_snap, p.title) AS skuName, "
+            + "COALESCE(oi.spec_snap, JSON_UNQUOTE(JSON_EXTRACT(sk.spec_json, '$.spec')), sk.sku_no) AS spec, "
+            + "oi.qty AS qty, oi.unit_price_cent AS unitPriceCent, oi.amount_cent AS amountCent, "
+            + "oi.discount_alloc_cent AS discountAllocCent, "
+            + "oi.amount_cent - oi.discount_alloc_cent AS linePaidCent, "
+            + "oi.shipped_qty AS shippedQty, "
+            + "COALESCE(co.status, CASE WHEN oi.custom_flag = 1 THEN 'WAIT_DRAFT' ELSE 'NONE' END) AS customStatus "
+            + "FROM order_item oi "
+            + "LEFT JOIN sku sk ON sk.id = oi.sku_id "
+            + "LEFT JOIN product p ON p.id = sk.spu_id "
+            + "LEFT JOIN custom_order co ON co.order_item_id = oi.id "
+            + "WHERE oi.order_id = #{orderId} ORDER BY oi.id")
+    List<RefundOrderLinePO> selectOrderLines(@Param("orderId") long orderId);
+
+    /**
      * 审核 / 回调写回状态（DB 化退款仓储的 upsert 更新分支）：仅推进会随业务变化的字段，
      * refunded_at 仅当传入非空时落账（保持为空时不覆盖历史值）。返回 0 行属异常（单号不存在）。
      */
     @Update("UPDATE refund_order SET status = #{status}, appeal_count = #{appealCount}, "
-            + "refunded_at = CASE WHEN #{refundedAt} IS NULL THEN refunded_at ELSE #{refundedAt} END "
+            + "refunded_at = CASE WHEN #{refundedAt} IS NULL THEN refunded_at ELSE #{refundedAt} END, "
+            + "audit_remark = CASE WHEN #{auditRemark} IS NULL THEN audit_remark ELSE #{auditRemark} END "
             + "WHERE refund_no = #{refundNo}")
     int updateRefundState(@Param("refundNo") String refundNo,
                           @Param("status") String status,
                           @Param("appealCount") int appealCount,
-                          @Param("refundedAt") LocalDateTime refundedAt);
+                          @Param("refundedAt") LocalDateTime refundedAt,
+                          @Param("auditRemark") String auditRemark);
 }

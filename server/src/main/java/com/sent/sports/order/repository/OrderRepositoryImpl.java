@@ -109,6 +109,8 @@ public class OrderRepositoryImpl implements OrderRepository {
         if (order.getPaidAtMillis() > 0) {
             po.setPaidAt(toLocalDateTime(order.getPaidAtMillis()));
         }
+        // 收货地址快照：只在插入时带值；updateHeader 的 SQL 不写这一列，历史订单不会被后续编辑覆盖
+        po.setAddressSnapshotJson(order.getAddressSnapshotJson());
         po.setVersion((long) order.getVersion());
         return po;
     }
@@ -148,6 +150,7 @@ public class OrderRepositoryImpl implements OrderRepository {
         order.setVersion(po.getVersion().intValue());
         order.setStatus(OrderStatus.valueOf(po.getStatus()));
         order.setPayStatus(PayStatus.valueOf(po.getPayStatus()));
+        order.setAddressSnapshotJson(po.getAddressSnapshotJson());
         return order;
     }
 

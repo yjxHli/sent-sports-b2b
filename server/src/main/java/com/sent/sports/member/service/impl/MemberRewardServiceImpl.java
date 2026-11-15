@@ -2,6 +2,7 @@ package com.sent.sports.member.service.impl;
 
 import com.sent.sports.common.event.DomainEventPublisher;
 import com.sent.sports.customer.service.CustomerGrowthService;
+import com.sent.sports.member.domain.MemberTier;
 import com.sent.sports.member.event.MemberRewardEvent;
 import com.sent.sports.member.service.MemberRewardService;
 import org.springframework.stereotype.Service;
@@ -30,6 +31,12 @@ public class MemberRewardServiceImpl implements MemberRewardService {
     public void grantOrderCompleted(long customerId, String orderNo, long payableCent) {
         eventPublisher.publish(new MemberRewardEvent(customerId, orderNo, payableCent));
         long growth = Math.max(1L, payableCent / CENT_PER_GROWTH_POINT);
-        customerGrowthService.grantGrowth(customerId, growth, "ORDER", orderNo);
+        long balance = customerGrowthService.grantGrowth(customerId, growth, "ORDER", orderNo);
+        // 成长值涨了就必须同步等级：否则会员中心会出现「成长值 16167 却是 LV1」的自相矛盾数据。
+        // 口径按落账后的余额取档（重放订单返回的是当前余额，不会误升）；只升不降由条件更新兜底。
+        MemberTier tier = MemberTier.calc(balance);
+        if (tier != MemberTier.NORMAL) {
+            customerGrowthService.promoteLevel(customerId, tier.getCode());
+        }
     }
 }

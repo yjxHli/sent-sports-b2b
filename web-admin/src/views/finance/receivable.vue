@@ -24,6 +24,13 @@
             placeholder="客户 ID"
             style="width: 160px"
           />
+          <el-input
+            v-model="orderNo"
+            placeholder="订单号"
+            clearable
+            style="width: 200px"
+            @keyup.enter="onSearch"
+          />
           <el-select v-model="status" placeholder="应收状态" clearable style="width: 150px">
             <el-option
               v-for="s in Object.values(ReceivableStatus)"
@@ -89,6 +96,8 @@ const { page, size } = usePagination();
 const loading = ref(false);
 const customerId = ref<number | undefined>(undefined);
 const status = ref<string>('');
+/** 订单号模糊搜索：台账动辄几百行，必须下推 SQL 收敛 */
+const orderNo = ref('');
 
 async function load(): Promise<void> {
   loading.value = true;
@@ -98,6 +107,7 @@ async function load(): Promise<void> {
       size: size.value,
       customerId: customerId.value,
       status: status.value || undefined,
+      orderNo: orderNo.value.trim() || undefined,
     }));
     const list = data?.list ?? [];
     rows.value = status.value ? list.filter((item: any) => item.status === status.value) : list;

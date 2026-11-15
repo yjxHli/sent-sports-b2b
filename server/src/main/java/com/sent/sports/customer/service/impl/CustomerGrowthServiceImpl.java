@@ -6,6 +6,8 @@ import com.sent.sports.customer.mapper.po.CustomerPO;
 import com.sent.sports.customer.service.CustomerGrowthService;
 import org.springframework.stereotype.Service;
 
+import java.util.Locale;
+
 /**
  * 成长值真实落账：先由 {@code uk_growth_source} 抢到「首次发放」的唯一名额，
  * 再累加 {@code customer.growth_value}。两步同处调用方（{@code @UseCase}）的事务。
@@ -36,5 +38,14 @@ public class CustomerGrowthServiceImpl implements CustomerGrowthService {
         }
         customerMapper.addGrowth(customerId, delta);
         return after;
+    }
+
+    @Override
+    public boolean promoteLevel(long customerId, String levelCode) {
+        if (levelCode == null || levelCode.isBlank()) {
+            return false;
+        }
+        String normalized = levelCode.trim().toUpperCase(Locale.ROOT);
+        return customerMapper.promoteLevel(customerId, normalized) > 0;
     }
 }

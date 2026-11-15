@@ -1,5 +1,6 @@
 package com.sent.sports.job.seed;
 
+import com.sent.sports.common.storage.LocalFileStorage;
 import com.sent.sports.common.util.IdGen;
 import com.sent.sports.customer.mapper.CustomerMapper;
 import com.sent.sports.customer.mapper.po.CustomerPO;
@@ -48,6 +49,7 @@ import org.springframework.stereotype.Component;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -98,6 +100,8 @@ public class DemoDataGenerator implements CommandLineRunner {
     private final RefundOrderMapper refundOrderMapper;
     private final ContractMapper contractMapper;
     private final IdGen idGen;
+    /** 演示图稿要落真实文件：审核台按 fileId 拼 /api/files/{fileId} 渲染缩略图，假 ID 会 404 破图。 */
+    private final LocalFileStorage fileStorage;
 
     @Autowired
     public DemoDataGenerator(CustomerMapper customerMapper, ProductMapper productMapper, SkuMapper skuMapper,
@@ -109,7 +113,7 @@ public class DemoDataGenerator implements CommandLineRunner {
                              EnterpriseProfileMapper enterpriseProfileMapper, StaffMapper staffMapper,
                              CatalogMapper catalogMapper, StockMapper stockMapper,
                              RefundOrderMapper refundOrderMapper, ContractMapper contractMapper,
-                             IdGen idGen) {
+                             IdGen idGen, LocalFileStorage fileStorage) {
         this.customerMapper = customerMapper;
         this.productMapper = productMapper;
         this.skuMapper = skuMapper;
@@ -130,6 +134,7 @@ public class DemoDataGenerator implements CommandLineRunner {
         this.refundOrderMapper = refundOrderMapper;
         this.contractMapper = contractMapper;
         this.idGen = idGen;
+        this.fileStorage = fileStorage;
     }
 
     // ---- 跨方法共享的运行时数据 ----
@@ -139,6 +144,21 @@ public class DemoDataGenerator implements CommandLineRunner {
     private List<Long> staffIds = new ArrayList<>();
     private List<SkuPO> skus = new ArrayList<>();
     private Map<Long, String> productTitle = new HashMap<>();
+
+    /** 演示图稿文件（内容固定 → 去重后磁盘上只有一份），返回可直接渲染的 fileId。 */
+    private String demoDraftFileId() {
+        if (demoDraftFileId == null) {
+            demoDraftFileId = fileStorage.store(DEMO_PNG_BYTES, "design_v1.png");
+        }
+        return demoDraftFileId;
+    }
+
+    /** 8x8 纯色 PNG：够小、能正常解码，避免审核台显示破图。 */
+    private static final byte[] DEMO_PNG_BYTES = java.util.Base64.getDecoder().decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAHElEQVQoz2NkYPjPQAxgYiASjCoc"
+                    + "WDiqgCgcAAA7dQIB0m4nBwAAAABJRU5ErkJggg==");
+
+    private String demoDraftFileId;
 
     private static final String[] CATEGORIES = {
             "球类运动", "健身器材", "瑜伽用品", "跑步装备", "户外运动", "团队运动", "游泳装备", "运动服饰"
@@ -204,6 +224,100 @@ public class DemoDataGenerator implements CommandLineRunner {
         }
         ensureContracts();
         ensureRefundStatusVariety();
+        ensureStockWarningShowcase();
+        ensureDashboardShowcase();
+    }
+
+    /**
+     * 补齐「库存预警」页的展示数据（幂等，每次启动尝试一次）。
+     *
+     * <p>历史缺口：SKU 台账里 124 行都设了 safety_qty，但实物量一律远高于阈值，
+     * 导致「仅看低于安全库存」永远 0 行、摘要恒为 0，页面看起来像坏了。
+     * 只挑末尾 3 个非种子 SKU（避开 E2E 固定使用的 9101/9102）把实物量压到阈值以下，
+     * 四口径占用本来就为 0，不影响下单与库存并发用例；已有的预警行一律保留，
+     * 运营手工入库补回来的库存也不会在重启后被再次压低。</p>
+     */
+    private void ensureStockWarningShowcase() {
+        if (!stockMapper.selectBelowSafety().isEmpty()) {
+            return;
+        }
+        List<SkuStockPO> candidates = stockMapper.selectList(null).stream()
+                .filter(r -> r.getSkuId() != null && r.getSkuId() > 9300)
+                .filter(r -> r.getSafetyQty() != null && r.getSafetyQty() > 0)
+                .filter(r -> r.getPhysicalQty() != null && r.getPhysicalQty() >= r.getSafetyQty())
+                .sorted(Comparator.comparing(SkuStockPO::getSkuId).reversed())
+                .limit(3)
+                .toList();
+        int[] gaps = {8, 5, 2};
+        int made = 0;
+        for (int i = 0; i < candidates.size(); i++) {
+            SkuStockPO row = candidates.get(i);
+            int target = Math.max(0, row.getSafetyQty() - gaps[i]);
+            if (stockMapper.updateLedger(row.getSkuId(), target, 0, 0, 0) > 0) {
+                made++;
+            }
+        }
+        if (made > 0) {
+            log.info("[DemoData] 补齐 {} 个低于安全库存的 SKU，供库存预警页展示。", made);
+        }
+    }
+
+    /**
+     * 补齐工作台看板的待办状态展示数据（幂等，每次启动尝试一次）。
+     *
+     * <p>历史缺口：{@code custom_order} 里没有 WAIT_REVIEW、{@code chat_session} 里没有 WAITING，
+     * 于是「待审核定制」「待接入会话」两张卡恒为 0，审核台与客服排队队列也一条都没有。
+     * 这里只做状态流转、不新增业务单据：把 3 条 WAIT_DRAFT 定制单推进到待审，
+     * 把 2 条已结束会话重新放回排队。<b>只要库里已经有对应状态行就整体跳过</b>，
+     * 运营真实产生的待办、以及客服已接待/已关闭的会话一律不会被重启覆盖。</p>
+     *
+     * <p>会话侧刻意排除 customer 9002：E2E 客服链路固定用该客户建会话并复用未结束会话，
+     * 不能让演示排队数据干扰真实流程。</p>
+     */
+    private void ensureDashboardShowcase() {
+        List<CustomOrderPO> customs = customOrderMapper.selectList(null);
+        boolean hasPendingReview = customs.stream()
+                .anyMatch(r -> "WAIT_REVIEW".equals(r.getStatus()));
+        if (!hasPendingReview) {
+            int made = 0;
+            for (CustomOrderPO row : customs.stream()
+                    .filter(r -> "WAIT_DRAFT".equals(r.getStatus()))
+                    .limit(3)
+                    .toList()) {
+                row.setStatus("WAIT_REVIEW");
+                row.setReviewDeadline(NOW.plusDays(2));
+                row.setReviewerId(null);
+                if (customOrderMapper.updateById(row) > 0) {
+                    made++;
+                }
+            }
+            if (made > 0) {
+                log.info("[DemoData] 补齐 {} 张待审核定制单，供审核台与工作台待办展示。", made);
+            }
+        }
+
+        List<ChatSessionPO> sessions = chatSessionMapper.selectList(null);
+        boolean hasWaiting = sessions.stream()
+                .anyMatch(r -> "WAITING".equals(r.getStatus()));
+        if (!hasWaiting) {
+            int made = 0;
+            for (ChatSessionPO row : sessions.stream()
+                    .filter(r -> "CLOSED".equals(r.getStatus()))
+                    .filter(r -> r.getCustomerId() != null && r.getCustomerId() != 9002L)
+                    .limit(2)
+                    .toList()) {
+                row.setStatus("WAITING");
+                row.setStaffId(null);
+                row.setEndedAt(null);
+                row.setCloseReason(null);
+                if (chatSessionMapper.updateById(row) > 0) {
+                    made++;
+                }
+            }
+            if (made > 0) {
+                log.info("[DemoData] 补齐 {} 条排队会话，供客服工作台与工作台待办展示。", made);
+            }
+        }
     }
 
     /** 按企业客户补年度框架合同；到期日刻意分三档，让「到期状态」三个选项都有真实数据。 */
@@ -679,7 +793,8 @@ public class DemoDataGenerator implements CommandLineRunner {
                     CustomDraftPO draft = new CustomDraftPO();
                     draft.setCustomOrderId(co.getId());
                     draft.setVersion(1);
-                    draft.setFileId((long) randInt(1000, 9999));
+                    // 同一个内容只存一份（内容寻址去重），所有演示图稿共用一张 1x1 png 也够用
+                    draft.setFileId(demoDraftFileId());
                     draft.setFileName("design_v1.png");
                     draft.setFileSize((long) randInt(50_000, 500_000));
                     draft.setUploadedAt(co.getReviewDeadline());

@@ -76,7 +76,7 @@ class FinanceQueryServiceTest extends BaseUseCaseTest {
     @Test
     void receivablesMapsRowsAndComputesOverdueDays() {
         LocalDate duePast = LocalDate.now().minusDays(5);
-        when(receivableMapper.selectReceivablePage(any(Page.class), anyLong(), isNull(), eq(false)))
+        when(receivableMapper.selectReceivablePage(any(Page.class), anyLong(), isNull(), eq(false), isNull()))
                 .thenAnswer(inv -> {
                     Page<ReceivableListRow> page = inv.getArgument(0);
                     page.setRecords(List.of(
@@ -84,10 +84,10 @@ class FinanceQueryServiceTest extends BaseUseCaseTest {
                             row(445L, "SO20261107001001", 10000L, 10000L, LocalDate.now().plusDays(10), "CLOSED")));
                     return page;
                 });
-        when(receivableMapper.countReceivable(anyLong(), isNull(), eq(false))).thenReturn(2L);
+        when(receivableMapper.countReceivable(anyLong(), isNull(), eq(false), isNull())).thenReturn(2L);
 
         PageResult<AdminFinanceDtos.ReceivableVO> result =
-                queryService.receivables(pageQuery(), 9002L, null, false);
+                queryService.receivables(pageQuery(), 9002L, null, false, null);
 
         assertEquals(2L, result.getTotal());
         AdminFinanceDtos.ReceivableVO first = result.getList().get(0);
@@ -102,17 +102,52 @@ class FinanceQueryServiceTest extends BaseUseCaseTest {
     }
 
     @Test
+    @DisplayName("应收台账：订单号关键字去空白后下推 SQL，列表与 count 用同一条件")
+    void receivablesPushesOrderNoToMapper() {
+        Page<ReceivableListRow> page = new Page<>(1, 10);
+        when(receivableMapper.selectReceivablePage(
+                any(Page.class), isNull(), isNull(), eq(false), eq("SO2026")))
+                .thenReturn(page);
+        when(receivableMapper.countReceivable(isNull(), isNull(), eq(false), eq("SO2026")))
+                .thenReturn(0L);
+
+        queryService.receivables(pageQuery(), null, null, false, "  SO2026  ");
+
+        verify(receivableMapper).selectReceivablePage(
+                any(Page.class), isNull(), isNull(), eq(false), eq("SO2026"));
+        verify(receivableMapper).countReceivable(isNull(), isNull(), eq(false), eq("SO2026"));
+    }
+
+    @Test
+    @DisplayName("合同列表：关键字去空白后下推，列表与 count 用同一条件")
+    void contractsPushesKeywordToMapper() {
+        Page<ContractListItemPO> page = new Page<>(1, 10);
+        when(contractMapper.selectContractPage(
+                any(Page.class), isNull(), isNull(), eq("HT2026")))
+                .thenReturn(page);
+        when(contractMapper.countContract(isNull(), isNull(), eq("HT2026"))).thenReturn(1L);
+
+        PageResult<AdminFinanceDtos.ContractVO> result =
+                queryService.contracts(pageQuery(), null, null, "  HT2026  ");
+
+        verify(contractMapper).selectContractPage(
+                any(Page.class), isNull(), isNull(), eq("HT2026"));
+        verify(contractMapper).countContract(isNull(), isNull(), eq("HT2026"));
+        assertEquals(1L, result.getTotal());
+    }
+
+    @Test
     void receivablesEmptyReturnsZeroTotal() {
-        when(receivableMapper.selectReceivablePage(any(Page.class), isNull(), isNull(), eq(false)))
+        when(receivableMapper.selectReceivablePage(any(Page.class), isNull(), isNull(), eq(false), isNull()))
                 .thenAnswer(inv -> {
                     Page<ReceivableListRow> page = inv.getArgument(0);
                     page.setRecords(List.of());
                     return page;
                 });
-        when(receivableMapper.countReceivable(isNull(), isNull(), eq(false))).thenReturn(0L);
+        when(receivableMapper.countReceivable(isNull(), isNull(), eq(false), isNull())).thenReturn(0L);
 
         PageResult<AdminFinanceDtos.ReceivableVO> result =
-                queryService.receivables(pageQuery(), null, null, false);
+                queryService.receivables(pageQuery(), null, null, false, null);
 
         assertEquals(0L, result.getTotal());
         assertTrue(result.getList().isEmpty());
@@ -121,20 +156,20 @@ class FinanceQueryServiceTest extends BaseUseCaseTest {
     @Test
     @DisplayName("应收台账：openOnly 下推 SQL（只查未结清），列表与 count 用同一条件，避免翻页时尾巴混入已结清")
     void receivablesOpenOnlyPushesDownToSql() {
-        when(receivableMapper.selectReceivablePage(any(Page.class), eq(9002L), isNull(), eq(true)))
+        when(receivableMapper.selectReceivablePage(any(Page.class), eq(9002L), isNull(), eq(true), isNull()))
                 .thenAnswer(inv -> {
                     Page<ReceivableListRow> p = inv.getArgument(0);
                     p.setRecords(List.of(
                             row(446L, "SO20261107001002", 30000L, 0L, LocalDate.now(), "NORMAL")));
                     return p;
                 });
-        when(receivableMapper.countReceivable(eq(9002L), isNull(), eq(true))).thenReturn(1L);
+        when(receivableMapper.countReceivable(eq(9002L), isNull(), eq(true), isNull())).thenReturn(1L);
 
         PageResult<AdminFinanceDtos.ReceivableVO> result =
-                queryService.receivables(pageQuery(), 9002L, null, true);
+                queryService.receivables(pageQuery(), 9002L, null, true, null);
 
-        verify(receivableMapper).selectReceivablePage(any(Page.class), eq(9002L), isNull(), eq(true));
-        verify(receivableMapper).countReceivable(eq(9002L), isNull(), eq(true));
+        verify(receivableMapper).selectReceivablePage(any(Page.class), eq(9002L), isNull(), eq(true), isNull());
+        verify(receivableMapper).countReceivable(eq(9002L), isNull(), eq(true), isNull());
         assertEquals(1L, result.getTotal());
         assertEquals("SO20261107001002", result.getList().get(0).orderNo());
     }
@@ -203,16 +238,16 @@ class FinanceQueryServiceTest extends BaseUseCaseTest {
     void contractsPushesDueStateDown() {
         Page<ContractListItemPO> page = new Page<>(1, 10);
         when(contractMapper.selectContractPage(
-                ArgumentMatchers.<Page<ContractListItemPO>>any(), isNull(), eq("SOON")))
+                ArgumentMatchers.<Page<ContractListItemPO>>any(), isNull(), eq("SOON"), isNull()))
                 .thenReturn(page);
-        when(contractMapper.countContract(isNull(), eq("SOON"))).thenReturn(0L);
+        when(contractMapper.countContract(isNull(), eq("SOON"), isNull())).thenReturn(0L);
 
         PageResult<AdminFinanceDtos.ContractVO> result =
-                queryService.contracts(pageQuery(), "  ", " soon ");
+                queryService.contracts(pageQuery(), "  ", " soon ", null);
 
         verify(contractMapper).selectContractPage(
-                ArgumentMatchers.<Page<ContractListItemPO>>any(), isNull(), eq("SOON"));
-        verify(contractMapper).countContract(isNull(), eq("SOON"));
+                ArgumentMatchers.<Page<ContractListItemPO>>any(), isNull(), eq("SOON"), isNull());
+        verify(contractMapper).countContract(isNull(), eq("SOON"), isNull());
         assertEquals(0, result.getList().size());
     }
 
@@ -221,14 +256,14 @@ class FinanceQueryServiceTest extends BaseUseCaseTest {
     void contractsNormalizesUnknownDueState() {
         Page<ContractListItemPO> page = new Page<>(1, 10);
         when(contractMapper.selectContractPage(
-                ArgumentMatchers.<Page<ContractListItemPO>>any(), isNull(), isNull()))
+                ArgumentMatchers.<Page<ContractListItemPO>>any(), isNull(), isNull(), isNull()))
                 .thenReturn(page);
-        when(contractMapper.countContract(isNull(), isNull())).thenReturn(53L);
+        when(contractMapper.countContract(isNull(), isNull(), isNull())).thenReturn(53L);
 
         PageResult<AdminFinanceDtos.ContractVO> result =
-                queryService.contracts(pageQuery(), null, "WHATEVER");
+                queryService.contracts(pageQuery(), null, "WHATEVER", null);
 
-        verify(contractMapper).countContract(isNull(), isNull());
+        verify(contractMapper).countContract(isNull(), isNull(), isNull());
         assertEquals(53L, result.getTotal());
     }
 

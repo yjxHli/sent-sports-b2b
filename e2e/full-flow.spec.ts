@@ -17,9 +17,10 @@
  * 关键实现说明（与剧本的少量工程适配，均在下方注明）：
  *  1) 自定义图稿上传入口在「我的定制」页（/custom）。订单详情页本身没有上传控件，
  *     因此用户上下文先按订单生成的 customOrderId 查询，再点「上传图稿」，业务语义一致。
- *  2) 管理端客服工作台只渲染「当前接待会话」的消息；且未分配会话时后端以 QUEUE 广播
- *     （前端不进消息区）。因此脚本先让客服选中并接待该会话（分配为 ACTIVE/9003），
- *     再让用户发第一条消息 —— 这一接待动作是「建立会话」，不涉及刷新页面接收消息，
+ *  2) 管理端客服工作台只渲染「当前接待会话」的消息。未分配会话时后端以 QUEUE 广播，
+ *     2026-11-13 起客服端也会把业务 QUEUE 帧当消息渲染（此前被整体丢弃，导致「客服要刷新
+ *     才看得到客户新消息」）；本脚本仍先让客服选中并接待该会话（分配为 ACTIVE/9003），
+ *     因为后面的步骤要断言接待客服是 9003。这一接待动作不涉及刷新页面接收消息，
  *     消息实时性断言仍然成立（waitForSelector 3000ms）。
  *  3) 结算页「提交订单并支付」会 POST /orders + /payments，并 1.2s 后自动回调
  *     /payment/mock/callback；脚本另有 API 兜底回调，避免前端定时器未触发导致卡在待付款。
@@ -34,6 +35,7 @@ import {
   type BrowserContext,
   type Page,
 } from '@playwright/test';
+import path from 'node:path';
 
 const USER_URL = process.env.E2E_USER_URL ?? 'http://127.0.0.1:5173';
 const ADMIN_URL = process.env.E2E_ADMIN_URL ?? 'http://127.0.0.1:5174/admin/';
@@ -54,6 +56,9 @@ const CFG = {
 
 const MSG_USER = '这个球能印我们校徽吗？';
 const MSG_STAFF = '可以的，请在订单详情上传图稿';
+
+/** 真实图稿素材：定制图稿现在必须真上传（旧实现是页面自己编一个 f_<ts> 假 ID） */
+const DRAFT_IMAGE = path.join(__dirname, 'fixtures', 'proof.png');
 
 const join = (base: string, path: string): string =>
   `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
@@ -161,29 +166,26 @@ async function scrollToTop(page: Page): Promise<void> {
 }
 
 /**
- * 在 SentTable 渲染的会话列表中定位「会话 ID 等于 sessionId」的那一行（Locator）。
- * <p>不能用 {@code filter({ hasText: /\b31\b/ })}：行 textContent 是「31待接入-9002…」无空格拼接，
- * 词边界不成立；逐行比对首列文本最稳。</p>
+ * 在客服工作台左侧列表里定位「会话 #id」那一项（新版工作台是 .session-item 列表，不再用表格）。
  */
-async function findSessionRow(page: Page, sessionId: number, timeout = 20_000) {
-  const rows = page.locator('.el-table__row');
+async function findSessionItem(page: Page, sessionId: number, timeout = 20_000) {
+  const item = page.locator('.session-item', { hasText: `会话 #${sessionId}` }).first();
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
-    const count = await rows.count();
-    for (let i = 0; i < count; i += 1) {
-      const text = (await rows.nth(i).locator('td').first().innerText().catch(() => '')).trim();
-      if (text === String(sessionId)) return rows.nth(i);
-    }
+    if (await item.isVisible().catch(() => false)) return item;
+    await page.getByRole('button', { name: '刷新列表' }).click().catch(() => {});
     await page.waitForTimeout(400);
   }
-  throw new Error(`客服会话列表未出现会话 ${sessionId}（等待 ${timeout}ms）`);
+  throw new Error(`客服工作台未出现会话 ${sessionId}（等待 ${timeout}ms）`);
 }
 
 // ---------------------------------------------------------------------------
 // 主用例
 // ---------------------------------------------------------------------------
 test('全链路多角色终极验收：用户下单 → 客服实时会话 → 定制审图 → 仓管发货 → 财务核销', async ({ browser, request }) => {
-  test.setTimeout(480_000);
+  // 8 分钟不够：本机整条链路（下单→客服→定制→发货→核销）实测约 8~9 分钟，
+  // 2026-11-13 定位到是最后一步「核销确认框」被总超时截断，非业务失败，故放宽到 12 分钟。
+  test.setTimeout(720_000);
 
   const stamp = Date.now();
 
@@ -335,19 +337,14 @@ test('全链路多角色终极验收：用户下单 → 客服实时会话 → �
       ).toBeVisible({ timeout: 20_000 });
     });
 
-    await test.step('客服：刷新会话列表并接待本次会话（分配为 ACTIVE）', async () => {
-      await servicePage.getByRole('button', { name: '查询', exact: true }).click();
-      // 注意：表格行的 textContent 是「31待接入-9002…」这种无空格拼接，用正则 \b31\b 匹配不到；
-      // 这里改为逐行比对首列（会话 ID）文本，稳且不依赖单元格渲染细节。
-      const row = await findSessionRow(servicePage, sessionId);
-
-      // 必做：先选中该行。行内「接待」按钮实际只做 selectSession(row)（选中会话），
-      // 而消息区与「会话操作」面板都要靠 activeSession 才会渲染；不选中就发消息，
-      // 前端 onFrame 会因 activeSession 为空而丢弃实时推送（表现为「客服没收到」）。
-      await row.getByRole('button', { name: '接待' }).click();
+    await test.step('客服：打开该会话 Tab 并接待（分配为 ACTIVE）', async () => {
+      await servicePage.getByRole('button', { name: '刷新列表' }).click();
+      const item = await findSessionItem(servicePage, sessionId);
+      // 点左侧会话行即在工作台右侧打开一个 Tab（多 Tab 上限 3）
+      await item.click();
       await expect(
         servicePage.locator('.message-box'),
-        '选中会话后应出现消息区',
+        '打开会话 Tab 后应出现消息区',
       ).toBeVisible({ timeout: 15_000 });
 
       // 复用场景兜底：同一客户会话未结束时后端会复用原会话（CreateSessionUseCase.findOpen），
@@ -359,9 +356,8 @@ test('全链路多角色终极验收：用户下单 → 客服实时会话 → �
         return `${target?.status ?? ''}|${target?.staffId ?? ''}`;
       };
       if ((await sessionState()) !== `ACTIVE|${CFG.serviceStaffId}`) {
-        // 点右侧「会话操作」的接待，正式把会话分配给 9003（WAITING → ACTIVE）
-        const panel = servicePage.locator('.sent-panel').filter({ hasText: '会话操作' });
-        await panel.getByRole('button', { name: '接待' }).click();
+        // Tab 内的「接待」按钮正式把会话分配给 9003（WAITING → ACTIVE）
+        await servicePage.getByRole('button', { name: '接待' }).first().click();
       }
 
       await expect.poll(sessionState, {
@@ -379,8 +375,11 @@ test('全链路多角色终极验收：用户下单 → 客服实时会话 → �
       const bubble = servicePage.locator('.message-box .bubble').filter({ hasText: MSG_USER });
       const before = await bubble.count();
 
-      await userPage.getByPlaceholder('输入消息，回车发送').fill(MSG_USER);
-      await userPage.getByPlaceholder('输入消息，回车发送').press('Enter');
+      // 客服接待后后端推送 ASSIGNED，用户端排队提示消失、输入解锁（WAITING 时输入框是禁用的）
+      await expect(userPage.locator('.queue-banner'), '客服接待后排队提示应消失').toBeHidden({ timeout: 15_000 });
+      await expect(userPage.getByPlaceholder('请输入想咨询的问题')).toBeEnabled({ timeout: 15_000 });
+      await userPage.getByPlaceholder('请输入想咨询的问题').fill(MSG_USER);
+      await userPage.getByPlaceholder('请输入想咨询的问题').press('Enter');
 
       await expect
         .poll(() => bubble.count(), {
@@ -389,8 +388,7 @@ test('全链路多角色终极验收：用户下单 → 客服实时会话 → �
         })
         .toBeGreaterThan(before);
       await expect(bubble.first(), '客服端消息区应显示用户原话').toContainText(MSG_USER);
-      // 会话列表会随历史运行不断变长，把「消息区 + 会话操作」这一行滚进视口，
-      // 截图才能同时佐证「实时收到消息」与「会话已分配为 进行中 / 9003」。
+      // 把消息区滚进视口，截图佐证「实时收到消息」。
       await servicePage.locator('.message-box').scrollIntoViewIfNeeded();
       await servicePage.screenshot({ path: 'screenshots/chat-success.png' });
     });
@@ -425,14 +423,22 @@ test('全链路多角色终极验收：用户下单 → 客服实时会话 → �
       }, { timeout: 25_000, message: 'UV 定制订单应生成 custom_order(WAIT_DRAFT)' }).toBeTruthy();
     });
 
-    /** 用户端：按定制单号查询 → 上传图稿（页面自动生成假文件 f_<ts>.png） */
+    /**
+     * 用户端：按定制单号查询 → 选一张真实图片上传。
+     * 旧实现点一下就自动编一个 f_<ts> 假 fileId，管理端审图台根本拿不到图；
+     * 现在按钮会拉起系统文件选择器，必须用 filechooser 把真实文件送进去。
+     */
     const uploadDraft = async (): Promise<void> => {
       await userPage.goto(join(USER_URL, '/custom'));
       await userPage.getByPlaceholder('输入定制单号直接查询').fill(customNo);
       await userPage.getByRole('button', { name: '查询', exact: true }).click();
       const btn = userPage.getByRole('button', { name: '上传图稿' });
       await expect(btn, '定制单详情应展示「上传图稿」').toBeVisible({ timeout: 15_000 });
-      await btn.click();
+      const [chooser] = await Promise.all([
+        userPage.waitForEvent('filechooser', { timeout: 15_000 }),
+        btn.click(),
+      ]);
+      await chooser.setFiles(DRAFT_IMAGE);
     };
 
     const openReview = async (): Promise<void> => {
@@ -596,9 +602,13 @@ test('全链路多角色终极验收：用户下单 → 客服实时会话 → �
       const row = financePage.locator('.el-table__row').filter({ hasText: orderNo }).first();
       await expect(row, '核销表应加载出该订单应收').toBeVisible({ timeout: 25_000 });
 
-      // 第 1 列是选择框，第 5 列是「本次核销(元)」
-      await row.locator('.el-checkbox').first().click();
-      const amountInput = row.locator('td').nth(4).locator('input');
+      // 列序：选择框 / 应收 ID / 订单号 / 未核销 / 状态 / 本次核销(元)。
+      // 用 placeholder 定位「本次核销(元)」输入框，不要按 td 下标 —— nth(4) 落到「状态」单元格，
+      // 里面没有 input，fill 会一直空等到用例超时（日志表现就是 locator.fill: Test ended）。
+      const checkbox = row.locator('.el-checkbox').first();
+      const amountInput = row.locator('input[placeholder="0.00"]');
+
+      // 未核销金额先在勾选之前取好，避免中途多一次 API 往返把勾选状态拖进重算窗口
       const body = await apiGet(
         request,
         `/admin/receivables?page=1&size=100&customerId=${CFG.customerId}`,
@@ -606,7 +616,17 @@ test('全链路多角色终极验收：用户下单 → 客服实时会话 → �
       );
       const target = (body?.data?.list ?? []).find((r: any) => r.orderNo === orderNo);
       const outstanding = Number(target?.amountCent ?? 0) - Number(target?.writtenOffCent ?? 0);
-      await amountInput.fill(yuan(outstanding));
+
+      // 表格会按可用高度自适应重算条数并重新拉数据，重载会清空勾选：
+      // 勾选 + 填金额都放进轮询，提交前确认这一行确实还处于勾选态，否则点「确认核销」
+      // 只会弹「请先勾选需要核销的应收单」，等不到危险操作确认框。
+      await expect.poll(async () => {
+        if (!(await checkbox.evaluate((el) => el.classList.contains('is-checked')))) {
+          await checkbox.click({ timeout: 5_000 }).catch(() => undefined);
+        }
+        await amountInput.fill(yuan(outstanding)).catch(() => undefined);
+        return checkbox.evaluate((el) => el.classList.contains('is-checked'));
+      }, { timeout: 20_000, message: '应收行应保持勾选' }).toBe(true);
 
       await financePage.getByRole('button', { name: '确认核销' }).click();
 

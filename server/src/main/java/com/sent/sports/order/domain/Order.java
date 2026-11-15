@@ -25,6 +25,7 @@ public class Order {
     private int version;
     private OrderStatus status;
     private PayStatus payStatus;
+    private String addressSnapshotJson;
 
     public Order(String orderNo, long customerId, String idemKey, List<OrderItem> items,
                  long goodsAmountCent, long customFeeCent, long discountCent, long freightCent,
@@ -143,5 +144,19 @@ public class Order {
     /** 状态迁移（集中，非法迁移抛 STATE_CONFLICT）。 */
     public void transit(OrderAction action) {
         this.status = OrderStateMachine.transit(this.status, action);
+    }
+
+    /**
+     * 收货地址快照（下单瞬间固化的 JSON）。
+     *
+     * <p>只在下单时写入一次：之后用户改地址簿、删地址都不影响历史订单，
+     * 否则发票、退款单、物流面单上的收货信息会跟着变。</p>
+     */
+    public String getAddressSnapshotJson() {
+        return addressSnapshotJson;
+    }
+
+    public void setAddressSnapshotJson(String addressSnapshotJson) {
+        this.addressSnapshotJson = addressSnapshotJson;
     }
 }

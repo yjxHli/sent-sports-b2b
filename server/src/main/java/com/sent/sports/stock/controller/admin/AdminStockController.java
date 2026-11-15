@@ -58,8 +58,9 @@ public class AdminStockController {
 
     @GetMapping
     public R<PageResult<?>> list(@ModelAttribute PageQuery page,
-                                 @RequestParam(required = false) Long skuId) {
-        return R.ok(stockQueryService.list(page, skuId));
+                                 @RequestParam(required = false) Long skuId,
+                                 @RequestParam(required = false, defaultValue = "false") boolean warningOnly) {
+        return R.ok(stockQueryService.list(page, skuId, warningOnly));
     }
 
     @GetMapping("/flows")

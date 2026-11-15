@@ -94,20 +94,30 @@ public interface ReceivableMapper extends BaseMapper<ReceivablePO> {
             + "LEFT JOIN orders o ON o.id = r.order_id "
             + "WHERE (#{customerId} IS NULL OR r.customer_id = #{customerId}) "
             + "AND (#{status} IS NULL OR #{status} = '' OR r.status = #{status}) "
+            + "AND (#{orderNo} IS NULL OR #{orderNo} = '' "
+            + "     OR o.order_no LIKE CONCAT('%', #{orderNo}, '%')) "
             + "<if test=\"openOnly\"> AND r.status &lt;&gt; 'CLOSED' </if>"
             + "ORDER BY r.id DESC"
             + "</script>")
     IPage<ReceivableListRow> selectReceivablePage(Page<ReceivableListRow> page,
                                                   @Param("customerId") Long customerId,
                                                   @Param("status") String status,
-                                                  @Param("openOnly") boolean openOnly);
+                                                  @Param("openOnly") boolean openOnly,
+                                                  @Param("orderNo") String orderNo);
 
+    /**
+     * 与列表同条件的总数：订单号筛选要联查 orders，所以 count 也必须 LEFT JOIN，
+     * 否则「共 N 条」会把不匹配的行也算进来（列表与 count 必须同条件）。
+     */
     @Select("<script>"
             + "SELECT COUNT(*) FROM receivable r "
+            + "LEFT JOIN orders o ON o.id = r.order_id "
             + "WHERE (#{customerId} IS NULL OR r.customer_id = #{customerId}) "
             + "AND (#{status} IS NULL OR #{status} = '' OR r.status = #{status}) "
+            + "AND (#{orderNo} IS NULL OR #{orderNo} = '' "
+            + "     OR o.order_no LIKE CONCAT('%', #{orderNo}, '%')) "
             + "<if test=\"openOnly\"> AND r.status &lt;&gt; 'CLOSED' </if>"
             + "</script>")
     long countReceivable(@Param("customerId") Long customerId, @Param("status") String status,
-                         @Param("openOnly") boolean openOnly);
+                         @Param("openOnly") boolean openOnly, @Param("orderNo") String orderNo);
 }

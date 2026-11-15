@@ -214,6 +214,78 @@ export interface RefundVO {
   createdAt?: number;
 }
 
+/** 退款审核详情里的订单行：金额一律「分」，行实付已扣掉分摊优惠，可直接与退款金额对账。 */
+export interface AuditOrderLineVO {
+  skuId: Id;
+  skuName?: string;
+  spec?: string;
+  qty: number;
+  unitPriceCent?: Id;
+  amountCent?: Id;
+  linePaidCent?: Id;
+  shippedQty?: number;
+  customStatus?: string;
+}
+
+/**
+ * 退款审核详情里的订单基本信息（GET /admin/refunds/{refundNo} 的 order 段）。
+ * `shipStatus` 与订单详情同口径（由订单主状态推导），收货信息取下单时的地址快照。
+ */
+export interface AuditOrderVO {
+  orderId?: Id;
+  orderNo: string;
+  status?: string;
+  payStatus?: string;
+  shipStatus?: string;
+  afterSaleStatus?: string;
+  customerId?: Id;
+  customerName?: string;
+  customerPhone?: string;
+  customerNo?: string;
+  customerType?: string;
+  customerLevel?: string;
+  createdAt?: number;
+  paidAt?: number;
+  completedAt?: number;
+  goodsAmountCent?: Id;
+  freightCent?: Id;
+  pointDeductCent?: Id;
+  discountCent?: Id;
+  payableCent?: Id;
+  paidCent?: Id;
+  receiver?: string;
+  receiverPhone?: string;
+  address?: string;
+  shipped?: boolean;
+  carrier?: string;
+  trackingNo?: string;
+  shippedAt?: number;
+  remark?: string;
+  lines?: AuditOrderLineVO[];
+}
+
+/**
+ * 管理端退款审核详情（单笔）：
+ * 退款单（状态/金额/原因/凭证图片/审核备注/时间） + 订单基本信息 + 商品明细。
+ */
+export interface RefundAuditDetailVO {
+  refundNo: string;
+  orderNo: string;
+  status: string;
+  amountCent: Id;
+  amountYuan?: string;
+  pointRefund?: Id;
+  type?: string;
+  reason?: string;
+  applicantType?: string;
+  appealCount?: number;
+  images?: string[] | null;
+  auditRemark?: string | null;
+  createdAt?: number;
+  refundedAt?: number | null;
+  order?: AuditOrderVO | null;
+}
+
 // ---------------------------------------------------------------------------
 // 客户 / 会员 / 财务
 // ---------------------------------------------------------------------------
@@ -324,9 +396,12 @@ export interface ChatMessageVO {
 
 export interface StaffVO {
   staffId: Id;
+  /** 登录名，对应 sys_staff.staff_no */
   username: string;
   name: string;
   roleCode: string;
+  /** 手机号（登录 / 找回凭据），编辑时回填 */
+  phone?: string;
   enabled?: boolean;
 }
 

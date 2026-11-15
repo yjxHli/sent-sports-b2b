@@ -24,6 +24,10 @@ coverage/
 *.log
 logs/
 /data/upload/
+# LocalFileStorage 默认落盘到 server/data/upload（内容寻址上传件），属运行期产物
+/server/data/
+# Vite 配置热重载留下的临时配置文件
+*.timestamp-*.mjs
 *.dump
 *.dumpstream
 

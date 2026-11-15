@@ -228,7 +228,7 @@ class AdminFinanceApiTest extends BaseApiTest {
     void receivablesReturnsPage() throws Exception {
         AdminFinanceDtos.ReceivableVO vo = new AdminFinanceDtos.ReceivableVO(
                 444L, "SO20261107001000", 9002L, 20000L, 0L, 1796140800000L, "NORMAL", 0);
-        when(financeQueryService.receivables(any(), eq(9002L), eq("NORMAL"), eq(false))).thenReturn(
+        when(financeQueryService.receivables(any(), eq(9002L), eq("NORMAL"), eq(false), isNull())).thenReturn(
                 com.sent.sports.common.web.PageResult.of(java.util.List.of(vo), 1L, 1, 10));
         mvc.perform(get("/api/admin/receivables")
                         .param("page", "1").param("size", "10")
@@ -242,9 +242,23 @@ class AdminFinanceApiTest extends BaseApiTest {
     }
 
     @Test
+    @DisplayName("应收台账：orderNo 透传到 service（订单号搜索下推 SQL）")
+    void receivablesPassesOrderNo() throws Exception {
+        when(financeQueryService.receivables(any(), isNull(), isNull(), eq(false), eq("SO2026")))
+                .thenReturn(PageResult.of(List.of(), 0L, 1, 10));
+
+        mvc.perform(get("/api/admin/receivables")
+                        .param("page", "1").param("size", "10").param("orderNo", "SO2026"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+
+        verify(financeQueryService).receivables(any(), isNull(), isNull(), eq(false), eq("SO2026"));
+    }
+
+    @Test
     @DisplayName("应收台账 openOnly=true 透传到 service（核销工作台只要未结清）")
     void receivablesPassesOpenOnly() throws Exception {
-        when(financeQueryService.receivables(any(), eq(9002L), isNull(), eq(true))).thenReturn(
+        when(financeQueryService.receivables(any(), eq(9002L), isNull(), eq(true), isNull())).thenReturn(
                 PageResult.of(List.of(), 0L, 1, 10));
 
         mvc.perform(get("/api/admin/receivables")
@@ -253,7 +267,21 @@ class AdminFinanceApiTest extends BaseApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0));
 
-        verify(financeQueryService).receivables(any(), eq(9002L), isNull(), eq(true));
+        verify(financeQueryService).receivables(any(), eq(9002L), isNull(), eq(true), isNull());
+    }
+
+    @Test
+    @DisplayName("合同列表：keyword 透传到 service（合同号/客户 ID 搜索）")
+    void contractsPassesKeyword() throws Exception {
+        when(financeQueryService.contracts(any(PageQuery.class), isNull(), isNull(), eq("HT2026")))
+                .thenReturn(PageResult.of(List.of(), 0L, 1, 10));
+
+        mvc.perform(get("/api/admin/contracts")
+                        .param("page", "1").param("size", "10").param("keyword", "HT2026"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+
+        verify(financeQueryService).contracts(any(PageQuery.class), isNull(), isNull(), eq("HT2026"));
     }
 
     @Test
@@ -261,7 +289,7 @@ class AdminFinanceApiTest extends BaseApiTest {
     void invoicesReturnsPage() throws Exception {
         AdminFinanceDtos.InvoiceVO vo = new AdminFinanceDtos.InvoiceVO(
                 9L, "INV-9", 3L, 25800L, "ISSUED", "/files/inv-9.pdf", 1_700_000_000_000L);
-        when(financeQueryService.invoices(any(PageQuery.class), any()))
+        when(financeQueryService.invoices(any(PageQuery.class), any(), any()))
                 .thenReturn(PageResult.of(List.of(vo), 1L, 1, 10));
 
         mvc.perform(get("/api/admin/invoices").param("page", "1").param("size", "10"))
@@ -282,7 +310,7 @@ class AdminFinanceApiTest extends BaseApiTest {
     void contractsReturnsPage() throws Exception {
         AdminFinanceDtos.ContractVO vo = new AdminFinanceDtos.ContractVO(
                 5L, "CT-2026-005", 3L, 100000L, "ACTIVE", 1_800_000_000_000L);
-        when(financeQueryService.contracts(any(PageQuery.class), isNull(), eq("SOON")))
+        when(financeQueryService.contracts(any(PageQuery.class), isNull(), eq("SOON"), isNull()))
                 .thenReturn(PageResult.of(List.of(vo), 1L, 1, 10));
 
         mvc.perform(get("/api/admin/contracts")

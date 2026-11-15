@@ -10,6 +10,7 @@ import com.sent.sports.order.dto.OrderDtos;
 import com.sent.sports.order.service.CancelOrderUseCase;
 import com.sent.sports.order.service.ConfirmReceiptUseCase;
 import com.sent.sports.order.service.CreateOrderUseCase;
+import com.sent.sports.order.service.DeleteOrderUseCase;
 import com.sent.sports.order.service.OrderQueryService;
 import com.sent.sports.order.service.dto.CancelOrderCmd;
 import com.sent.sports.order.service.dto.ConfirmReceiptCmd;
@@ -19,6 +20,7 @@ import com.sent.sports.order.service.dto.CreateOrderResult;
 import com.sent.sports.order.service.dto.OrderLineCmd;
 import com.sent.sports.order.service.dto.ReceiveLineCmd;
 import jakarta.validation.Valid;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -26,6 +28,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -43,13 +46,16 @@ public class OrderController {
     private final CreateOrderUseCase createOrderUseCase;
     private final CancelOrderUseCase cancelOrderUseCase;
     private final ConfirmReceiptUseCase confirmReceiptUseCase;
+    private final DeleteOrderUseCase deleteOrderUseCase;
     private final OrderQueryService orderQueryService;
 
     public OrderController(CreateOrderUseCase createOrderUseCase, CancelOrderUseCase cancelOrderUseCase,
-                           ConfirmReceiptUseCase confirmReceiptUseCase, OrderQueryService orderQueryService) {
+                           ConfirmReceiptUseCase confirmReceiptUseCase, DeleteOrderUseCase deleteOrderUseCase,
+                           OrderQueryService orderQueryService) {
         this.createOrderUseCase = createOrderUseCase;
         this.cancelOrderUseCase = cancelOrderUseCase;
         this.confirmReceiptUseCase = confirmReceiptUseCase;
+        this.deleteOrderUseCase = deleteOrderUseCase;
         this.orderQueryService = orderQueryService;
     }
 
@@ -63,10 +69,11 @@ public class OrderController {
     @GetMapping
     public R<PageResult<OrderDtos.OrderListItem>> list(
             @ModelAttribute PageQuery page,
+            @RequestParam(required = false) String status,
             @RequestAttribute(value = CurrentUser.ATTR, required = false) CurrentUser user) {
         // 主体取自 AuthFilter 解析的 JWT sub，不再由前端请求体指定，避免越权查看他人订单
         Long customerId = user == null || user.isAdmin() ? null : user.userId();
-        return R.ok(orderQueryService.listMyOrders(customerId, page));
+        return R.ok(orderQueryService.listMyOrders(customerId, status, page));
     }
 
     @GetMapping("/{orderNo}")
@@ -92,12 +99,24 @@ public class OrderController {
                 null, null, null, null, null, null, null, null));
     }
 
+    /**
+     * 删除订单（淘宝式详情页「删除订单」）：客户侧软删，只从「我的订单」里移除。
+     * <p>管理端令牌不在此列——管理员要清理订单走管理端接口，避免误删客户视图。</p>
+     */
+    @DeleteMapping("/{orderNo}")
+    @RequirePerm("order:delete")
+    public R<Void> delete(@PathVariable String orderNo,
+                          @RequestAttribute(value = CurrentUser.ATTR, required = false) CurrentUser user) {
+        deleteOrderUseCase.delete(orderNo, user == null || user.isAdmin() ? null : user.userId());
+        return R.ok();
+    }
+
     private CreateOrderCmd toCmd(OrderDtos.CreateOrderCmd cmd) {
         List<OrderLineCmd> lines = cmd.items().stream().map(i -> new OrderLineCmd(
                 i.skuId(), i.qty(), i.customerTypeCode(), i.memberDiscountRate(),
                 i.agreementDiscountRate(), i.allowStacking(), i.ladderTiers(),
                 Boolean.TRUE.equals(i.customFlag()))).toList();
-        return new CreateOrderCmd(cmd.customerId(), cmd.idemKey(), cmd.availablePoints(),
+        return new CreateOrderCmd(cmd.customerId(), cmd.addressId(), cmd.idemKey(), cmd.availablePoints(),
                 cmd.freightFreeThresholdCent(), cmd.freightFeeCent(), lines);
     }
 

@@ -68,6 +68,14 @@ public final class AdminStockDtos {
                            boolean warning) {
     }
 
+    /**
+     * 预警摘要：最紧急（缺口最大）的一条告急 SKU。
+     * <p>无预警时 skuId = 0 且 skuName = 「暂无预警」，供 system 模块转成报表 VO；
+     * 这是 stock 模块自己的中立 DTO，system 只经 {@code StockQueryService} 取，不直连本模块 Mapper。</p>
+     */
+    public record StockWarningSummary(long skuId, String skuName, int availableQty, int threshold) {
+    }
+
     /** 库存流水行：时间用毫秒，字段名与前端 StockFlowVO 对齐。 */
     public record FlowRow(long flowId, String bizType, String bizNo, long skuId, int qty,
                           int beforeQty, int afterQty, String reason, long createdAt) {

@@ -122,18 +122,44 @@
                 <div class="upload-drop__hint">支持 PNG / JPG / AI，单个不超过 20MB</div>
               </div>
               <div v-else class="upload-file">
-                <span class="upload-file__icon">🖼️</span>
+                <img
+                  v-if="draftFileId"
+                  class="upload-file__thumb"
+                  :src="fileApi.url(draftFileId)"
+                  alt="定制图稿"
+                />
+                <span v-else class="upload-file__icon">🖼️</span>
                 <span class="upload-file__name">{{ fileName }}</span>
+                <span v-if="uploadingDraft" class="upload-file__hint">上传中…</span>
                 <span class="upload-file__remove" @click="clearUpload">移除</span>
               </div>
               <input ref="fileInput" type="file" accept="image/*,.ai,.pdf" class="upload-input" @change="onFileChange" />
             </div>
           </div>
 
-          <!-- 操作按钮（两个橙色） -->
+          <!-- 操作按钮（两个橙色）+ 收藏 -->
           <div class="buy__actions">
             <button class="buy-btn buy-btn--cart" :disabled="!currentSku || currentStock <= 0" @click="addToCart">加入购物车</button>
             <button class="buy-btn buy-btn--now" :disabled="!currentSku || currentStock <= 0" @click="buyNow">立即购买</button>
+            <!-- 收藏：淘宝把心形放在「加入购物车」右侧，与加购并列而不是塞进工具栏 -->
+            <button
+              type="button"
+              class="buy-fav"
+              :class="{ 'buy-fav--on': favorited }"
+              :title="favorited ? '取消收藏' : '收藏商品'"
+              :disabled="favoriting"
+              @click="toggleFavorite"
+            >
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <path
+                  d="M10 17s-6.5-4.2-6.5-8.2A3.8 3.8 0 0 1 10 6.1a3.8 3.8 0 0 1 6.5 2.7C16.5 12.8 10 17 10 17Z"
+                  :fill="favorited ? 'currentColor' : 'none'"
+                  stroke="currentColor"
+                  stroke-width="1.3"
+                />
+              </svg>
+              <span>{{ favorited ? '已收藏' : '收藏' }}</span>
+            </button>
           </div>
         </div>
       </div>
@@ -157,6 +183,10 @@ import { ElMessage } from 'element-plus';
 import { unwrap } from '@/utils/http';
 import { productApi, type CatalogProductVO, type CatalogSkuVO } from '@/api/product';
 import { cartApi } from '@/api/cart';
+import { fileApi } from '@/api/file';
+import { favoriteApi } from '@/api/favorite';
+import { footprintApi } from '@/api/footprint';
+import { savePendingDraft, clearPendingDraft } from '@/api/custom';
 import { useCartStore } from '@/store/modules/useCartStore';
 import { fmtCent } from '@sent/shared';
 import ProductThumb from '@/components/ProductThumb.vue';
@@ -172,6 +202,8 @@ const qty = ref(1);
 const activeThumb = ref(0);
 const uvCustom = ref(false);
 const fileName = ref('');
+const draftFileId = ref('');
+const uploadingDraft = ref(false);
 const fileInput = ref<HTMLInputElement | null>(null);
 
 const currentSku = computed(() => product.value?.skus?.find((s) => s.skuId === selectedSkuId.value));
@@ -203,14 +235,39 @@ function triggerUpload(): void {
   fileInput.value?.click();
 }
 
-function onFileChange(e: Event): void {
+/**
+ * 选图即上传：图稿必须真正落到文件服务，否则下单后管理端只能看到一个假 fileId，
+ * 审图台也就"看不到用户上传的图片"。上传成功后暂存本地，结算成功再补交到定制单。
+ */
+async function onFileChange(e: Event): Promise<void> {
   const input = e.target as HTMLInputElement;
   const file = input.files?.[0];
-  if (file) fileName.value = file.name;
+  if (!file) return;
+  if (file.size > 20 * 1024 * 1024) {
+    ElMessage.error('单个图稿不超过 20MB');
+    clearUpload();
+    return;
+  }
+  uploadingDraft.value = true;
+  try {
+    const res = await unwrap(fileApi.upload(file));
+    if (!res?.fileId) throw new Error('图稿上传失败');
+    draftFileId.value = res.fileId;
+    fileName.value = res.fileName || file.name;
+    savePendingDraft({ fileId: res.fileId, fileName: fileName.value, fileSize: Number(res.size ?? file.size) });
+    ElMessage.success('图稿已上传，下单后自动提交审图');
+  } catch (err) {
+    ElMessage.error((err as Error).message || '图稿上传失败');
+    clearUpload();
+  } finally {
+    uploadingDraft.value = false;
+  }
 }
 
 function clearUpload(): void {
   fileName.value = '';
+  draftFileId.value = '';
+  clearPendingDraft();
   if (fileInput.value) fileInput.value.value = '';
 }
 
@@ -237,6 +294,58 @@ async function buyNow(): Promise<void> {
   router.push('/checkout');
 }
 
+/**
+ * 收藏状态 + 惰性上报足迹（2026-11-16）。
+ *
+ * 详情页是「收藏」和「足迹」两个行为共同的入口：
+ * - 进入页面先 `GET /favorites/status` 取心形初始态（未登录时后端返回 false，不抛 401）；
+ * - `POST /footprints/{productId}` 静默上报一次浏览，失败不提示（埋点不该打断选规格）。
+ */
+const favorited = ref(false);
+const favoriting = ref(false);
+
+async function loadFavoriteStatus(): Promise<void> {
+  const pid = Number(route.params.productId);
+  if (!Number.isFinite(pid) || pid <= 0) return;
+  try {
+    const res = await unwrap(favoriteApi.status(pid));
+    favorited.value = Boolean(res?.favorited);
+  } catch {
+    favorited.value = false;
+  }
+}
+
+async function recordFootprint(): Promise<void> {
+  const pid = Number(route.params.productId);
+  if (!Number.isFinite(pid) || pid <= 0) return;
+  try {
+    await unwrap(footprintApi.record(pid));
+  } catch {
+    /* 足迹是埋点，失败静默 */
+  }
+}
+
+async function toggleFavorite(): Promise<void> {
+  const pid = Number(route.params.productId);
+  if (!Number.isFinite(pid) || pid <= 0) return;
+  favoriting.value = true;
+  const next = !favorited.value;
+  try {
+    if (next) {
+      await unwrap(favoriteApi.add(pid));
+      ElMessage.success('已收藏，可在顶部「收藏夹」查看');
+    } else {
+      await unwrap(favoriteApi.remove(pid));
+      ElMessage.success('已取消收藏');
+    }
+    favorited.value = next;
+  } catch (e) {
+    ElMessage.error((e as Error).message || '操作失败');
+  } finally {
+    favoriting.value = false;
+  }
+}
+
 onMounted(async () => {
   loading.value = true;
   try {
@@ -248,6 +357,9 @@ onMounted(async () => {
     product.value = null;
   } finally {
     loading.value = false;
+  }
+  if (product.value) {
+    await Promise.all([loadFavoriteStatus(), recordFootprint()]);
   }
 });
 </script>
@@ -499,6 +611,18 @@ onMounted(async () => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.upload-file__thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex: none;
+  border: 1px solid #f0e2d6;
+}
+.upload-file__hint {
+  font-size: 12px;
+  color: var(--sent-muted);
+}
 .upload-file__remove {
   color: var(--sent-accent);
   cursor: pointer;
@@ -545,6 +669,42 @@ onMounted(async () => {
   box-shadow: none;
   cursor: not-allowed;
   transform: none;
+}
+
+/* 收藏：与两个主按钮并排，宽度只占一小截，避免抢走「立即购买」的视觉重心 */
+.buy-fav {
+  flex: none;
+  width: 96px;
+  height: 52px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: 1px solid var(--sent-border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--sent-text-2);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.buy-fav svg {
+  width: 17px;
+  height: 17px;
+}
+.buy-fav:hover {
+  border-color: #e34d59;
+  color: #e34d59;
+}
+.buy-fav--on {
+  border-color: #e34d59;
+  color: #e34d59;
+  background: #fff5f5;
+}
+.buy-fav:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
 }
 
 /* 详情描述 */

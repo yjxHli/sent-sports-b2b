@@ -1,50 +1,59 @@
 <template>
   <div>
     <h2 class="sent-page-title">企业审核与授信</h2>
-    <el-row :gutter="16">
+    <el-row :gutter="16" class="enterprise-split">
       <el-col :xs="24" :lg="13">
-        <div class="sent-panel">
+        <div class="sent-panel split-panel">
           <h3 class="section-title">企业客户</h3>
-          <SentTable
-            :columns="columns"
-            :rows="rows"
-            :total="total"
-            :page="page"
-            :size="size"
-            :loading="loading"
-            exportable
-            export-name="企业客户"
-            :operation-width="110"
-            @update:page="onPage"
-            @update:size="onSize"
-            @refresh="load"
-          >
-            <template #toolbar>
-              <el-input v-model="keyword" placeholder="企业名称" clearable style="width: 200px" />
-              <el-button type="primary" @click="onSearch">查询</el-button>
-              <span class="sent-hint">企业类型由后端 SQL 精确筛选（共 {{ total }} 家）</span>
-            </template>
-            <template #col-enterpriseStatus="{ row }">
-              <StatusTag
-                :label="enterpriseStatusLabel(row.enterpriseStatus)"
-                :tone="enterpriseStatusTone(row.enterpriseStatus)"
-              />
-            </template>
-            <template #col-creditState="{ row }">
-              <StatusTag
-                :label="Number(row.creditLimitCent) > 0 ? '已授信' : '未授信'"
-                :tone="Number(row.creditLimitCent) > 0 ? 'success' : 'info'"
-              />
-            </template>
-            <template #operations="{ row }">
-              <el-button link type="primary" @click="select(row)">选择</el-button>
-            </template>
-          </SentTable>
+          <div ref="leftTableRef" class="enterprise-table-wrap">
+            <SentTable
+              :columns="columns"
+              :rows="rows"
+              :total="total"
+              :page="page"
+              :size="size"
+              :loading="loading"
+              :page-sizes="tableSizes"
+              exportable
+              export-name="企业客户"
+              :operation-width="110"
+              @update:page="onPage"
+              @update:size="onSize"
+              @refresh="load"
+            >
+              <template #toolbar>
+                <el-input
+                  v-model="keyword"
+                  placeholder="企业名称 / 企业 ID"
+                  clearable
+                  style="width: 200px"
+                  @keyup.enter="onSearch"
+                />
+                <el-button type="primary" @click="onSearch">查询</el-button>
+                <span class="sent-hint">后端精确筛选，共 {{ total }} 家</span>
+              </template>
+              <template #col-enterpriseStatus="{ row }">
+                <StatusTag
+                  :label="enterpriseStatusLabel(row.enterpriseStatus)"
+                  :tone="enterpriseStatusTone(row.enterpriseStatus)"
+                />
+              </template>
+              <template #col-creditState="{ row }">
+                <StatusTag
+                  :label="Number(row.creditLimitCent) > 0 ? '已授信' : '未授信'"
+                  :tone="Number(row.creditLimitCent) > 0 ? 'success' : 'info'"
+                />
+              </template>
+              <template #operations="{ row }">
+                <el-button link type="primary" @click="select(row)">选择</el-button>
+              </template>
+            </SentTable>
+          </div>
         </div>
       </el-col>
 
       <el-col :xs="24" :lg="11">
-        <div class="sent-panel">
+        <div class="sent-panel split-panel">
           <h3 class="section-title">审核与授信</h3>
           <el-alert
             v-if="!current"
@@ -109,7 +118,7 @@
  * 授信是危险操作：金额由「元」经 yuanToCent 换算成「分」后，
  * 必须 openConfirm('ENTERPRISE_CREDIT') 换一次性令牌，且提交前复查过期。
  */
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { unwrap } from '@/utils/http';
 import { customerApi, financeApi } from '@/api';
@@ -158,6 +167,75 @@ const auditing = ref(false);
 const submitting = ref(false);
 const current = ref<any>(null);
 
+/**
+ * 宽屏（lg ≥ 1200px）左右卡片等高后，左侧列表会空出一截。
+ * 这里按可用高度算出每页能放几行，让它正好填到分页器上方；
+ * 用户手动选过条数后（autoFitSize=false）不再自作主张。
+ */
+const leftTableRef = ref<HTMLElement | null>(null);
+const panelFill = ref(false);
+const autoFitSize = ref(true);
+let panelMq: MediaQueryList | null = null;
+let fitObserver: ResizeObserver | null = null;
+let fitTimer: number | null = null;
+let fitArmed = false;
+let applyingFit = false;
+
+/** 自适应出来的条数要并进下拉，否则 el-pagination 显示空白 */
+const tableSizes = computed(() => {
+  const base = [10, 15, 20, 50, 100];
+  const currentSize = size.value;
+  return base.includes(currentSize)
+    ? base
+    : [...base, currentSize].sort((a, b) => a - b);
+});
+
+function computeFitSize(): number {
+  const wrap = leftTableRef.value;
+  if (!wrap) return size.value;
+  const toolbar = wrap.querySelector('.sent-table-toolbar') as HTMLElement | null;
+  const pager = wrap.querySelector('.sent-table-pager') as HTMLElement | null;
+  const header = wrap.querySelector('.el-table__header-wrapper') as HTMLElement | null;
+  const firstRow = wrap.querySelector('.el-table__body tbody tr') as HTMLElement | null;
+  const rowHeight = firstRow?.offsetHeight || 48;
+  // toolbar 自带 12px 下边距、分页器自带 14px 上边距；无分页器时按 54px 占位估算
+  const fixed = (toolbar?.offsetHeight ?? 44) + 12
+    + (pager ? pager.offsetHeight + 14 : 54)
+    + (header?.offsetHeight ?? 40);
+  const available = wrap.clientHeight - fixed;
+  if (available <= 0 || rowHeight <= 0) return size.value;
+  return Math.max(5, Math.floor(available / rowHeight));
+}
+
+function applyFitSize(): void {
+  if (!panelFill.value || !autoFitSize.value) return;
+  const fit = computeFitSize();
+  if (fit === size.value) return;
+  applyingFit = true;
+  size.value = fit;
+  page.value = 1;
+  void nextTick(() => { applyingFit = false; });
+  void load();
+}
+
+/** 首屏高度会变化几次（列表数据落地、卡片定型），防抖合并后再测量 */
+function scheduleFit(): void {
+  if (fitTimer !== null) window.clearTimeout(fitTimer);
+  fitTimer = window.setTimeout(() => {
+    fitTimer = null;
+    applyFitSize();
+  }, 300);
+}
+
+function armFit(): void {
+  fitArmed = true;
+  scheduleFit();
+}
+
+function syncPanelFill(): void {
+  panelFill.value = panelMq?.matches ?? false;
+}
+
 /** 可用额度不在列表列里，由总额度 − 已用额度算，与后端「可用 = 总额 − 已用」口径一致。 */
 const availableCent = computed(() => {
   const limit = Number(current.value?.creditLimitCent ?? 0);
@@ -197,7 +275,9 @@ async function load(): Promise<void> {
     total.value = 0;
     ElMessage.error((error as Error)?.message || '企业客户加载失败');
   } finally {
+    // 列表落地后卡片高度才定型，这时再量每页能放几行
     loading.value = false;
+    armFit();
   }
 }
 
@@ -221,6 +301,8 @@ function onPage(value: number): void {
   void load();
 }
 function onSize(value: number): void {
+  // 用户主动选条数 → 关掉自适应
+  if (!applyingFit) autoFitSize.value = false;
   size.value = value;
   page.value = 1;
   void load();
@@ -300,10 +382,71 @@ async function submitCredit(): Promise<void> {
   }
 }
 
-onMounted(() => { void load(); });
+onMounted(() => {
+  panelMq = window.matchMedia('(min-width: 1200px)');
+  syncPanelFill();
+  panelMq.addEventListener('change', onPanelFillChange);
+
+  // 卡片高度定型后（load 的 finally 里）才首次测量；这里只挂监听
+  void nextTick(() => {
+    if (typeof ResizeObserver !== 'undefined') {
+      fitObserver = new ResizeObserver(() => { if (fitArmed) scheduleFit(); });
+      if (leftTableRef.value) fitObserver.observe(leftTableRef.value);
+    }
+  });
+
+  void load();
+});
+
+/** 进出宽屏时重新量一次：窄屏两列堆叠，不参与自适应 */
+function onPanelFillChange(): void {
+  syncPanelFill();
+  if (panelFill.value && fitArmed) void nextTick(() => scheduleFit());
+}
+
+onBeforeUnmount(() => {
+  panelMq?.removeEventListener('change', onPanelFillChange);
+  panelMq = null;
+  fitObserver?.disconnect();
+  fitObserver = null;
+  if (fitTimer !== null) window.clearTimeout(fitTimer);
+  fitTimer = null;
+});
 </script>
 
 <style scoped>
 .section-title { margin: 0 0 14px; font-size: 15px; color: #33463f; }
 .sub-title { margin: 18px 0 10px; font-size: 14px; color: #33463f; }
+
+/*
+ * 双列等高（lg ≥1200px）：「企业客户」与「审核与授信」两张卡片底边对齐。
+ * el-col 变 flex 容器 + 卡片 flex:1 撑满列高；左侧列表区 flex:1 吃满剩余高度，
+ * 配合「每页条数按可用高度自适应」，表格正好填到分页器上方，不留大片空白。
+ * 窄屏两列堆叠时不再强制等高，否则整卡会被拉出空白。
+ */
+@media (min-width: 1200px) {
+  .enterprise-split { align-items: stretch; }
+  .enterprise-split :deep(.el-col) { display: flex; }
+  .enterprise-split .split-panel {
+    flex: 1 1 auto;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    /* 表格列宽总和可能大于列宽，flex item 默认按 min-content 撑开会把卡片顶出列外
+       （实测两卡重叠 20px、中间缝隙消失），允许收缩回列宽 */
+    min-width: 0;
+    /* 与右侧「已选企业」时的实测高度对齐：未选时右侧只有一条提示，
+       没有下限会让卡片矮一截，点「选择」后整页高度突跳、左侧条数也跟着重排 */
+    min-height: 752px;
+  }
+  /* 标题等固定内容不压缩；列表区负责吃掉剩余高度 */
+  .enterprise-split .split-panel > *:not(.enterprise-table-wrap) { flex-shrink: 0; }
+  /* 纵向 flex 默认 align-items: stretch 会把「确认授信」按钮拉成整行，按原宽度左对齐 */
+  .enterprise-split .split-panel > .el-button { align-self: flex-start; }
+  .enterprise-split .enterprise-table-wrap {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 0;
+  }
+}
 </style>

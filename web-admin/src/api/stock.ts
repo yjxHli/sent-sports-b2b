@@ -47,7 +47,8 @@ export interface CheckApproveVO {
 }
 
 export const stockApi = {
-  list: (query: PageQuery & { skuId?: number }) =>
+  /** warningOnly 由后端 SQL 判定「可用 <= 安全库存」，不要在前端把当前页再过滤一遍 */
+  list: (query: PageQuery & { skuId?: number; warningOnly?: boolean }) =>
     http.get<PageResult<StockVO>>('/admin/stock', query),
   flows: (query: PageQuery & { skuId?: number; bizType?: string }) =>
     http.get<PageResult<StockFlowVO>>('/admin/stock/flows', query),

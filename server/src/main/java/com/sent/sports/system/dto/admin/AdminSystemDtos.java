@@ -14,10 +14,15 @@ public final class AdminSystemDtos {
     private AdminSystemDtos() {
     }
 
-    /** 员工表单。 */
+    /**
+     * 员工表单。
+     * <p>{@code username} 落 {@code sys_staff.staff_no}（登录名）；{@code phone} 是登录与找回的必备信息，
+     * 表上是 NOT NULL + 唯一键，新增时必须给值。</p>
+     */
     public record StaffForm(
             @NotBlank(message = "账号不能为空") String username,
             @NotBlank(message = "姓名不能为空") String name,
+            String phone,
             String roleCode) {
     }
 
@@ -33,8 +38,13 @@ public final class AdminSystemDtos {
             String paramValue) {
     }
 
-    /** 员工视图。 */
-    public record StaffVO(Long staffId, String username, String name, String roleCode) {
+    /**
+     * 员工视图。
+     * <p>{@code username} 取 {@code staff_no}（登录名）；{@code phone} 供编辑回填；
+     * {@code enabled} 由 {@code status = 'ACTIVE'} 派生，供列表状态标签使用。</p>
+     */
+    public record StaffVO(Long staffId, String username, String name, String roleCode,
+                          String phone, boolean enabled) {
     }
 
     /** 角色视图。 */

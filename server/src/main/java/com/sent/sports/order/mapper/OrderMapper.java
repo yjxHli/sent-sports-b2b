@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.sent.sports.common.anno.DataScope;
 import com.sent.sports.order.mapper.po.OrderDetailLineRow;
+import com.sent.sports.order.mapper.po.OrderItemListRow;
 import com.sent.sports.order.mapper.po.OrderItemPO;
 import com.sent.sports.order.mapper.po.OrderPO;
 import org.apache.ibatis.annotations.Insert;
@@ -36,9 +37,52 @@ public interface OrderMapper extends BaseMapper<OrderPO> {
     @Select("SELECT o.* FROM orders o WHERE o.status = #{status} ORDER BY o.id DESC LIMIT #{limit}")
     List<OrderPO> selectForAdminList(@Param("status") String status, @Param("limit") int limit);
 
-    /** 我的订单真实分页（任务 2：替换 P4 空桩）。 */
-    @Select("SELECT * FROM orders WHERE customer_id = #{customerId} ORDER BY id DESC")
-    IPage<OrderPO> selectMyPage(Page<OrderPO> page, @Param("customerId") long customerId);
+    /**
+     * 我的订单真实分页（任务 2：替换 P4 空桩）。
+     * <p>状态筛选必须下推到 SQL：淘宝式订单页有「待付款/待发货/待收货」多个 Tab，
+     * 若取出全量再由前端过滤，分页 total 与每页条数都会错。</p>
+     * <p>已软删（{@code customer_deleted_at} 非空）的订单不再出现在客户列表里，
+     * 但数据仍在库中，财务/客服/售后读面不受影响。</p>
+     */
+    @Select({"<script>",
+            "SELECT * FROM orders WHERE customer_id = #{customerId}",
+            "AND customer_deleted_at IS NULL",
+            "<if test='status != null and status != \"\"'> AND status = #{status}</if>",
+            "ORDER BY id DESC",
+            "</script>"})
+    IPage<OrderPO> selectMyPage(Page<OrderPO> page, @Param("customerId") long customerId,
+                                @Param("status") String status);
+
+    /**
+     * 客户侧删除订单（软删）：只写时间戳，不动业务数据。
+     * <p>条件带 {@code customer_id} 与 {@code customer_deleted_at IS NULL}：
+     * 前者防越权，后者让重复点击天然幂等（第二次返回 0 行）。</p>
+     */
+    @Update("UPDATE orders SET customer_deleted_at = NOW(3), version = version + 1 "
+            + "WHERE order_no = #{orderNo} AND customer_id = #{customerId} AND customer_deleted_at IS NULL")
+    int markCustomerDeleted(@Param("orderNo") String orderNo, @Param("customerId") long customerId);
+
+    /**
+     * 按订单 id 批量取订单行（列表页展示商品行，避免逐单 N+1 查询）。
+     * <p>标题/规格与管理端详情同口径兜底：快照为空时回退 {@code product.title} /
+     * {@code sku.spec_json.spec} / {@code sku_no}，否则老订单卡片会出现空白商品名。</p>
+     * <p>调用方须先判空：空集合会拼出 {@code IN ()} 语法错误。</p>
+     */
+    @Select({"<script>",
+            "SELECT oi.order_id AS orderId, oi.sku_id AS skuId, ",
+            "p.id AS productId, ",
+            "COALESCE(oi.spu_title_snap, p.title) AS title, ",
+            "COALESCE(oi.spec_snap, JSON_UNQUOTE(JSON_EXTRACT(sk.spec_json, '$.spec')), sk.sku_no) AS spec, ",
+            "oi.qty AS qty, oi.unit_price_cent AS unitPriceCent, ",
+            "(oi.amount_cent - oi.discount_alloc_cent) AS linePaidCent ",
+            "FROM order_item oi ",
+            "LEFT JOIN sku sk ON sk.id = oi.sku_id ",
+            "LEFT JOIN product p ON p.id = sk.spu_id ",
+            "WHERE oi.order_id IN",
+            "<foreach collection='orderIds' item='oid' open='(' separator=',' close=')'>#{oid}</foreach>",
+            "ORDER BY oi.id",
+            "</script>"})
+    List<OrderItemListRow> selectItemsByOrderIds(@Param("orderIds") List<Long> orderIds);
 
     /**
      * 管理端订单真实分页：status 为空时全量，非空时按状态筛选。
@@ -53,6 +97,14 @@ public interface OrderMapper extends BaseMapper<OrderPO> {
     /** 按订单号读取（业务唯一键，前台入口）。 */
     @Select("SELECT * FROM orders WHERE order_no = #{orderNo}")
     OrderPO selectByOrderNo(@Param("orderNo") String orderNo);
+
+    /**
+     * 某位顾客的最近 N 笔订单（客服工作台右侧侧栏）。
+     * <p>按主键倒序而非创建时间：同秒下单的历史数据用 created_at 排序不稳定，
+     * 会让侧栏每次刷新顺序抖动。{@code limit} 由上层归一后传入，这里不做二次裁剪。</p>
+     */
+    @Select("SELECT * FROM orders WHERE customer_id = #{customerId} ORDER BY id DESC LIMIT #{limit}")
+    List<OrderPO> selectRecentByCustomer(@Param("customerId") long customerId, @Param("limit") long limit);
 
     /** 按幂等键回查（重复提交时返回首次结果）。 */
     @Select("SELECT * FROM orders WHERE idem_key = #{idemKey}")

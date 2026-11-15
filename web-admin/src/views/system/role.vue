@@ -2,7 +2,7 @@
   <div>
     <h2 class="sent-page-title">角色权限矩阵</h2>
     <el-row :gutter="16">
-      <el-col :xs="24" :md="7">
+      <el-col :xs="24" :md="7" class="role-col">
         <div class="sent-panel">
           <h3 class="section-title">角色</h3>
           <el-table
@@ -13,9 +13,9 @@
             v-loading="loading"
             @current-change="selectRole"
           >
-            <el-table-column prop="roleCode" label="编码" min-width="120" />
-            <el-table-column prop="roleName" label="名称" min-width="120" />
-            <el-table-column label="权限数" width="90" align="center">
+            <el-table-column prop="roleCode" label="编码" min-width="150" />
+            <el-table-column prop="roleName" label="名称" min-width="100" />
+            <el-table-column label="权限数" width="80" align="center">
               <template #default="scope">{{ scope.row.permCodes?.length ?? 0 }}</template>
             </el-table-column>
             <template #empty><el-empty description="暂无角色" :image-size="50" /></template>
@@ -23,7 +23,7 @@
         </div>
       </el-col>
 
-      <el-col :xs="24" :md="17">
+      <el-col :xs="24" :md="17" class="role-col">
         <div class="sent-panel">
           <div class="sent-form-row">
             <h3 class="section-title">
@@ -145,4 +145,18 @@ onMounted(() => { void load(); });
 .perm-group { border: 1px solid #e6ece9; border-radius: 6px; padding: 10px 12px; margin-bottom: 10px; }
 .perm-group-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .perm-items { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+
+/*
+ * 两栏等高：未选角色时右栏只有一个空状态，会明显矮于左栏（左栏 6 行角色）。
+ * 给两侧同一个 min-height，选中前后高度一致，不出现「点一下角色页面就跳高」。
+ * 项目未启用 border-box，flex 子项必须 min-width: 0，否则 18px 内边距会把卡片撑出栏宽。
+ */
+@media (min-width: 1200px) {
+  .role-col { display: flex; }
+  .role-col > .sent-panel {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 560px;
+  }
+}
 </style>

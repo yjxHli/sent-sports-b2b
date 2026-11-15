@@ -34,6 +34,15 @@ export interface ShipOrderResult {
   shippedLines?: ShipLineCmd[];
 }
 
+/** 客服侧栏「顾客历史订单」行（金额后端已同时给分与元） */
+export interface AdminCustomerOrderVO {
+  orderNo: string;
+  status: string;
+  payableCent?: number | string | null;
+  payableYuan?: string | null;
+  createdAt?: number | string | null;
+}
+
 export const orderApi = {
   list: (query: PageQuery & { status?: string; keyword?: string }) =>
     http.get<PageResult<AdminOrderVO>>('/admin/orders', query),
@@ -55,4 +64,11 @@ export const orderApi = {
 
   /** 用户端退款单查询（管理端退款审核端点待后端补齐） */
   refunds: (query: PageQuery) => http.get<PageResult<RefundVO>>('/refunds', query),
+
+  /**
+   * 某位顾客的最近订单（客服工作台右侧「顾客历史订单」侧栏）。
+   * 后端 limit 归一：缺省 10、上限 20，不会因为传大数字把侧栏撑爆。
+   */
+  customerOrders: (customerId: number, limit = 10) =>
+    http.get<AdminCustomerOrderVO[]>(`/admin/customers/${customerId}/orders`, { limit }),
 };

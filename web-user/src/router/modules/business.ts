@@ -33,11 +33,17 @@ export const MENU_ROUTES: AppRoute[] = [
   { path: '/checkout', title: '确认订单', hidden: true },
   { path: '/orders', title: '我的订单', hidden: true },
   { path: '/order/:orderNo', title: '订单详情', hidden: true },
+  { path: '/favorites', title: '我的收藏', hidden: true },
+  { path: '/footprints', title: '我的足迹', hidden: true },
   { path: '/custom', title: '我的定制', hidden: true },
+  { path: '/custom/:customOrderId', title: '定制单详情', hidden: true },
+  { path: '/group-buy', title: '团购专区', hidden: true },
   { path: '/chat', title: '在线客服', hidden: true },
+  { path: '/messages', title: '消息中心', hidden: true },
   { path: '/member', title: '会员中心', hidden: true },
   { path: '/refunds', title: '我的售后', hidden: true },
   { path: '/refund/:refundNo', title: '售后详情', hidden: true },
+  { path: '/refund/apply/:orderNo', title: '申请退款', hidden: true },
 ];
 
 type RouteComponentLoader = RouteRecordSingleView['component'];
@@ -51,11 +57,17 @@ const REAL_PAGES: Record<string, RouteComponentLoader> = {
   '/checkout': () => import('@/views/checkout/index.vue'),
   '/orders': () => import('@/views/order/list.vue'),
   '/order/:orderNo': () => import('@/views/order/detail.vue'),
+  '/favorites': () => import('@/views/favorites/index.vue'),
+  '/footprints': () => import('@/views/footprints/index.vue'),
   '/custom': () => import('@/views/custom/index.vue'),
+  '/custom/:customOrderId': () => import('@/views/custom/detail.vue'),
+  '/group-buy': () => import('@/views/group-buy/index.vue'),
   '/chat': () => import('@/views/chat/index.vue'),
+  '/messages': () => import('@/views/message/index.vue'),
   '/member': () => import('@/views/member/index.vue'),
   '/refunds': () => import('@/views/refund/list.vue'),
   '/refund/:refundNo': () => import('@/views/refund/detail.vue'),
+  '/refund/apply/:orderNo': () => import('@/views/refund/apply.vue'),
 };
 
 const NotFound: RouteComponentLoader = () => import('@/views/error/404.vue');

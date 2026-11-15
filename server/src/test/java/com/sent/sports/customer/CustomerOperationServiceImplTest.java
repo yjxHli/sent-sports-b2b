@@ -2,6 +2,7 @@ package com.sent.sports.customer;
 
 import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
+import com.sent.sports.common.util.TimeUtil;
 import com.sent.sports.customer.dto.admin.AdminCustomerDtos;
 import com.sent.sports.customer.mapper.CustomerMapper;
 import com.sent.sports.customer.mapper.po.CustomerPO;
@@ -14,10 +15,14 @@ import org.mockito.Captor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 
+import java.time.LocalDateTime;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -101,21 +106,39 @@ class CustomerOperationServiceImplTest extends BaseUnitTest {
                 () -> service.grantLevel(91203L, "GOLD", 1893456000000L, "业绩达标"));
         assertEquals(ErrorCode.PARAM_INVALID, e.getErrorCode());
         assertEquals("等级码不合法：GOLD（可选 NORMAL / LV1 / LV2 / LV3）", e.resolvedMessage());
-        verify(customerMapper, never()).updateLevelCode(anyLong(), any());
+        verify(customerMapper, never()).updateLevelGrant(anyLong(), any(), any());
     }
 
     @Test
-    @DisplayName("授级：合法等级码写回 customer.level_code 并记录有效期")
-    void grantLevelUpdatesLevelCode() {
+    @DisplayName("授级：等级码与有效期一起落库（此前只写 level_code，到期时间只留在流水里）")
+    void grantLevelPersistsLevelCodeWithExpiry() {
         when(customerMapper.selectById(91203L)).thenReturn(customer("LV1", 100L, 9004L));
-        when(customerMapper.updateLevelCode(91203L, "LV2")).thenReturn(1);
+        when(customerMapper.updateLevelGrant(eq(91203L), eq("LV2"), any())).thenReturn(1);
 
         AdminCustomerDtos.LevelVO r = service.grantLevel(91203L, "LV2", 1893456000000L, "业绩达标");
 
         assertEquals("LV2", r.level());
         assertEquals(1893456000000L, r.validToMillis());
+        ArgumentCaptor<LocalDateTime> validToCaptor = ArgumentCaptor.forClass(LocalDateTime.class);
+        verify(customerMapper).updateLevelGrant(eq(91203L), eq("LV2"), validToCaptor.capture());
+        long persisted = validToCaptor.getValue().atZone(TimeUtil.BIZ_ZONE)
+                .toInstant().toEpochMilli();
+        assertEquals(1893456000000L, persisted, "授级有效期必须能原样读回，否则会员中心只能显示 1970-01-01");
         verify(customerMapper).insertOperationLog(operationLogCaptor.capture());
         assertEquals("GRANT_LEVEL", operationLogCaptor.getValue().action());
+    }
+
+    @Test
+    @DisplayName("授级：有效期为 0 / 负数按长期有效落库（NULL），不写 1970-01-01")
+    void grantLevelTreatsNonPositiveExpiryAsPermanent() {
+        when(customerMapper.selectById(91203L)).thenReturn(customer("LV1", 100L, 9004L));
+        when(customerMapper.updateLevelGrant(eq(91203L), eq("LV3"), any())).thenReturn(1);
+
+        service.grantLevel(91203L, "lV3", 0L, "长期合作");
+
+        ArgumentCaptor<LocalDateTime> validToCaptor = ArgumentCaptor.forClass(LocalDateTime.class);
+        verify(customerMapper).updateLevelGrant(eq(91203L), eq("LV3"), validToCaptor.capture());
+        assertNull(validToCaptor.getValue(), "长期有效应落 NULL");
     }
 
     @Test

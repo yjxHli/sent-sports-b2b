@@ -5,6 +5,7 @@ import com.sent.sports.refund.domain.RefundStatus;
 import com.sent.sports.refund.mapper.RefundOrderMapper;
 import com.sent.sports.refund.mapper.po.RefundOrderPO;
 import com.sent.sports.refund.repository.RefundRepository;
+import com.sent.sports.refund.support.ImageJsonCodec;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
@@ -39,7 +40,8 @@ public class RefundRepositoryImpl implements RefundRepository {
         }
         // 已存在：仅推进会随业务变化的字段。退款完成（REFUNDED）落账时间，其余保持不变。
         LocalDateTime refundedAt = order.getStatus() == RefundStatus.REFUNDED ? LocalDateTime.now() : null;
-        mapper.updateRefundState(order.getRefundNo(), order.getStatus().name(), order.getAppealCount(), refundedAt);
+        mapper.updateRefundState(order.getRefundNo(), order.getStatus().name(), order.getAppealCount(),
+                refundedAt, order.getAuditRemark());
     }
 
     @Override
@@ -59,6 +61,8 @@ public class RefundRepositoryImpl implements RefundRepository {
         po.setReasonCode(onlyRefund ? "SYSTEM" : "USER_APPLY");
         po.setRemark(order.getReason());
         po.setApplicantType(onlyRefund ? "STAFF" : "CUSTOMER");
+        // 凭证图片：fileId 数组以 JSON 落 images_json，审核端再解码成图片列表展示
+        po.setImagesJson(ImageJsonCodec.encode(order.getImages()));
         // created_at / updated_at 由 MetaObjectHandler 自动填充，此处不重复写入。
         return po;
     }
@@ -75,6 +79,7 @@ public class RefundRepositoryImpl implements RefundRepository {
                 RefundStatus.valueOf(po.getStatus()),
                 createdAt);
         order.setAppealCount(po.getAppealCount() == null ? 0 : po.getAppealCount().intValue());
+        order.setImages(ImageJsonCodec.decode(po.getImagesJson()));
         return order;
     }
 

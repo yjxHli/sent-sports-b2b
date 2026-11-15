@@ -21,6 +21,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 /**
  * 订单管理控制器：多维筛选、代客下单、拆单、发货、关单。
  * <p>关单是危险操作：{@code @RequirePerm("order:close")} 由权限拦截器校验，
@@ -51,6 +53,18 @@ public class AdminOrderController {
     @GetMapping("/orders/{id}")
     public R<AdminOrderDtos.AdminOrderDetailVO> detail(@PathVariable String id) {
         return R.ok(orderAdminService.detail(id));
+    }
+
+    /**
+     * 某位顾客的最近订单（客服工作台右侧「顾客历史订单」侧栏）。
+     * <p>客服接待时需要随手确认「这位顾客之前买过什么」，单独开一个轻量接口：
+     * 走订单列表那套分页会让侧栏拿不到最新一页的语义，而这里只要「最近几笔」。</p>
+     */
+    @GetMapping("/customers/{customerId}/orders")
+    public R<List<AdminOrderDtos.AdminCustomerOrderVO>> customerOrders(
+            @PathVariable long customerId,
+            @RequestParam(defaultValue = "10") int limit) {
+        return R.ok(orderAdminService.customerOrders(customerId, limit));
     }
 
     @PostMapping("/orders")

@@ -13,7 +13,7 @@
         <el-descriptions-item label="预警阈值">{{ summary?.threshold ?? '--' }}</el-descriptions-item>
       </el-descriptions>
       <p class="sent-hint">
-        后端 /admin/reports/stock-warning 返回单条汇总（工作台同口径）；下方清单来自库存四口径实时列表。
+        摘要取缺口最大的一条告急 SKU；下方清单来自库存四口径实时列表，「仅看低于安全库存」由后端 SQL 下推。
       </p>
     </div>
 
@@ -42,7 +42,7 @@
           />
           <el-button type="primary" @click="onSearch">查询</el-button>
           <el-button @click="router.push('/stock/inbound')">去手工入库</el-button>
-          <el-checkbox v-model="onlyWarning" @change="load">仅看低于安全库存</el-checkbox>
+          <el-checkbox v-model="onlyWarning" @change="onWarningChange">仅看低于安全库存</el-checkbox>
         </template>
         <template #col-warning="{ row }">
           <StatusTag
@@ -59,6 +59,11 @@
 /**
  * 库存预警（P6-53）：单条汇总 + 实时清单。
  * 预警判定在展示层用 availableQty <= safeQty（与四口径一致），后端 warning 字段优先。
+ *
+ * 2026-11-12 收口：原实现默认勾选「仅看低于安全库存」，却在前端把**当前页**再 filter 一遍，
+ * 总数还用过滤后的行数 —— 单页上限 100 会漏数据；库里没有告急 SKU 时整页「暂无数据」。
+ * 现在筛选条件经 warningOnly 下推到 SQL（列表与 count 同条件），默认展示全量台账并用状态列
+ * 标出哪些告急，需要时再勾选只看预警。
  */
 import { onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
@@ -90,7 +95,8 @@ const total = ref(0);
 const { page, size } = usePagination();
 const loading = ref(false);
 const skuId = ref<number | undefined>(undefined);
-const onlyWarning = ref(true);
+/** 默认展示全量台账；改勾选时由后端重新分页，不再前端截断 */
+const onlyWarning = ref(false);
 
 function isWarning(row: any): boolean {
   if (row.warning === true) return true;
@@ -101,17 +107,23 @@ async function load(): Promise<void> {
   loading.value = true;
   const [warn, stocks] = await Promise.allSettled([
     unwrap(systemApi.stockWarningReport()),
-    unwrap(stockApi.list({ page: page.value, size: size.value, skuId: skuId.value })),
+    unwrap(stockApi.list({
+      page: page.value,
+      size: size.value,
+      skuId: skuId.value,
+      warningOnly: onlyWarning.value,
+    })),
   ]);
   summary.value = warn.status === 'fulfilled' ? warn.value : null;
-  const all = stocks.status === 'fulfilled' ? (stocks.value?.list ?? []) : [];
-  rows.value = onlyWarning.value ? all.filter(isWarning) : all;
-  total.value = onlyWarning.value ? rows.value.length : (stocks.status === 'fulfilled' ? (stocks.value?.total ?? 0) : 0);
+  rows.value = stocks.status === 'fulfilled' ? (stocks.value?.list ?? []) : [];
+  total.value = stocks.status === 'fulfilled' ? Number(stocks.value?.total ?? 0) : 0;
   if (stocks.status === 'rejected') ElMessage.error('库存列表加载失败');
   loading.value = false;
 }
 
 function onSearch(): void { page.value = 1; void load(); }
+/** 换筛选条件必须回到第 1 页，否则会停在一个不存在的页码上看到空表 */
+function onWarningChange(): void { page.value = 1; void load(); }
 function onPage(value: number): void { page.value = value; void load(); }
 function onSize(value: number): void { size.value = value; page.value = 1; void load(); }
 

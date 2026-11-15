@@ -5,6 +5,8 @@ import com.sent.sports.common.web.PageResult;
 import com.sent.sports.order.dto.admin.AdminOrderDtos;
 import com.sent.sports.order.service.dto.ShipOrderResult;
 
+import java.util.List;
+
 /**
  * 订单管理（管理端）服务接口（P4-40 契约）。
  * <p>代客下单/拆单/关单实体与仓储尚未建设，当前由 {@code OrderAdminServiceImpl} 桩实现占位；
@@ -33,4 +35,13 @@ public interface OrderAdminService {
 
     /** 详情：订单头 + 金额 + 订单行（真实查询；订单号不存在抛 NOT_FOUND）。 */
     AdminOrderDtos.AdminOrderDetailVO detail(String orderNo);
+
+    /**
+     * 某位顾客的最近订单（客服工作台右侧「顾客历史订单」侧栏）。
+     *
+     * <p>不走分页：侧栏只需要「最近买过几笔、什么状态、多少钱」，一次取 {@code limit} 条即可；
+     * 需要看全部时客服点订单号进订单详情页。{@code limit} 由实现归一（缺省 10，上限 20），
+     * 避免前端传 1000 把侧栏撑爆。</p>
+     */
+    List<AdminOrderDtos.AdminCustomerOrderVO> customerOrders(long customerId, int limit);
 }

@@ -98,7 +98,7 @@ class AdminStockApiTest extends BaseApiTest {
     @Test
     @DisplayName("库存列表返回空分页 200")
     void listReturnsEmptyPage() throws Exception {
-        when(stockQueryService.list(any(), any())).thenReturn(
+        when(stockQueryService.list(any(), any(), eq(false))).thenReturn(
                 com.sent.sports.common.web.PageResult.of(java.util.List.of(), 0L, 1, 10));
         mvc.perform(get("/api/admin/stock").param("page", "1").param("size", "10"))
                 .andExpect(status().isOk())
@@ -107,9 +107,23 @@ class AdminStockApiTest extends BaseApiTest {
     }
 
     @Test
+    @DisplayName("库存列表 warningOnly=true 透传到服务层（筛选条件由 SQL 判定）")
+    void listPassesWarningOnly() throws Exception {
+        when(stockQueryService.list(any(), any(), eq(true))).thenReturn(
+                com.sent.sports.common.web.PageResult.of(java.util.List.of(), 0L, 1, 10));
+
+        mvc.perform(get("/api/admin/stock").param("page", "1").param("size", "10")
+                        .param("warningOnly", "true"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+
+        verify(stockQueryService).list(any(), any(), eq(true));
+    }
+
+    @Test
     @DisplayName("库存列表透传 SKU 筛选，并回显四口径与可用量")
     void listPassesSkuIdAndReturnsStockRow() throws Exception {
-        when(stockQueryService.list(any(), eq(9209L))).thenReturn(
+        when(stockQueryService.list(any(), eq(9209L), eq(false))).thenReturn(
                 com.sent.sports.common.web.PageResult.of(java.util.List.of(
                         new com.sent.sports.stock.dto.admin.AdminStockDtos.StockRow(
                                 9209L, "尤尼克斯 AS-05 · 一筒(12只)", 100, 10, 5, 5, 80, 20, false)),
@@ -122,7 +136,7 @@ class AdminStockApiTest extends BaseApiTest {
                 .andExpect(jsonPath("$.data.list[0].availableQty").value(80))
                 .andExpect(jsonPath("$.data.list[0].safeQty").value(20));
 
-        verify(stockQueryService).list(any(), eq(9209L));
+        verify(stockQueryService).list(any(), eq(9209L), eq(false));
     }
 
     @Test

@@ -82,16 +82,18 @@ public class AdminFinanceController {
             @ModelAttribute PageQuery page,
             @RequestParam(required = false) Long customerId,
             @RequestParam(required = false) String status,
+            @RequestParam(required = false) String orderNo,
             @RequestParam(required = false, defaultValue = "false") boolean openOnly) {
-        return R.ok(financeQueryService.receivables(page, customerId, status, openOnly));
+        return R.ok(financeQueryService.receivables(page, customerId, status, openOnly, orderNo));
     }
 
-    /** 发票申请列表（收口阶段）：真实分页，票面金额联查订单应付金额。 */
+    /** 发票申请列表（收口阶段）：真实分页，票面金额联查订单应付金额；keyword 支持发票 ID / 发票号 / 客户 ID。 */
     @GetMapping("/invoices")
     public R<PageResult<AdminFinanceDtos.InvoiceVO>> invoices(
             @ModelAttribute PageQuery page,
-            @RequestParam(required = false) String status) {
-        return R.ok(financeQueryService.invoices(page, status));
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String keyword) {
+        return R.ok(financeQueryService.invoices(page, status, keyword));
     }
 
     /**
@@ -133,13 +135,14 @@ public class AdminFinanceController {
         return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
     }
 
-    /** 合同列表（收口阶段）：真实分页，到期日换算成毫秒供前端计算剩余天数。 */
+    /** 合同列表（收口阶段）：真实分页，到期日换算成毫秒供前端计算剩余天数；keyword 同时匹配合同 ID / 合同号 / 客户 ID。 */
     @GetMapping("/contracts")
     public R<PageResult<AdminFinanceDtos.ContractVO>> contracts(
             @ModelAttribute PageQuery page,
             @RequestParam(required = false) String status,
-            @RequestParam(required = false) String dueState) {
-        return R.ok(financeQueryService.contracts(page, status, dueState));
+            @RequestParam(required = false) String dueState,
+            @RequestParam(required = false) String keyword) {
+        return R.ok(financeQueryService.contracts(page, status, dueState, keyword));
     }
 
     /** 回款列表（收口阶段）：真分页，可按客户 / 状态过滤，页面不再只显示本次登记结果。 */

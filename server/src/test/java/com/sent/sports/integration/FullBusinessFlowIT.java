@@ -205,7 +205,7 @@ class FullBusinessFlowIT extends FullStackIntegrationTest {
         // 3) 生成订单（带 Idempotency-Key）：两行、价格快照、库存预占
         //    SKU / 库存台账已在步骤 2 播种（加购需要真实零售价）
         // ------------------------------------------------------------------
-        CreateOrderCmd orderCmd = new CreateOrderCmd(CUSTOMER_ID, IDEM_KEY, 0,
+        CreateOrderCmd orderCmd = new CreateOrderCmd(CUSTOMER_ID, seedAddress(CUSTOMER_ID), IDEM_KEY, 0,
                 Integer.MAX_VALUE, 0, List.of(
                 new OrderLineCmd(STANDARD_SKU, STANDARD_QTY, "PERSON", 100, 100, false, List.of()),
                 new OrderLineCmd(CUSTOM_SKU, CUSTOM_QTY, "PERSON", 100, 100, false, List.of())));

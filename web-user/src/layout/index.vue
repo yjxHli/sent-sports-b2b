@@ -1,10 +1,13 @@
 <template>
   <div class="site">
-    <!-- 顶部窄条：右侧 登录/订单/消息/购物车 -->
+    <!-- 顶部窄条：右侧 账户/订单/会员中心/在线客服/消息/购物车 -->
     <div class="topbar">
       <div class="container topbar__inner">
         <span class="topbar__welcome">您好，欢迎来到森特体育商城！专业运动装备 · 企业团购 · 会员专享</span>
         <div class="topbar__links">
+          <!-- 首页放最前（淘宝顶栏就是「淘宝网首页」开头），未登录也能回首页 -->
+          <router-link to="/home" class="topbar__link topbar__home">首页</router-link>
+          <span class="topbar__sep"></span>
           <template v-if="auth.isLoggedIn">
             <router-link to="/mine" class="topbar__link">我的账户</router-link>
           </template>
@@ -13,9 +16,17 @@
             <router-link to="/login" class="topbar__link">免费注册</router-link>
           </template>
           <span class="topbar__sep"></span>
+          <router-link to="/favorites" class="topbar__link topbar__fav">收藏夹</router-link>
+          <span class="topbar__sep"></span>
           <router-link to="/orders" class="topbar__link">我的订单</router-link>
           <span class="topbar__sep"></span>
-          <router-link to="/chat" class="topbar__link">消息</router-link>
+          <router-link to="/member" class="topbar__link topbar__member">会员中心</router-link>
+          <span class="topbar__sep"></span>
+          <router-link to="/chat" class="topbar__link topbar__chat">在线客服</router-link>
+          <span class="topbar__sep"></span>
+          <router-link to="/messages" class="topbar__link topbar__msg">
+            消息<i v-if="msg.unreadCount > 0" class="msg-badge">{{ msg.unreadCount > 99 ? '99+' : msg.unreadCount }}</i>
+          </router-link>
           <span class="topbar__sep"></span>
           <router-link to="/cart" class="topbar__link topbar__cart">
             购物车<i v-if="cartCount > 0" class="cart-badge">{{ cartCount > 99 ? '99+' : cartCount }}</i>
@@ -50,29 +61,8 @@
             <a v-for="h in HOT_WORDS" :key="h" @click="searchWord(h)">{{ h }}</a>
           </div>
         </div>
-
-        <div class="searchbar__right">
-          <router-link to="/cart" class="mini-cart">
-            <span>🛒</span><em>购物车</em><b>{{ cartCount }}</b>
-          </router-link>
-        </div>
       </div>
     </div>
-
-    <!-- 主导航 -->
-    <nav class="mainnav">
-      <div class="container mainnav__inner">
-        <router-link
-          v-for="m in NAV_ITEMS"
-          :key="m.path"
-          :to="m.path"
-          class="mainnav__item"
-          :class="{ active: isActive(m.path) }"
-        >
-          {{ m.title }}
-        </router-link>
-      </div>
-    </nav>
 
     <main class="site-main">
       <router-view />
@@ -113,33 +103,35 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '@/store/modules/useAuthStore';
 import { useCartStore } from '@/store/modules/useCartStore';
-import { MENU_ROUTES } from '@/router/modules/business';
+import { useMessageStore } from '@/store/modules/useMessageStore';
 
 const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
 const cart = useCartStore();
+const msg = useMessageStore();
 
 const keyword = ref('');
 
 const HOT_WORDS = ['篮球', '瑜伽垫', '跑步鞋', '定制球衣', '哑铃', '泳镜'];
 
-/** 主导航顺序（文案统一取 MENU_ROUTES，保持菜单单一真源） */
-const NAV_ORDER = ['/home', '/products', '/orders', '/member', '/chat', '/mine'];
-const NAV_ITEMS = NAV_ORDER.map((path) => ({
-  path,
-  title: MENU_ROUTES.find((m) => m.path === path)?.title ?? path,
-}));
-
 const cartCount = computed(() => cart.totalQty);
 
-function isActive(path: string): boolean {
-  if (path === '/home') return route.path === '/' || route.path === '/home';
-  return route.path === path || route.path.startsWith(path + '/');
+/**
+ * 站内信未读数（顶栏红点）。
+ * 真源是 {@link useMessageStore}：消息页标记已读/全部已读/删除后都会刷新同一个 ref，
+ * 顶栏红点随点击实时变化，不必等 60s 轮询或路由切换。
+ */
+async function loadUnread(): Promise<void> {
+  if (!auth.isLoggedIn) {
+    msg.reset();
+    return;
+  }
+  await msg.refresh();
 }
 
 function onSearch(): void {
@@ -155,6 +147,44 @@ function searchWord(word: string): void {
 onMounted(() => {
   if (auth.isLoggedIn) {
     cart.load().catch(() => { /* 购物车拉取失败不阻塞浏览 */ });
+    void loadUnread();
+    startUnreadPoll();
   }
+});
+
+/**
+ * 未读红点轮询：站内信是「别人触发」的（客服审核驳回退款、订单发货……），
+ * 只在进入页面时拉一次的话，用户停在订单详情页就永远看不到驳回通知。
+ * 60s 一次、页面不可见时跳过，成本可忽略。
+ */
+const UNREAD_POLL_MS = 60_000;
+let unreadTimer: number | undefined;
+
+function startUnreadPoll(): void {
+  stopUnreadPoll();
+  unreadTimer = window.setInterval(() => {
+    if (document.visibilityState === 'visible') void loadUnread();
+  }, UNREAD_POLL_MS);
+}
+
+function stopUnreadPoll(): void {
+  if (unreadTimer !== undefined) {
+    window.clearInterval(unreadTimer);
+    unreadTimer = undefined;
+  }
+}
+
+onBeforeUnmount(stopUnreadPoll);
+
+/** 切回标签页时立刻补一次，避免「刚切回来还是旧数字」 */
+function onVisible(): void {
+  if (document.visibilityState === 'visible' && auth.isLoggedIn) void loadUnread();
+}
+window.addEventListener('visibilitychange', onVisible);
+onBeforeUnmount(() => window.removeEventListener('visibilitychange', onVisible));
+
+/** 从消息中心返回时红点要跟着变 */
+watch(() => route.fullPath, (path) => {
+  if (path.startsWith('/messages')) void loadUnread();
 });
 </script>

@@ -91,6 +91,9 @@ public interface StockMapper extends BaseMapper<SkuStockPO> {
     /**
      * 管理端库存台账分页：联查 SKU / SPU 带出商品名与规格，可按 SKU ID 精确筛选。
      * 一个 SKU 一行台账（sku_id 主键），可用量由服务层按四口径计算。
+     * <p>{@code warningOnly} 由 SQL 判定「可用 <= 安全库存」，与
+     * {@link com.sent.sports.stock.service.impl.StockQueryServiceImpl} 的 {@code StockRow.warning}
+     * 同口径（可用量下限 0）；分页插件的自动 count 会复用同一段 WHERE，不会出现「共 N 条」与行数错位。</p>
      */
     @Select("<script>"
             + "SELECT st.sku_id, st.physical_qty, st.locked_qty, st.pending_qty, st.frozen_qty, "
@@ -100,9 +103,32 @@ public interface StockMapper extends BaseMapper<SkuStockPO> {
             + "LEFT JOIN product p ON p.id = s.spu_id "
             + "WHERE 1 = 1 "
             + "<if test=\"skuId != null\"> AND st.sku_id = #{skuId}</if> "
+            + "<if test=\"warningOnly != null and warningOnly\"> "
+            + "AND GREATEST(st.physical_qty - st.locked_qty - st.pending_qty - st.frozen_qty, 0) "
+            // <script> 是 XML 片段，裸 <= 会被 SAX 当成标签起始，必须转义
+            + "&lt;= GREATEST(st.safety_qty, 0) "
+            + "</if> "
             + "ORDER BY st.sku_id"
             + "</script>")
-    IPage<StockLedgerRow> selectStockPage(Page<StockLedgerRow> page, @Param("skuId") Long skuId);
+    IPage<StockLedgerRow> selectStockPage(Page<StockLedgerRow> page, @Param("skuId") Long skuId,
+                                          @Param("warningOnly") Boolean warningOnly);
+
+    /**
+     * 最紧急的一条库存预警（缺口最大者），供管理端「预警摘要」与工作台指标卡使用。
+     * <p>口径与 {@link #selectStockPage} 的 warningOnly 完全一致：可用 <= 安全库存，
+     * 按缺口倒序取第一条；没有预警行时返回 null，由服务层转写成「暂无预警」。</p>
+     */
+    @Select("SELECT st.sku_id, st.physical_qty, st.locked_qty, st.pending_qty, st.frozen_qty, "
+            + "st.safety_qty, s.sku_no, s.spec_json, p.title AS product_title "
+            + "FROM sku_stock st "
+            + "LEFT JOIN sku s ON s.id = st.sku_id "
+            + "LEFT JOIN product p ON p.id = s.spu_id "
+            + "WHERE GREATEST(st.physical_qty - st.locked_qty - st.pending_qty - st.frozen_qty, 0) "
+            + "<= GREATEST(st.safety_qty, 0) "
+            + "ORDER BY (GREATEST(st.safety_qty, 0) "
+            + "- GREATEST(st.physical_qty - st.locked_qty - st.pending_qty - st.frozen_qty, 0)) DESC, "
+            + "st.sku_id LIMIT 1")
+    StockLedgerRow selectMostCriticalWarning();
 
     /** 库存台账联查行。 */
     class StockLedgerRow {

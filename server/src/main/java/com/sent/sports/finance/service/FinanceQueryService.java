@@ -19,12 +19,20 @@ public interface FinanceQueryService {
      * @param openOnly 只要未结清（{@code status <> 'CLOSED'}）。核销工作台必须为 {@code true}：
      *                 已结清应收不可再核销，且过滤条件必须下推 SQL，否则前端先取一页再剔行
      *                 会出现「共 N 条但某页只剩几条」的错位。
+     * @param orderNo  订单号模糊匹配，空白表示不限。台账动辄几百行，运营只记得订单号，
+     *                 必须能在 SQL 里收敛，而不是取一页再前端过滤。
      */
     PageResult<AdminFinanceDtos.ReceivableVO> receivables(PageQuery pageQuery, Long customerId,
-                                                          String status, boolean openOnly);
+                                                          String status, boolean openOnly,
+                                                          String orderNo);
 
-    /** 发票申请分页：票面金额联查订单应付金额。 */
-    PageResult<AdminFinanceDtos.InvoiceVO> invoices(PageQuery pageQuery, String status);
+    /**
+     * 发票申请分页：票面金额联查订单应付金额。
+     *
+     * @param keyword 发票 ID / 发票号 / 客户 ID 三选一模糊匹配，空白表示不限（SQL 下推，
+     *                列表与 count 同条件，避免「共 N 条」与行数错位）
+     */
+    PageResult<AdminFinanceDtos.InvoiceVO> invoices(PageQuery pageQuery, String status, String keyword);
 
     /**
      * 合同分页：金额与状态取自 V10 补列，到期日换算成毫秒。
@@ -32,8 +40,10 @@ public interface FinanceQueryService {
      * @param status   合同单据状态（ACTIVE / EXPIRED …），空白表示不限
      * @param dueState 派生到期状态 EXPIRED / SOON（30 天内）/ NORMAL，空白表示不限。
      *                 由 {@code expire_date} 在 SQL 里判定，避免前端先取一页再过滤导致漏数据。
+     * @param keyword  合同 ID / 合同号 / 客户 ID 三选一模糊匹配，空白表示不限。
      */
-    PageResult<AdminFinanceDtos.ContractVO> contracts(PageQuery pageQuery, String status, String dueState);
+    PageResult<AdminFinanceDtos.ContractVO> contracts(PageQuery pageQuery, String status,
+                                                      String dueState, String keyword);
 
     /**
      * 回款单分页（收口阶段）：写入侧登记/核销/冲销早已真落库，但查询侧缺失导致页面只能显示本次登记结果。

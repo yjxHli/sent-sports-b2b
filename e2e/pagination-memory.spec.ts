@@ -43,8 +43,13 @@ test('企业审核与授信支持真翻页与自选每页条数', async ({ page 
   console.log('企业分页器:', pagerText);
   // 50 条企业客户 / 20 条每页 = 至少 3 页
   expect(pagerText).toMatch(/共\s*\d+\s*条/);
+  // 企业页左右两张卡片等高后，每页条数按卡片可用高度自适应（随窗口在 12~16 之间浮动），
+  // 所以初始行数不写死 20，而是与分页器实际显示的条数对齐；
+  // 下面的「翻页换数据」「手选 15 条/页生效」仍是硬断言。
   const rows = page.locator('.el-table__body tbody tr');
-  await expect(rows).toHaveCount(20);
+  const initialSize = Number((pagerText.match(/(\d+)\s*条\/页/) ?? [])[1]);
+  expect(initialSize).toBeGreaterThan(0);
+  await expect(rows).toHaveCount(initialSize);
 
   // 翻到第 2 页：必须真的发请求且首行变化
   const firstIdOnPage1 = await rows.first().locator('td').first().innerText();

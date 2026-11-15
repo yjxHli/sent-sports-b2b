@@ -3,11 +3,13 @@ package com.sent.sports.web;
 import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
 import com.sent.sports.common.web.PageResult;
+import com.sent.sports.common.web.CurrentUser;
 import com.sent.sports.order.controller.OrderController;
 import com.sent.sports.order.dto.OrderDtos;
 import com.sent.sports.order.service.CancelOrderUseCase;
 import com.sent.sports.order.service.ConfirmReceiptUseCase;
 import com.sent.sports.order.service.CreateOrderUseCase;
+import com.sent.sports.order.service.DeleteOrderUseCase;
 import com.sent.sports.order.service.OrderQueryService;
 import com.sent.sports.order.service.dto.CancelOrderResult;
 import com.sent.sports.order.service.dto.ConfirmReceiptResult;
@@ -25,7 +27,10 @@ import java.util.List;
 import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -52,6 +57,9 @@ class OrderApiTest extends BaseApiTest {
     @MockBean
     private OrderQueryService orderQueryService;
 
+    @MockBean
+    private DeleteOrderUseCase deleteOrderUseCase;
+
     @Test
     @DisplayName("下单返回订单号与应付金额 200")
     void createOrderReturns200() throws Exception {
@@ -59,6 +67,8 @@ class OrderApiTest extends BaseApiTest {
                 new CreateOrderResult("O1", "WAIT_PAY", 10000L, 9000L, 0L, 0L));
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("customerId", 1L);
+        // 收货地址必填：下单时会被固化成 address_snapshot_json
+        body.put("addressId", 7001L);
         body.put("idemKey", "idem-1");
         body.put("availablePoints", 0);
         body.put("freightFreeThresholdCent", 0);
@@ -115,7 +125,7 @@ class OrderApiTest extends BaseApiTest {
     @Test
     @DisplayName("我的订单返回空分页 200")
     void listMyOrdersReturnsEmptyPage() throws Exception {
-        when(orderQueryService.listMyOrders(any(), any()))
+        when(orderQueryService.listMyOrders(any(), any(), any()))
                 .thenReturn(PageResult.of(List.of(), 0L, 1, 10));
         mvc.perform(get("/api/orders").param("page", "1").param("size", "10"))
                 .andExpect(status().isOk())
@@ -125,11 +135,58 @@ class OrderApiTest extends BaseApiTest {
     }
 
     @Test
+    @DisplayName("我的订单带 status 时把状态透传给 service（订单页 Tab 筛选）")
+    void listMyOrdersPassesStatus() throws Exception {
+        when(orderQueryService.listMyOrders(any(), eq("WAIT_SHIP"), any()))
+                .thenReturn(PageResult.of(List.of(), 0L, 1, 20));
+
+        mvc.perform(get("/api/orders").param("status", "WAIT_SHIP"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+
+        verify(orderQueryService).listMyOrders(any(), eq("WAIT_SHIP"), any());
+    }
+
+    @Test
     @DisplayName("订单详情无数据返回 NOT_FOUND 40401")
     void detailNotFoundReturns40401() throws Exception {
         when(orderQueryService.getDetail("O1")).thenThrow(new BizException(ErrorCode.NOT_FOUND));
         mvc.perform(get("/api/orders/O1"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value(40401));
+    }
+
+    @Test
+    @DisplayName("删除订单返回 200：终态订单才可删，在途由用例抛 STATE_CONFLICT")
+    void deleteOrderReturns200() throws Exception {
+        mvc.perform(delete("/api/orders/O1")
+                        .requestAttr(CurrentUser.ATTR, new CurrentUser(CurrentUser.AUD_USER, 9002L, "jti")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+
+        verify(deleteOrderUseCase).delete("O1", 9002L);
+    }
+
+    @Test
+    @DisplayName("删除在途订单返回 STATE_CONFLICT 40901")
+    void deleteInFlightOrderReturns40901() throws Exception {
+        org.mockito.Mockito.doThrow(new BizException(ErrorCode.STATE_CONFLICT, "在途订单不能删除"))
+                .when(deleteOrderUseCase).delete(eq("O1"), any());
+
+        mvc.perform(delete("/api/orders/O1")
+                        .requestAttr(CurrentUser.ATTR, new CurrentUser(CurrentUser.AUD_USER, 9002L, "jti")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(40901));
+    }
+
+    @Test
+    @DisplayName("未登录删除订单返回 40101：管理端令牌也不行，管理端走 /api/admin/orders")
+    void deleteWithoutCustomerReturns40101() throws Exception {
+        org.mockito.Mockito.doThrow(new BizException(ErrorCode.UNAUTHENTICATED))
+                .when(deleteOrderUseCase).delete(eq("O1"), org.mockito.ArgumentMatchers.isNull());
+
+        mvc.perform(delete("/api/orders/O1"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(40101));
     }
 }

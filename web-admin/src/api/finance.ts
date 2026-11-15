@@ -4,7 +4,7 @@
  */
 import { http, type SentRequestConfig } from '@/utils/http';
 import type {
-  PageQuery, PageResult, ReceivableVO, WriteOffVO, RefundVO,
+  PageQuery, PageResult, ReceivableVO, RefundAuditDetailVO, WriteOffVO, RefundVO,
 } from '@sent/shared';
 
 export interface RecordCmd {
@@ -131,7 +131,7 @@ export const financeApi = {
    * 应收台账：`openOnly=true` 由 SQL 过滤 `status <> 'CLOSED'`（核销工作台只要未结清），
    * 筛选与分页都用同一条件，避免前端先取一页再剔行导致总数/行数错位。
    */
-  receivables: (query: PageQuery & { customerId?: number; status?: string; openOnly?: boolean }) =>
+  receivables: (query: PageQuery & { customerId?: number; status?: string; openOnly?: boolean; orderNo?: string }) =>
     http.get<PageResult<ReceivableVO>>('/admin/receivables', query),
   /** 回款列表：真查 payment_record，不再只展示本次会话登记结果 */
   paymentRecords: (query: PaymentRecordQuery) =>
@@ -171,9 +171,15 @@ export const financeApi = {
     ),
 
   /** 审核列表来自管理端 /admin/refunds（真实分页，支持 status 过滤）；审核端点已就绪 */
-  refunds: (query: PageQuery & { status?: string }) =>
+  refunds: (query: PageQuery & { status?: string; keyword?: string }) =>
     http.get<PageResult<RefundVO>>('/admin/refunds', query),
   refundDetail: (refundNo: string) => http.get<RefundVO>(`/refunds/${refundNo}`),
+  /**
+   * 退款审核详情（单笔）：退款单 + 订单基本信息 + 客户 + 商品明细，一次拿全。
+   * 列表行点「详情」进独立审核页用这个端点，不再拼两次请求。
+   */
+  refundAuditDetail: (refundNo: string) =>
+    http.get<RefundAuditDetailVO>(`/admin/refunds/${refundNo}`),
   /** 审核通过需 X-Confirm-Token；驳回不需要 */
   auditRefund: (refundNo: string, cmd: RefundAuditCmd, confirmToken?: string) =>
     http.post<RefundVO>(
@@ -181,13 +187,13 @@ export const financeApi = {
       confirmToken ? confirmHeaders(confirmToken) : {},
     ),
 
-  /** 发票 / 合同列表：后端真实分页查询 */
-  invoices: (query: PageQuery & { status?: string }) =>
+  /** 发票列表：后端真实分页；keyword 支持发票 ID / 发票号 / 客户 ID（SQL 下推，非前端过滤） */
+  invoices: (query: PageQuery & { status?: string; keyword?: string }) =>
     http.get<PageResult<InvoiceVO>>('/admin/invoices', query),
   /**
    * 合同列表：`status` 是单据状态（ACTIVE/EXPIRED），`dueState` 是由到期日派生的
    * 「已到期 / 30 天内到期 / 正常」，两者都在 SQL 里过滤，前端不再二次筛。
    */
-  contracts: (query: PageQuery & { status?: string; dueState?: string }) =>
+  contracts: (query: PageQuery & { status?: string; dueState?: string; keyword?: string }) =>
     http.get<PageResult<ContractVO>>('/admin/contracts', query),
 };

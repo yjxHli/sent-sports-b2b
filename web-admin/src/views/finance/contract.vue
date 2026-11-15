@@ -16,6 +16,13 @@
         @refresh="load"
       >
         <template #toolbar>
+          <el-input
+            v-model="keyword"
+            placeholder="合同 ID / 合同号 / 客户 ID"
+            clearable
+            style="width: 240px"
+            @keyup.enter="onSearch"
+          />
           <el-select v-model="dueState" placeholder="到期状态" clearable style="width: 150px">
             <el-option label="已到期" value="EXPIRED" />
             <el-option label="30 天内到期" value="SOON" />
@@ -61,6 +68,8 @@ const total = ref(0);
 const { page, size } = usePagination();
 const loading = ref(false);
 const dueState = ref<string>('');
+/** 合同 ID / 合同号 / 客户 ID 三选一模糊搜索，条件由后端 SQL 收敛 */
+const keyword = ref('');
 
 interface RemainingInfo {
   days: number | null;
@@ -107,6 +116,7 @@ async function load(): Promise<void> {
       page: page.value,
       size: size.value,
       dueState: dueState.value || undefined,
+      keyword: keyword.value.trim() || undefined,
     }));
     // 到期状态由后端按 expire_date 在 SQL 里判定；前端再过滤会让「本页之外」的合同被丢掉。
     // 剩余天数是展示层派生值，随每次加载以真实当前时间重算。

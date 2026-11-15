@@ -15,6 +15,8 @@ public class RefundDetailPO {
     private String type;
     private String reason;
     private String applicantType;
+    /** 用户申请时上传的凭证图片（JSON 数组原文），查询层解码后出参。 */
+    private String imagesJson;
     private Long appealCount;
     private Long customerId;
     private LocalDateTime createdAt;
@@ -74,6 +76,14 @@ public class RefundDetailPO {
 
     public void setApplicantType(String applicantType) {
         this.applicantType = applicantType;
+    }
+
+    public String getImagesJson() {
+        return imagesJson;
+    }
+
+    public void setImagesJson(String imagesJson) {
+        this.imagesJson = imagesJson;
     }
 
     public Long getAppealCount() {

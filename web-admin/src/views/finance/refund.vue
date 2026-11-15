@@ -11,12 +11,19 @@
         :loading="loading"
         exportable
         export-name="退款单"
-        :operation-width="170"
+        :operation-width="205"
         @update:page="onPage"
         @update:size="onSize"
         @refresh="load"
       >
         <template #toolbar>
+          <el-input
+            v-model="keyword"
+            placeholder="退款单号 / 订单号"
+            clearable
+            style="width: 220px"
+            @keyup.enter="onSearch"
+          />
           <el-select v-model="status" placeholder="退款状态" clearable style="width: 150px">
             <el-option
               v-for="s in Object.values(RefundStatus)"
@@ -30,7 +37,25 @@
 
         <template #col-status="{ row }"><StatusTag :status="row.status" /></template>
 
+        <template #col-images="{ row }">
+          <div v-if="row.images && row.images.length" class="proof-shots">
+            <el-image
+              v-for="(fid, i) in row.images.slice(0, 2)"
+              :key="fid"
+              :src="fileApi.url(fid)"
+              :preview-src-list="row.images.map((f: string) => fileApi.url(f))"
+              :initial-index="i"
+              fit="cover"
+              class="proof-shot"
+              preview-teleported
+            />
+            <span class="proof-count">{{ row.images.length }} 张</span>
+          </div>
+          <span v-else class="proof-empty">未上传</span>
+        </template>
+
         <template #operations="{ row }">
+          <el-button link type="primary" @click="openDetail(row)">详情</el-button>
           <el-button
             link
             type="success"
@@ -59,9 +84,11 @@
  * 审核通过是危险操作，必须 openConfirm('REFUND_APPROVE') 换 X-Confirm-Token 并在提交前复查过期。
  */
 import { onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { unwrap } from '@/utils/http';
 import { financeApi } from '@/api';
+import { fileApi } from '@/api/file';
 import { RefundStatus, fmtDateTime, fmtMoney, statusLabel } from '@sent/shared';
 import { openConfirm } from '@/utils/confirm';
 import { usePagination } from '@/composables/usePagination';
@@ -70,26 +97,33 @@ import StatusTag from '@/components/StatusTag.vue';
 import type { TableColumn } from '@/components/types';
 
 const columns: TableColumn[] = [
-  { prop: 'refundNo', label: '退款单号', minWidth: 190 },
-  { prop: 'orderNo', label: '订单号', minWidth: 190 },
-  { prop: 'status', label: '状态', width: 120, align: 'center' },
-  { prop: 'amountCent', label: '退款金额', width: 140, align: 'right',
+  { prop: 'refundNo', label: '退款单号', minWidth: 170 },
+  { prop: 'orderNo', label: '订单号', minWidth: 170 },
+  { prop: 'status', label: '状态', width: 100, align: 'center' },
+  { prop: 'amountCent', label: '退款金额', width: 120, align: 'right',
     formatter: (_r, v) => fmtMoney(v) },
-  { prop: 'reason', label: '退款原因', minWidth: 160 },
-  { prop: 'createdAt', label: '申请时间', width: 160, formatter: (_r, v) => fmtDateTime(v) },
+  { prop: 'reason', label: '退款原因', minWidth: 110 },
+  { prop: 'images', label: '凭证图片', width: 130, align: 'center' },
+  { prop: 'createdAt', label: '申请时间', width: 150, formatter: (_r, v) => fmtDateTime(v) },
 ];
 
 const rows = ref<any[]>([]);
 const total = ref(0);
+const router = useRouter();
 const { page, size } = usePagination();
 const loading = ref(false);
 const status = ref<string>('');
+/** 退款单号 / 订单号模糊搜索（两者都匹配，客服拿到哪个号都能定位） */
+const keyword = ref('');
 
 async function load(): Promise<void> {
   loading.value = true;
   try {
     const data = await unwrap(financeApi.refunds({
-      page: page.value, size: size.value, status: status.value || undefined,
+      page: page.value,
+      size: size.value,
+      status: status.value || undefined,
+      keyword: keyword.value.trim() || undefined,
     }));
     rows.value = data?.list ?? [];
     total.value = data?.total ?? 0;
@@ -105,6 +139,11 @@ async function load(): Promise<void> {
 function onSearch(): void { page.value = 1; void load(); }
 function onPage(value: number): void { page.value = value; void load(); }
 function onSize(value: number): void { size.value = value; page.value = 1; void load(); }
+
+/** 进入单笔独立审核页：订单信息、凭证图片、商品明细、审核动作都在那一页完成。 */
+function openDetail(row: any): void {
+  router.push(`/finance/refund/${String(row.refundNo)}`);
+}
 
 async function approve(row: any): Promise<void> {
   try {
@@ -147,3 +186,27 @@ async function reject(row: any): Promise<void> {
 
 onMounted(() => { void load(); });
 </script>
+
+<style scoped>
+.proof-shots {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  justify-content: center;
+}
+.proof-shot {
+  width: 34px;
+  height: 34px;
+  border-radius: 4px;
+  border: 1px solid #e5e6eb;
+  cursor: zoom-in;
+}
+.proof-count {
+  font-size: 12px;
+  color: #86909c;
+}
+.proof-empty {
+  font-size: 12px;
+  color: #c9cdd4;
+}
+</style>

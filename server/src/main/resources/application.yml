@@ -45,7 +45,8 @@ server:
 app:
   env: ${APP_ENV:dev}
   upload:
-    base-dir: ${UPLOAD_BASE_DIR:/data/upload}
+    # 相对路径落在工程目录下，Windows / Linux 都能直接跑；部署时用 UPLOAD_BASE_DIR 指到持久盘
+    base-dir: ${UPLOAD_BASE_DIR:./data/upload}
   # CORS 白名单：默认只放行本机两个 Vite dev server。
   # 部署时用 APP_CORS_ORIGINS 覆盖为真实前端域名（逗号分隔），生产环境禁止使用通配符。
   cors:

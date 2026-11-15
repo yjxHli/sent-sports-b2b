@@ -8,14 +8,18 @@ import com.sent.sports.chat.mapper.po.ChatMessagePO;
 import com.sent.sports.chat.mapper.po.ChatSessionPO;
 import com.sent.sports.customize.mapper.CustomOrderMapper;
 import com.sent.sports.customize.mapper.po.CustomOrderPO;
+import com.sent.sports.customer.mapper.CustomerMapper;
 import com.sent.sports.finance.mapper.InvoiceMapper;
 import com.sent.sports.finance.mapper.PaymentRecordMapper;
 import com.sent.sports.finance.mapper.ReceivableMapper;
 import com.sent.sports.finance.mapper.po.PaymentRecordPO;
 import com.sent.sports.product.mapper.CatalogMapper;
 import com.sent.sports.product.mapper.po.LadderPricePO;
+import com.sent.sports.notify.mapper.UserMessageMapper;
+import com.sent.sports.notify.mapper.po.UserMessagePO;
 import com.sent.sports.order.mapper.OrderMapper;
 import com.sent.sports.order.mapper.po.OrderDetailLineRow;
+import com.sent.sports.order.mapper.po.OrderItemListRow;
 import com.sent.sports.order.mapper.po.OrderPO;
 import com.sent.sports.payment.mapper.PaymentTxnMapper;
 import com.sent.sports.payment.mapper.po.PaymentTxnPO;
@@ -84,19 +88,86 @@ class MapperIT extends BaseIntegrationTest {
     private PaymentRecordMapper paymentRecordMapper;
     @Autowired
     private OperationLogMapper operationLogMapper;
+    @Autowired
+    private UserMessageMapper userMessageMapper;
+    @Autowired
+    private CustomerMapper customerMapper;
 
     @Test
-    @DisplayName("V1~V21：二十一次迁移全部应用，55 张表就位（V21 回填 orders.paid_at 并加聚合索引）")
+    @DisplayName("V1~V30：三十次迁移全部应用，58 张表就位（V28 软删列 / V29 演示地址 / V30 收藏与足迹）")
     void migrationsApplyAllThirteenVersions() {
         Integer versions = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1", Integer.class);
-        assertThat(versions).isEqualTo(21);
+        assertThat(versions).isEqualTo(30);
 
         Integer tables = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM information_schema.tables "
                         + "WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE' "
                         + "AND table_name <> 'flyway_schema_history'", Integer.class);
-        assertThat(tables).isEqualTo(55);
+        assertThat(tables).isEqualTo(58);
+
+        Integer levelValidToColumn = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns "
+                        + "WHERE table_schema = DATABASE() AND table_name = 'customer' "
+                        + "AND column_name = 'level_valid_to'", Integer.class);
+        assertThat(levelValidToColumn).isEqualTo(1);
+
+        // V27：文件服务的相对路径 ~79 字符，VARCHAR(64) 装不下（会 Data too long）
+        String fileIdType = jdbc.queryForObject(
+                "SELECT column_type FROM information_schema.columns "
+                        + "WHERE table_schema = DATABASE() AND table_name = 'custom_draft' "
+                        + "AND column_name = 'file_id'", String.class);
+        assertThat(fileIdType).isEqualTo("varchar(255)");
+
+        // V28：客户侧「删除订单」是软删，只打时间戳（订单仍是发票/退款/应收的引用对象）
+        Integer softDeleteColumn = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns "
+                        + "WHERE table_schema = DATABASE() AND table_name = 'orders' "
+                        + "AND column_name = 'customer_deleted_at'", Integer.class);
+        assertThat(softDeleteColumn).isEqualTo(1);
+
+        // V30：收藏去重靠唯一键（禁分布式锁），足迹同样按商品唯一
+        Integer favoriteUk = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.statistics "
+                        + "WHERE table_schema = DATABASE() AND table_name = 'product_favorite' "
+                        + "AND index_name = 'uk_favorite_customer_product' AND non_unique = 0", Integer.class);
+        assertThat(favoriteUk).isEqualTo(2); // (customer_id, product_id) 两列
+
+        Integer footprintUk = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.statistics "
+                        + "WHERE table_schema = DATABASE() AND table_name = 'product_footprint' "
+                        + "AND index_name = 'uk_footprint_customer_product' AND non_unique = 0", Integer.class);
+        assertThat(footprintUk).isEqualTo(2);
+
+        // V30：会员专属商品的门槛列（sent_test 不灌演示商品，只能校验结构，不能断言播了多少行）
+        Integer minLevelColumn = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns "
+                        + "WHERE table_schema = DATABASE() AND table_name = 'product' "
+                        + "AND column_name = 'min_visible_level'", Integer.class);
+        assertThat(minLevelColumn).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("V26 等级口径：promoteLevel 只升不降（LV1→LV2 提一次，LV3 不会被成长值压低）")
+    void promoteLevelIsMonotonic() {
+        jdbc.update("DELETE FROM customer WHERE id IN (990101, 990102)");
+        jdbc.update("INSERT INTO customer (id, customer_no, phone, password_hash, nickname, type, "
+                        + "level_code, growth_value, points_balance, status, token_version, deleted) "
+                        + "VALUES (?, ?, ?, ?, ?, 'PERSON', 'LV1', 5100, 0, 'ACTIVE', 0, 0)",
+                990_101L, "CUS-990101", "13800990101", "hash", "成长值升级客户");
+        jdbc.update("INSERT INTO customer (id, customer_no, phone, password_hash, nickname, type, "
+                        + "level_code, growth_value, points_balance, status, token_version, deleted) "
+                        + "VALUES (?, ?, ?, ?, ?, 'PERSON', 'LV3', 100, 0, 'ACTIVE', 0, 0)",
+                990_102L, "CUS-990102", "13800990102", "hash", "人工授级客户");
+
+        assertThat(customerMapper.promoteLevel(990_101L, "LV2")).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT level_code FROM customer WHERE id = 990101", String.class)).isEqualTo("LV2");
+        assertThat(customerMapper.promoteLevel(990_101L, "LV2")).isZero();
+
+        assertThat(customerMapper.promoteLevel(990_102L, "LV2")).isZero();
+        assertThat(jdbc.queryForObject(
+                "SELECT level_code FROM customer WHERE id = 990102", String.class)).isEqualTo("LV3");
     }
 
     @Test
@@ -318,7 +389,7 @@ class MapperIT extends BaseIntegrationTest {
         assertThat(invoiceMapper.markIssued(invoiceId, "INV-" + invoiceId, "/files/inv-it.pdf"))
                 .isEqualTo(1);
 
-        var rows = invoiceMapper.selectInvoicePage(new Page<>(1, 10), "ISSUED");
+        var rows = invoiceMapper.selectInvoicePage(new Page<>(1, 10), "ISSUED", null);
         assertThat(rows.getRecords()).hasSize(1);
         var row = rows.getRecords().get(0);
         assertThat(row.getInvoiceId()).isEqualTo(invoiceId);
@@ -326,6 +397,13 @@ class MapperIT extends BaseIntegrationTest {
         assertThat(row.getStatus()).isEqualTo("ISSUED");
         assertThat(row.getAmountCent()).isEqualTo(25800L);
         assertThat(row.getPdfUrl()).isEqualTo("/files/inv-it.pdf");
+
+        // 关键字搜索：发票号 / 发票 ID / 客户 ID 三选一，列表与 count 同条件（共 N 条不会错位）
+        assertThat(invoiceMapper.selectInvoicePage(new Page<>(1, 10), null, "INV-" + invoiceId)
+                .getRecords()).hasSize(1);
+        assertThat(invoiceMapper.countInvoice(null, "INV-" + invoiceId)).isEqualTo(1L);
+        assertThat(invoiceMapper.countInvoice(null, String.valueOf(invoiceId))).isNotNull();
+        assertThat(invoiceMapper.countInvoice(null, "NO-SUCH-INVOICE")).isZero();
 
         // INSERT...SELECT 找不到订单时返回 0 行，业务侧据此抛 404
         assertThat(invoiceMapper.insertFromOrder("NO-SUCH-ORDER", "抬头", null, null)).isZero();
@@ -657,6 +735,87 @@ class MapperIT extends BaseIntegrationTest {
         session.setSeq(0L);
         chatSessionMapper.insert(session);
         return session.getId();
+    }
+
+    @Test
+    @DisplayName("我的订单分页：状态条件下推到 SQL，商品行可按订单 id 批量取")
+    void myOrderPageFiltersByStatusAndLoadsItems() {
+        // 用独立 customerId + 时间戳后缀，避免与其它用例/演示数据互相污染
+        long customerId = 990_002L;
+        String suffix = String.valueOf(System.currentTimeMillis());
+
+        OrderPO waitPay = new OrderPO();
+        waitPay.setOrderNo("SO-IT-PAY-" + suffix);
+        waitPay.setCustomerId(customerId);
+        waitPay.setIdemKey("idem-it-pay-" + suffix);
+        waitPay.setStatus("WAIT_PAY");
+        waitPay.setPayStatus("UNPAID");
+        waitPay.setPayableCent(5000L);
+        assertThat(orderMapper.insert(waitPay)).isEqualTo(1);
+
+        OrderPO waitShip = new OrderPO();
+        waitShip.setOrderNo("SO-IT-SHIP-" + suffix);
+        waitShip.setCustomerId(customerId);
+        waitShip.setIdemKey("idem-it-ship-" + suffix);
+        waitShip.setStatus("WAIT_SHIP");
+        waitShip.setPayStatus("PAID");
+        waitShip.setPayableCent(5000L);
+        assertThat(orderMapper.insert(waitShip)).isEqualTo(1);
+
+        jdbc.update("INSERT INTO order_item (order_id, sku_id, spu_title_snap, spec_snap, qty, "
+                + "unit_price_cent, amount_cent) VALUES (?, 9209, '专业比赛篮球', '7号', 2, 2500, 5000)",
+                waitShip.getId());
+
+        IPage<OrderPO> all = orderMapper.selectMyPage(new Page<>(1, 20), customerId, null);
+        assertThat(all.getTotal()).isEqualTo(2);
+
+        IPage<OrderPO> onlyShip = orderMapper.selectMyPage(new Page<>(1, 20), customerId, "WAIT_SHIP");
+        assertThat(onlyShip.getTotal()).isEqualTo(1);
+        assertThat(onlyShip.getRecords()).extracting(OrderPO::getStatus).containsOnly("WAIT_SHIP");
+
+        List<OrderItemListRow> items = orderMapper.selectItemsByOrderIds(List.of(waitShip.getId()));
+        assertThat(items).hasSize(1);
+        assertThat(items.get(0).getTitle()).isEqualTo("专业比赛篮球");
+        assertThat(items.get(0).getQty()).isEqualTo(2);
+        assertThat(items.get(0).getUnitPriceCent()).isEqualTo(2500L);
+    }
+
+    @Test
+    @DisplayName("站内信：未读数、按类型筛选、标记已读与越权保护")
+    void userMessageUnreadAndMarkRead() {
+        long customerId = 990_003L;
+        long otherCustomerId = 990_004L;
+        String suffix = String.valueOf(System.currentTimeMillis());
+
+        jdbc.update("INSERT INTO user_message (customer_id, msg_type, title, content) VALUES (?, 'ORDER', ?, '正文')",
+                customerId, "订单已发货-" + suffix);
+        jdbc.update("INSERT INTO user_message (customer_id, msg_type, title, content) VALUES (?, 'ORDER', ?, '正文')",
+                customerId, "订单待付款-" + suffix);
+        jdbc.update("INSERT INTO user_message (customer_id, msg_type, title, content, read_flag) VALUES (?, 'SYSTEM', ?, '正文', 1)",
+                customerId, "系统公告-" + suffix);
+
+        assertThat(userMessageMapper.countUnread(customerId)).isEqualTo(2);
+
+        IPage<UserMessagePO> all = userMessageMapper.selectMyPage(new Page<>(1, 10), customerId, null);
+        assertThat(all.getTotal()).isEqualTo(3);
+
+        IPage<UserMessagePO> orders = userMessageMapper.selectMyPage(new Page<>(1, 10), customerId, "ORDER");
+        assertThat(orders.getTotal()).isEqualTo(2);
+        assertThat(orders.getRecords()).extracting(UserMessagePO::getMsgType).containsOnly("ORDER");
+
+        // 列表按 id 倒序，第一条可能是已读的系统公告，必须挑一条未读的来验证
+        long messageId = all.getRecords().stream()
+                .filter(m -> m.getReadFlag() != null && m.getReadFlag() == 0)
+                .findFirst().orElseThrow().getId();
+        assertThat(userMessageMapper.markRead(customerId, messageId)).isEqualTo(1);
+        assertThat(userMessageMapper.countUnread(customerId)).isEqualTo(1);
+        // 重复标记已读：条件更新不命中，返回 0（幂等）
+        assertThat(userMessageMapper.markRead(customerId, messageId)).isZero();
+        // 别人的消息标记不动
+        assertThat(userMessageMapper.markRead(otherCustomerId, messageId)).isZero();
+
+        assertThat(userMessageMapper.markAllRead(customerId)).isEqualTo(1);
+        assertThat(userMessageMapper.countUnread(customerId)).isZero();
     }
 
     private void insertMessage(long sessionId, long seq, String clientMsgId) {

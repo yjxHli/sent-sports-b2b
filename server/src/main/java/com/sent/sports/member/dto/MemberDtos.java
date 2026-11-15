@@ -58,8 +58,19 @@ public final class MemberDtos {
         }
     }
 
-    /** 专属商品响应（分 + 元）。 */
-    public record ExclusiveProductVO(String productId, String productName, long priceCent, String priceYuan) {
+    /**
+     * 专属商品响应（分 + 元）。
+     *
+     * @param mainImage 主图相对路径（会员中心卡片直接展示，不必再逐条查商品）
+     * @param source    AGREEMENT（一客一价）/ LEVEL（等级专属），前端据此打「专属价」标
+     */
+    public record ExclusiveProductVO(String productId, String productName, long priceCent, String priceYuan,
+                                     String mainImage, String source) {
+
+        /** 兼容只关心四个字段的旧调用方。 */
+        public ExclusiveProductVO(String productId, String productName, long priceCent, String priceYuan) {
+            this(productId, productName, priceCent, priceYuan, null, null);
+        }
     }
 
     /** 授级结果响应。 */

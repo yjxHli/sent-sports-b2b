@@ -154,7 +154,11 @@ test('发票可预览真实 PDF，并真的下载成 %PDF 文件', async ({ page
   const pdfResponses: string[] = [];
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('response', (r) => {
-    if (r.url().includes('/pdf')) pdfResponses.push(`${r.status()} ${r.headers()['content-type']}`);
+    // 只认后端 PDF 接口：用 '/pdf' 宽松匹配会把 Vite 下发的 pdf 预览分包
+    // （xxx-pdf-preview.js，text/javascript）也算进来，断言就会莫名其妙拿到非 PDF 响应
+    if (/\/api\/admin\/invoices\/[^/]+\/pdf/.test(r.url())) {
+      pdfResponses.push(`${r.status()} ${r.headers()['content-type']}`);
+    }
   });
 
   await login(page);

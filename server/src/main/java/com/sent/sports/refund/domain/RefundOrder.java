@@ -1,5 +1,7 @@
 package com.sent.sports.refund.domain;
 
+import java.util.List;
+
 /**
  * 退款单聚合（refund 模块）：仅退款（ONLY_REFUND）/ 售后退款等。
  * A2 场景：订单已取消却收到支付回调，生成 ONLY_REFUND（原因 PAID_AFTER_CANCEL）并置 REFUNDING。
@@ -15,6 +17,10 @@ public class RefundOrder {
     private RefundStatus status;
     private final long createdAtMillis;
     private int appealCount;
+    /** 用户上传的凭证图片 fileId 列表（文件本体在文件服务），审核端据此核验。 */
+    private List<String> images = List.of();
+    /** 审核结论备注（驳回原因等）；落 refund_order.audit_remark，用户申诉时客服要据此复盘。 */
+    private String auditRemark;
 
     public RefundOrder(String refundNo, String orderNo, long orderId, long amountCent, String type, String reason,
                       RefundStatus status, long createdAtMillis) {
@@ -71,5 +77,22 @@ public class RefundOrder {
 
     public void setAppealCount(int appealCount) {
         this.appealCount = appealCount;
+    }
+
+    /** 恒不为 null，调用方可直接遍历。 */
+    public List<String> getImages() {
+        return images;
+    }
+
+    public void setImages(List<String> images) {
+        this.images = images == null ? List.of() : List.copyOf(images);
+    }
+
+    public String getAuditRemark() {
+        return auditRemark;
+    }
+
+    public void setAuditRemark(String auditRemark) {
+        this.auditRemark = auditRemark;
     }
 }

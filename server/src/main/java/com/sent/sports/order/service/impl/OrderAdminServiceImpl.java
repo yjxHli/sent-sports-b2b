@@ -104,6 +104,25 @@ public class OrderAdminServiceImpl implements OrderAdminService {
         return (status == null || status.isBlank()) ? null : status.trim();
     }
 
+    /** 客服侧栏默认取最近 10 笔：再多也看不过来，需要全量时进订单详情页。 */
+    private static final int CUSTOMER_ORDERS_DEFAULT_LIMIT = 10;
+
+    /** 侧栏上限 20：防止前端传大数字把一次响应撑成整页表格。 */
+    private static final int CUSTOMER_ORDERS_MAX_LIMIT = 20;
+
+    @Override
+    public List<AdminOrderDtos.AdminCustomerOrderVO> customerOrders(long customerId, int limit) {
+        long size = limit <= 0 ? CUSTOMER_ORDERS_DEFAULT_LIMIT
+                : Math.min(limit, CUSTOMER_ORDERS_MAX_LIMIT);
+        return orderMapper.selectRecentByCustomer(customerId, size).stream()
+                .map(o -> {
+                    long cent = o.getPayableCent() == null ? 0L : o.getPayableCent();
+                    return new AdminOrderDtos.AdminCustomerOrderVO(
+                            o.getOrderNo(), o.getStatus(), cent, MoneyUtil.toYuan(cent), toMillis(o.getCreatedAt()));
+                })
+                .toList();
+    }
+
     @Override
     public AdminOrderDtos.AdminOrderDetailVO detail(String orderNo) {
         // P4 这里曾无条件 throw NOT_FOUND，导致管理端「订单详情」页每次都弹 404。

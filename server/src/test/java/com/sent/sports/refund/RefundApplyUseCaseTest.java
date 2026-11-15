@@ -74,7 +74,7 @@ class RefundApplyUseCaseTest extends BaseUseCaseTest {
         when(clock.instant()).thenReturn(FIXED);
 
         RefundApplyResult result = useCase.apply(new RefundApplyCmd("SO20240101000099",
-                List.of(new RefundApplyLineCmd(1L, 5000L)), "不想要了", "proof-img"));
+                List.of(new RefundApplyLineCmd(1L, 5000L)), "不想要了", "proof-img", List.of()));
 
         assertEquals("RF20240101000001", result.refundNo());
         assertEquals("SO20240101000099", result.orderNo());
@@ -94,7 +94,7 @@ class RefundApplyUseCaseTest extends BaseUseCaseTest {
         when(customizeRefundGateway.isRefundBlocked(anyString(), anyLong())).thenReturn(false);
 
         BizException ex = assertThrows(BizException.class, () -> useCase.apply(new RefundApplyCmd(
-                "SO20240101000099", List.of(new RefundApplyLineCmd(1L, 15000L)), "r", "p")));
+                "SO20240101000099", List.of(new RefundApplyLineCmd(1L, 15000L)), "r", "p", List.of())));
         assertEquals(ErrorCode.REFUND_OVERFLOW, ex.getErrorCode());
         verify(refundRepository, never()).save(any());
     }
@@ -106,7 +106,7 @@ class RefundApplyUseCaseTest extends BaseUseCaseTest {
         when(customizeRefundGateway.isRefundBlocked("SO20240101000099", 1L)).thenReturn(true);
 
         BizException ex = assertThrows(BizException.class, () -> useCase.apply(new RefundApplyCmd(
-                "SO20240101000099", List.of(new RefundApplyLineCmd(1L, 5000L)), "r", "p")));
+                "SO20240101000099", List.of(new RefundApplyLineCmd(1L, 5000L)), "r", "p", List.of())));
         assertEquals(ErrorCode.STATE_CONFLICT, ex.getErrorCode());
         verify(refundRepository, never()).save(any());
     }
@@ -114,7 +114,7 @@ class RefundApplyUseCaseTest extends BaseUseCaseTest {
     @Test
     void missingProofRejected() {
         BizException ex = assertThrows(BizException.class, () -> useCase.apply(new RefundApplyCmd(
-                "SO20240101000099", List.of(new RefundApplyLineCmd(1L, 5000L)), "r", "  ")));
+                "SO20240101000099", List.of(new RefundApplyLineCmd(1L, 5000L)), "r", "  ", List.of())));
         assertEquals(ErrorCode.PARAM_INVALID, ex.getErrorCode());
         verify(refundRepository, never()).save(any());
     }
@@ -126,7 +126,7 @@ class RefundApplyUseCaseTest extends BaseUseCaseTest {
         when(customizeRefundGateway.isRefundBlocked(anyString(), anyLong())).thenReturn(false);
 
         BizException ex = assertThrows(BizException.class, () -> useCase.apply(new RefundApplyCmd(
-                "SO20240101000099", List.of(new RefundApplyLineCmd(999L, 5000L)), "r", "p")));
+                "SO20240101000099", List.of(new RefundApplyLineCmd(999L, 5000L)), "r", "p", List.of())));
         assertEquals(ErrorCode.PARAM_INVALID, ex.getErrorCode());
         verify(refundRepository, never()).save(any());
     }
@@ -136,8 +136,40 @@ class RefundApplyUseCaseTest extends BaseUseCaseTest {
         when(orderRefundViewService.getView("SO20240101000099")).thenReturn(Optional.empty());
 
         BizException ex = assertThrows(BizException.class, () -> useCase.apply(new RefundApplyCmd(
-                "SO20240101000099", List.of(new RefundApplyLineCmd(1L, 5000L)), "r", "p")));
+                "SO20240101000099", List.of(new RefundApplyLineCmd(1L, 5000L)), "r", "p", List.of())));
         assertEquals(ErrorCode.PARAM_INVALID, ex.getErrorCode());
         verify(refundRepository, never()).save(any());
+    }
+
+    @Test
+    void applyKeepsProofImagesForAuditor() {
+        when(orderRefundViewService.getView("SO20240101000099"))
+                .thenReturn(Optional.of(singleLineView(10000L, 0L, 0L, false)));
+        when(customizeRefundGateway.isRefundBlocked("SO20240101000099", 1L)).thenReturn(false);
+        when(idGen.next("RF")).thenReturn("RF20240101000002");
+        when(clock.instant()).thenReturn(FIXED);
+
+        useCase.apply(new RefundApplyCmd("SO20240101000099",
+                List.of(new RefundApplyLineCmd(1L, 2000L)), "尺码不符", "已上传 2 张实物图",
+                List.of("2026/11/ab/broken-1.png", "2026/11/ab/broken-2.png")));
+
+        verify(refundRepository).save(refundCaptor.capture());
+        assertEquals(List.of("2026/11/ab/broken-1.png", "2026/11/ab/broken-2.png"),
+                refundCaptor.getValue().getImages());
+    }
+
+    @Test
+    void applyWithoutImagesKeepsEmptyList() {
+        when(orderRefundViewService.getView("SO20240101000099"))
+                .thenReturn(Optional.of(singleLineView(10000L, 0L, 0L, false)));
+        when(customizeRefundGateway.isRefundBlocked("SO20240101000099", 1L)).thenReturn(false);
+        when(idGen.next("RF")).thenReturn("RF20240101000003");
+        when(clock.instant()).thenReturn(FIXED);
+
+        useCase.apply(new RefundApplyCmd("SO20240101000099",
+                List.of(new RefundApplyLineCmd(1L, 2000L)), "r", "p", null));
+
+        verify(refundRepository).save(refundCaptor.capture());
+        assertEquals(List.of(), refundCaptor.getValue().getImages());
     }
 }

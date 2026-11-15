@@ -169,6 +169,44 @@ class OrderAdminServiceImplTest {
         }
     }
 
+    // ------------------------------------------------------------------
+    // 客服工作台右侧「顾客历史订单」（2026-11-15 用户要求）
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("客服侧栏：按客户拉最近订单，limit 归一（<=0 取 10，超 20 截到 20）后透传 Mapper")
+    void customerOrdersClampsLimit() {
+        when(orderMapper.selectRecentByCustomer(anyLong(), anyLong())).thenReturn(List.of());
+
+        service.customerOrders(9002L, 0);
+        verify(orderMapper).selectRecentByCustomer(9002L, 10L);
+
+        service.customerOrders(9002L, 999);
+        verify(orderMapper).selectRecentByCustomer(9002L, 20L);
+
+        service.customerOrders(9002L, 5);
+        verify(orderMapper).selectRecentByCustomer(9002L, 5L);
+    }
+
+    @Test
+    @DisplayName("客服侧栏：回订单号/状态/金额（分+元）/下单时间，供聊天侧栏直接渲染")
+    void customerOrdersMapsFields() {
+        OrderPO po = order("SO20261115000001", "COMPLETED");
+        when(orderMapper.selectRecentByCustomer(9002L, 10L)).thenReturn(List.of(po));
+
+        List<AdminOrderDtos.AdminCustomerOrderVO> rows = service.customerOrders(9002L, 10);
+
+        assertEquals(1, rows.size());
+        AdminOrderDtos.AdminCustomerOrderVO vo = rows.get(0);
+        assertEquals("SO20261115000001", vo.orderNo());
+        assertEquals("COMPLETED", vo.status());
+        assertEquals(20000L, vo.payableCent());
+        assertEquals("200.00", vo.payableYuan());
+        assertEquals(LocalDateTime.of(2026, 11, 8, 12, 30, 0)
+                        .atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
+                vo.createdAt());
+    }
+
     private OrderPO order(String orderNo, String status) {
         OrderPO po = new OrderPO();
         po.setId(11L);

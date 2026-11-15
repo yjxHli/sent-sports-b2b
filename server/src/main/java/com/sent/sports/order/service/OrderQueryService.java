@@ -15,7 +15,7 @@ public interface OrderQueryService {
     Optional<OrderPaymentStatusDto> getPaymentStatus(String orderNo);
 
     /** 我的订单：按当前用户 + 分页（P4 桩，P5 接入仓储后替换）。 */
-    PageResult<OrderDtos.OrderListItem> listMyOrders(Long customerId, PageQuery pageQuery);
+    PageResult<OrderDtos.OrderListItem> listMyOrders(Long customerId, String status, PageQuery pageQuery);
 
     /** 订单详情：四维度状态 + 金额（P4 桩，P5 接入仓储后替换）。 */
     OrderDtos.OrderVO getDetail(String orderNo);

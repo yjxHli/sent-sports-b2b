@@ -54,6 +54,15 @@ public final class AdminOrderDtos {
     }
 
     /**
+     * 客服侧栏用的「顾客历史订单」行（2026-11-15）。
+     * <p>客服接待时要能顺手看到这位顾客买过什么，因此在订单号/状态/金额之外补了
+     * {@code createdAt}（毫秒）——侧栏要按时间倒序展示「最近买过什么」。</p>
+     */
+    public record AdminCustomerOrderVO(String orderNo, String status,
+                                       Long payableCent, String payableYuan, Long createdAt) {
+    }
+
+    /**
      * 订单行明细（管理端详情）。
      * <p>商品名/规格取下单时的快照字段，不现查商品表，避免历史订单被改价改名后对不上；
      * {@code customStatus} 由 {@code custom_order} 左联得到，非定制行回填 NONE。</p>

@@ -26,6 +26,7 @@
  *  E2E_USER_URL / E2E_ADMIN_URL / E2E_API_URL
  */
 
+import path from 'node:path';
 import { test, expect, type APIRequestContext, type BrowserContext, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 
@@ -52,6 +53,9 @@ const CFG = {
   /** UV 定制件 SKU（V11 种子 9102，V13 开放该 SPU 的定制标记）。 */
   customSkuId: Number(process.env.E2E_CUSTOM_SKU_ID ?? 9102),
 };
+
+/** 真实图稿素材：定制图稿现在必须真上传（旧实现是页面自己编一个 f_<ts> 假 ID） */
+const DRAFT_IMAGE = path.join(__dirname, 'fixtures', 'proof.png');
 
 const join = (base: string, path: string): string =>
   `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
@@ -374,9 +378,11 @@ test('01 核心链路：用户登录下单支付 → 仓管发货 → 用户确�
 
       // 发货行现在由「订单详情」自动带出真实 SKU / 可发数量 / 定制状态并默认勾选，
       // 不再手填 skuId=1 的占位数字框（第一个 input 已是隐藏的 checkbox）。
+      // 注意：不要写死 9101 —— 种子库存会被反复运行的用例买空，详情页默认 SKU 会漂移到 9102；
+      // 这里断言「带出的是某个真实 SKU 行」，本单归属已由上面的 orderNo 过滤保证。
       const shipLine = adminPage.locator('.ship-line').first();
       await expect(shipLine, '选中订单后应自动带出商品行').toBeVisible({ timeout: 20_000 });
-      await expect(shipLine).toContainText(String(CFG.skuId));
+      await expect(shipLine, '发货行应带出真实 SKU 编号').toContainText(/SKU-?\d+/);
       await expect(shipLine.locator('.el-checkbox'), '可发行应默认勾选')
         .toHaveClass(/is-checked/, { timeout: 15_000 });
 
@@ -420,14 +426,22 @@ test('02 定制图稿链路：UV 定制下单 → 驳回 → 重传 → 审图�
   let userToken = '';
   let serviceToken = '';
 
-  /** 用户端：把指定定制单号查询出来，再点「上传图稿」 */
+  /**
+   * 用户端：把指定定制单号查询出来，选一张真实图片上传。
+   * 「上传图稿 / 拍照」现在会拉起系统文件选择器，必须用 filechooser 送进去；
+   * 旧实现是点一下就自动编一个 f_<ts> 假 fileId，管理端拿不到图。
+   */
   async function uploadDraft(page: Page): Promise<void> {
     await page.goto(join(USER_URL, '/custom'));
     await page.getByPlaceholder('输入定制单号直接查询').fill(customNo);
     await page.getByRole('button', { name: '查询' }).click();
     const upload = page.getByRole('button', { name: '上传图稿' });
     await expect(upload, '定制单详情卡片应展示上传按钮').toBeVisible({ timeout: 15_000 });
-    await upload.click();
+    const [chooser] = await Promise.all([
+      page.waitForEvent('filechooser', { timeout: 15_000 }),
+      upload.click(),
+    ]);
+    await chooser.setFiles(DRAFT_IMAGE);
   }
 
   /** 管理端：带 ?id= 直达审核台，onMounted 会自动加载详情 */

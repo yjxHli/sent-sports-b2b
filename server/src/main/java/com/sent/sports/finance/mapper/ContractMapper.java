@@ -29,18 +29,32 @@ public interface ContractMapper extends BaseMapper<ContractPO> {
             + "OR (#{dueState} = 'NORMAL' AND (c.expire_date IS NULL "
             + "OR c.expire_date > DATE_ADD(CURDATE(), INTERVAL 30 DAY))))";
 
+    /**
+     * 关键字片段：合同 ID / 合同号 / 客户 ID 三选一模糊匹配。
+     * <p>ID 是 BIGINT，转成字符串再 LIKE，运营可以直接贴单号或 ID 定位，
+     * 不必知道自己在查哪一列。合同表只有几十行，CAST 造成的索引失效可以接受。</p>
+     */
+    String KEYWORD_WHERE = " AND (#{keyword} IS NULL OR #{keyword} = '' "
+            + "OR c.contract_no LIKE CONCAT('%', #{keyword}, '%') "
+            + "OR CAST(c.id AS CHAR) LIKE CONCAT('%', #{keyword}, '%') "
+            + "OR CAST(c.customer_id AS CHAR) LIKE CONCAT('%', #{keyword}, '%'))";
+
     @Select("SELECT c.id AS contractId, c.contract_no AS contractNo, c.customer_id AS customerId, "
             + "c.amount_cent AS amountCent, c.status AS status, c.expire_date AS validTo "
             + "FROM contract c "
             + "WHERE (#{status} IS NULL OR #{status} = '' OR c.status = #{status})"
             + DUE_STATE_WHERE
+            + KEYWORD_WHERE
             + " ORDER BY c.expire_date IS NULL, c.expire_date ASC, c.id DESC")
     IPage<ContractListItemPO> selectContractPage(Page<ContractListItemPO> page,
                                                  @Param("status") String status,
-                                                 @Param("dueState") String dueState);
+                                                 @Param("dueState") String dueState,
+                                                 @Param("keyword") String keyword);
 
     @Select("SELECT COUNT(*) FROM contract c "
             + "WHERE (#{status} IS NULL OR #{status} = '' OR c.status = #{status})"
-            + DUE_STATE_WHERE)
-    long countContract(@Param("status") String status, @Param("dueState") String dueState);
+            + DUE_STATE_WHERE
+            + KEYWORD_WHERE)
+    long countContract(@Param("status") String status, @Param("dueState") String dueState,
+                       @Param("keyword") String keyword);
 }

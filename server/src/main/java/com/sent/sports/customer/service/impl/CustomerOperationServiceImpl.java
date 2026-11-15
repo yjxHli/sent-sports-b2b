@@ -3,6 +3,7 @@ package com.sent.sports.customer.service.impl;
 import com.sent.sports.common.anno.UseCase;
 import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
+import com.sent.sports.common.util.TimeUtil;
 import com.sent.sports.customer.dto.admin.AdminCustomerDtos;
 import com.sent.sports.customer.mapper.CustomerMapper;
 import com.sent.sports.customer.mapper.po.CustomerPO;
@@ -67,7 +68,9 @@ public class CustomerOperationServiceImpl implements CustomerOperationService {
         }
         CustomerPO po = requireCustomer(customerId);
         String before = po.getLevelCode() == null ? "NORMAL" : po.getLevelCode();
-        if (customerMapper.updateLevelCode(customerId, normalized) == 0) {
+        // 有效期必须落库：否则会员中心拿不到到期时间，只能显示 1970-01-01 或「长期有效」。
+        // 0 / 负数代表长期有效，落 NULL 而不是纪元值。
+        if (customerMapper.updateLevelGrant(customerId, normalized, TimeUtil.fromMillis(validToMillis)) == 0) {
             throw new BizException(ErrorCode.NOT_FOUND);
         }
         customerMapper.insertOperationLog(new CustomerMapper.OperationLogRow(

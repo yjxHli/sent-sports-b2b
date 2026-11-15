@@ -11,9 +11,17 @@ import com.sent.sports.stock.dto.admin.AdminStockDtos;
  */
 public interface StockQueryService {
 
-    /** 库存列表：四口径 + 可用量 + 安全库存 + 分页；skuId 为空表示全部。 */
-    PageResult<AdminStockDtos.StockRow> list(PageQuery pageQuery, Long skuId);
+    /**
+     * 库存列表：四口径 + 可用量 + 安全库存 + 分页；skuId 为空表示全部。
+     *
+     * @param warningOnly 只看「可用 <= 安全库存」的告急 SKU，条件由 SQL 下推，
+     *                    不在服务层或前端过滤（否则单页上限会漏数据、总数也会错位）
+     */
+    PageResult<AdminStockDtos.StockRow> list(PageQuery pageQuery, Long skuId, boolean warningOnly);
 
     /** 库存流水列表 + 分页；bizType 为空表示全部业务类型。 */
     PageResult<AdminStockDtos.FlowRow> flows(PageQuery pageQuery, Long skuId, String bizType);
+
+    /** 预警摘要：最紧急的一条告急 SKU；无预警时返回 skuId = 0 的「暂无预警」占位。 */
+    AdminStockDtos.StockWarningSummary warningSummary();
 }

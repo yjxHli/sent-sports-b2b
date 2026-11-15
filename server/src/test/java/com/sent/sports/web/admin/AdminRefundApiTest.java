@@ -22,6 +22,8 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -43,11 +45,26 @@ class AdminRefundApiTest extends BaseApiTest {
     private RefundQueryService refundQueryService;
 
     @Test
-    @DisplayName("审核列表返回退款单号/订单号/金额/原因/申请时间")
+    @DisplayName("审核列表：keyword 透传到 service（退款单号 / 订单号搜索）")
+    void listPassesKeyword() throws Exception {
+        when(refundQueryService.listAuditRefunds(any(PageQuery.class), isNull(), eq("RF2026")))
+                .thenReturn(PageResult.of(List.of(), 0L, 1, 10));
+
+        mvc.perform(get("/api/admin/refunds")
+                        .param("page", "1").param("size", "10").param("keyword", "RF2026"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+
+        verify(refundQueryService).listAuditRefunds(any(PageQuery.class), isNull(), eq("RF2026"));
+    }
+
+    @Test
+    @DisplayName("审核列表返回退款单号/订单号/金额/原因/凭证图片/申请时间")
     void listReturnsAuditPage() throws Exception {
         RefundDtos.RefundAuditVO vo = new RefundDtos.RefundAuditVO(
-                "RF1", "O1", "PENDING", 12800L, "质量原因", 1_700_000_000_000L);
-        when(refundQueryService.listAuditRefunds(any(PageQuery.class), any()))
+                "RF1", "O1", "PENDING", 12800L, "质量原因",
+                List.of("2026/11/ab/a.png"), 1_700_000_000_000L);
+        when(refundQueryService.listAuditRefunds(any(PageQuery.class), any(), isNull()))
                 .thenReturn(PageResult.of(List.of(vo), 1L, 1, 10));
 
         mvc.perform(get("/api/admin/refunds").param("page", "1").param("size", "10").param("status", "PENDING"))
@@ -59,7 +76,45 @@ class AdminRefundApiTest extends BaseApiTest {
                 .andExpect(jsonPath("$.data.list[0].status").value("PENDING"))
                 .andExpect(jsonPath("$.data.list[0].amountCent").value(12800))
                 .andExpect(jsonPath("$.data.list[0].reason").value("质量原因"))
+                .andExpect(jsonPath("$.data.list[0].images[0]").value("2026/11/ab/a.png"))
                 .andExpect(jsonPath("$.data.list[0].createdAt").value(1_700_000_000_000L));
+    }
+
+    @Test
+    @DisplayName("审核详情：GET /admin/refunds/{refundNo} 返回退款单 + 订单基本信息 + 商品明细")
+    void detailReturnsRefundWithOrderBasics() throws Exception {
+        RefundDtos.AuditOrderLineVO line = new RefundDtos.AuditOrderLineVO(
+                9101L, "速干训练短袖", "黑色 / L", 2, 4990L, 9980L, 9980L, 2, "NONE");
+        RefundDtos.AuditOrderVO order = new RefundDtos.AuditOrderVO(
+                77L, "SO1", "PART_SHIPPED", "PAID", "PART_SHIPPED", "REFUNDING",
+                9002L, "张三", "13800138000", "C9002", "PERSON", "LV1",
+                1_767_200_400_000L, 1_767_200_700_000L, null,
+                12800L, 0L, 0L, 0L, 12800L, 12800L,
+                "张三", "13800138000", "广东省 深圳市 南山区 科技园路 5 号",
+                true, "顺丰", "SF123456", 1_767_196_800_000L,
+                "尽快发货", List.of(line));
+        RefundDtos.RefundAuditDetailVO vo = new RefundDtos.RefundAuditDetailVO(
+                "RF1", "SO1", "PENDING", 12800L, "128.00", 0L,
+                "REFUND", "尺码不符", "CUSTOMER", 1, List.of("2026/11/ab/a.png"), null,
+                1_767_200_000_000L, null, order);
+        when(refundQueryService.getAuditDetail("RF1")).thenReturn(vo);
+
+        mvc.perform(get("/api/admin/refunds/RF1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.refundNo").value("RF1"))
+                .andExpect(jsonPath("$.data.status").value("PENDING"))
+                .andExpect(jsonPath("$.data.amountYuan").value("128.00"))
+                .andExpect(jsonPath("$.data.images[0]").value("2026/11/ab/a.png"))
+                .andExpect(jsonPath("$.data.order.orderNo").value("SO1"))
+                .andExpect(jsonPath("$.data.order.customerName").value("张三"))
+                .andExpect(jsonPath("$.data.order.customerPhone").value("13800138000"))
+                .andExpect(jsonPath("$.data.order.address").value("广东省 深圳市 南山区 科技园路 5 号"))
+                .andExpect(jsonPath("$.data.order.trackingNo").value("SF123456"))
+                .andExpect(jsonPath("$.data.order.lines[0].skuName").value("速干训练短袖"))
+                .andExpect(jsonPath("$.data.order.lines[0].qty").value(2));
+
+        verify(refundQueryService).getAuditDetail("RF1");
     }
 
     @Test

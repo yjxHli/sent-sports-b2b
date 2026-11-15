@@ -79,14 +79,16 @@
         </template>
       </SentTable>
       <p class="sent-hint">
-        后端 P4 排行报表仍为单条快照，此处不伪造多行排行；销售趋势数据已接真库。
+        口径：按订单归属销售（owner_staff_id）聚合近 {{ days }} 天已支付订单，
+        统计归属客户数 / 成交订单数 / 成交金额，按成交金额降序；无归属订单单列「未分配」。
+        统计区间随上方切换一并下推到后端重新查询。
       </p>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-/** 销售报表（批 4）：近 N 天销售趋势真查 + 汇总卡 + 业绩排行，条形长度按最大值归一。 */
+/** 销售报表：近 N 天趋势 + 汇总卡 + 业绩排行，三者口径一致、统计区间一并下推后端。 */
 import { computed, onMounted, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import { unwrap } from '@/utils/http';
@@ -97,9 +99,11 @@ import SentTable from '@/components/SentTable.vue';
 import type { TableColumn } from '@/components/types';
 
 const columns: TableColumn[] = [
-  { prop: 'rank', label: '名次', width: 90, align: 'center' },
-  { prop: 'name', label: '销售 / 团队', minWidth: 180 },
-  { prop: 'amountCent', label: '销售额', minWidth: 260 },
+  { prop: 'rank', label: '名次', width: 80, align: 'center' },
+  { prop: 'name', label: '销售 / 团队', minWidth: 160 },
+  { prop: 'customerCount', label: '归属客户', width: 110, align: 'center' },
+  { prop: 'orderCount', label: '成交订单', width: 110, align: 'center' },
+  { prop: 'amountCent', label: '成交金额', minWidth: 260 },
 ];
 
 const days = ref(30);
@@ -107,7 +111,7 @@ const trend = ref<SalesTrendVO | null>(null);
 const ranks = ref<SalesRankVO[]>([]);
 const loading = ref(false);
 const { page, size } = usePagination();
-/** 排行数据一次性返回，展示层按当前页切片；后端补多行排行后自动生效。 */
+/** 排行结果集上限为在职员工数（含「未分配」一行），远小于单页上限 100，展示层切片不漏数据。 */
 const pagedRanks = computed(() =>
   ranks.value.slice((page.value - 1) * size.value, page.value * size.value),
 );
@@ -131,7 +135,7 @@ function barHeight(amountCent: number | string): string {
   const ratio = Number(amountCent ?? 0) / maxTrendAmount.value;
   return `${Math.max(3, Math.round(ratio * 100))}%`;
 }
-function barWidth(amountCent: number): string {
+function barWidth(amountCent: number | string): string {
   const ratio = Number(amountCent ?? 0) / maxAmount.value;
   return `${Math.max(2, Math.round(ratio * 100))}%`;
 }
@@ -142,21 +146,24 @@ function showLabel(i: number): boolean {
 }
 function selectDays(value: number | string | boolean): void {
   days.value = Number(value);
+  page.value = 1;
   void load();
 }
 
 async function load(): Promise<void> {
   loading.value = true;
-  const [trendRes, rank] = await Promise.allSettled([
+  const [trendRes, rankRes] = await Promise.allSettled([
     unwrap(systemApi.salesTrend(days.value)),
-    unwrap(systemApi.salesRankReport()),
+    unwrap(systemApi.salesRanking(days.value)),
   ]);
   trend.value = trendRes.status === 'fulfilled' ? trendRes.value : null;
-  // 后端 P4 排行报表桩返回单条 SalesRankReportVO；列表端点补齐后这里会自动展示多行
-  const rankVo = rank.status === 'fulfilled' ? rank.value : null;
-  ranks.value = rankVo ? [rankVo] : [];
+  // 后端按 days 重新聚合多行排行，统计区间切换时与趋势同步刷新
+  ranks.value = rankRes.status === 'fulfilled' ? (rankRes.value ?? []) : [];
   if (trendRes.status === 'rejected') {
     ElMessage.error('销售趋势加载失败');
+  }
+  if (rankRes.status === 'rejected') {
+    ElMessage.error('销售业绩排行加载失败');
   }
   loading.value = false;
 }

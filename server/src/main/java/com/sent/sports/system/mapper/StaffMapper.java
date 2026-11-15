@@ -1,6 +1,9 @@
 package com.sent.sports.system.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.sent.sports.system.mapper.po.StaffAdminRow;
 import com.sent.sports.system.mapper.po.SysRolePO;
 import com.sent.sports.system.mapper.po.SysStaffPO;
 import org.apache.ibatis.annotations.Mapper;
@@ -66,4 +69,19 @@ public interface StaffMapper extends BaseMapper<SysStaffPO> {
     /** 登录失败累加；达到阈值时由业务层另行写入 {@code locked_until}。 */
     @Update("UPDATE sys_staff SET fail_count = fail_count + 1 WHERE id = #{staffId} AND deleted = 0")
     int increaseFailCount(@Param("staffId") long staffId);
+
+    // ------------------------------------------------------------------
+    // 管理端列表（P5 遗留空桩收口：员工管理页此前恒为空表）
+    // ------------------------------------------------------------------
+
+    /** 员工分页：左联 {@code sys_role} 取角色编码，只读未删除行，固定按 id 升序。 */
+    @Select("SELECT s.id AS staffId, s.staff_no AS staffNo, s.name AS name, s.phone AS phone, "
+            + "r.code AS roleCode, s.status AS status "
+            + "FROM sys_staff s LEFT JOIN sys_role r ON r.id = s.role_id "
+            + "WHERE s.deleted = 0 ORDER BY s.id")
+    IPage<StaffAdminRow> selectAdminPage(Page<StaffAdminRow> page);
+
+    /** 与 {@link #selectAdminPage} 同条件（只排除逻辑删除）的独立总数。 */
+    @Select("SELECT COUNT(*) FROM sys_staff s WHERE s.deleted = 0")
+    long countAdmin();
 }

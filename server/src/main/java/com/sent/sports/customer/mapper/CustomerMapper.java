@@ -10,6 +10,8 @@ import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
+import java.time.LocalDateTime;
+
 /**
  * 客户 Mapper：映射 V3 的 {@code customer} 表。
  * <p>除个人资料读取（{@link #selectById}）外，成长值累加也收口在这里——
@@ -24,10 +26,12 @@ public interface CustomerMapper extends BaseMapper<CustomerPO> {
     int addGrowth(@Param("customerId") long customerId, @Param("delta") long delta);
 
     /**
-     * 管理端客户分页：姓名/手机号/客户编号模糊匹配，按会员等级与客户类型收窄；已软删的客户不返回。
+     * 管理端客户分页：姓名/手机号/客户编号/客户 ID 模糊匹配，按会员等级与客户类型收窄；已软删的客户不返回。
      * 数据范围（ALL/TEAM/SELF）由 {@code DataScopeInterceptor} 在 SQL 外侧追加，此处不写死归属条件。
      * <p>type 下推到 SQL（而非前端过滤）：PageQuery 单页上限 100，前端先截断再过滤会漏数据
      * （企业审核与授信页曾因此只看到 50 / 真实 53 家）。</p>
+     * <p>客户 ID 也参与匹配：企业审核与授信页经常只拿到一个 91xxx 的客户号，
+     * 手动翻页找太慢，把 BIGINT 转字符串参与 LIKE 即可。</p>
      */
     @Select("<script>"
             + "SELECT c.*, e.credit_limit_cent, e.credit_used_cent, e.status AS enterprise_status "
@@ -36,7 +40,8 @@ public interface CustomerMapper extends BaseMapper<CustomerPO> {
             + "<if test=\"keyword != null and keyword != ''\">"
             + " AND (c.nickname LIKE CONCAT('%', #{keyword}, '%')"
             + " OR c.phone LIKE CONCAT('%', #{keyword}, '%')"
-            + " OR c.customer_no LIKE CONCAT('%', #{keyword}, '%'))"
+            + " OR c.customer_no LIKE CONCAT('%', #{keyword}, '%')"
+            + " OR CAST(c.id AS CHAR) LIKE CONCAT('%', #{keyword}, '%'))"
             + "</if> "
             + "<if test=\"level != null and level != ''\"> AND c.level_code = #{level}</if> "
             + "<if test=\"type != null and type != ''\"> AND c.type = #{type}</if> "
@@ -59,10 +64,22 @@ public interface CustomerMapper extends BaseMapper<CustomerPO> {
             + "WHERE id = #{customerId} AND deleted = 0")
     int addPoints(@Param("customerId") long customerId, @Param("delta") long delta);
 
-    /** 人工授级：只改等级码，历史订单/专享价快照不受影响。 */
-    @Update("UPDATE customer SET level_code = #{level} "
+    /** 人工授级：等级码与有效期一起写（有效期 NULL = 长期有效），历史订单/专享价快照不受影响。 */
+    @Update("UPDATE customer SET level_code = #{level}, level_valid_to = #{levelValidTo} "
             + "WHERE id = #{customerId} AND deleted = 0")
-    int updateLevelCode(@Param("customerId") long customerId, @Param("level") String level);
+    int updateLevelGrant(@Param("customerId") long customerId,
+                         @Param("level") String level,
+                         @Param("levelValidTo") LocalDateTime levelValidTo);
+
+    /**
+     * 成长值驱动的等级提升：只升不降（等级码顺序用 {@code FIND_IN_SET} 判定，
+     * 已授级或已是更高档时不覆盖），返回 0 行即代表无需变更。
+     */
+    @Update("UPDATE customer SET level_code = #{level} "
+            + "WHERE id = #{customerId} AND deleted = 0 "
+            + "AND FIND_IN_SET(COALESCE(level_code, 'NORMAL'), 'NORMAL,LV1,LV2,LV3') "
+            + "< FIND_IN_SET(#{level}, 'NORMAL,LV1,LV2,LV3')")
+    int promoteLevel(@Param("customerId") long customerId, @Param("level") String level);
 
     /** 积分流水一行（point_log 真表；source_type / source_id 承载业务类型与单号）。 */
     record PointLogRow(long customerId, long delta, long balanceAfter, String type,

@@ -1,5 +1,7 @@
 package com.sent.sports.member.mapper.po;
 
+import java.time.LocalDateTime;
+
 /**
  * 会员概览快照（读模型）：一位客户的等级 / 积分 / 企业授信一次查出。
  * <p>不是任何单表的完整映射，只承载管理端「会员与积分」首屏需要的列，
@@ -12,6 +14,10 @@ public class MemberSnapshotPO {
     private String phone;
     private String type;
     private String levelCode;
+
+    /** 人工授级有效期（V26）：NULL = 长期有效。 */
+    private LocalDateTime levelValidTo;
+
     private Long growthValue;
     private Long pointsBalance;
     private Long creditLimitCent;
@@ -56,6 +62,14 @@ public class MemberSnapshotPO {
 
     public void setLevelCode(String levelCode) {
         this.levelCode = levelCode;
+    }
+
+    public LocalDateTime getLevelValidTo() {
+        return levelValidTo;
+    }
+
+    public void setLevelValidTo(LocalDateTime levelValidTo) {
+        this.levelValidTo = levelValidTo;
     }
 
     public Long getGrowthValue() {

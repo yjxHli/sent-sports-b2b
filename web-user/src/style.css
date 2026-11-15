@@ -100,6 +100,12 @@ a {
   height: 11px;
   background: #d7d9dd;
 }
+/* 会员中心 / 在线客服：与「我的账户」「我的订单」并排收纳在右上角，稍作强调 */
+.topbar__member,
+.topbar__chat {
+  color: var(--sent-primary);
+  font-weight: 600;
+}
 .topbar__cart {
   display: inline-flex;
   align-items: center;
@@ -221,57 +227,6 @@ a {
   color: var(--sent-accent);
 }
 
-.searchbar__right {
-  flex: 0 0 auto;
-  padding-top: 8px;
-}
-.mini-cart {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 40px;
-  padding: 0 16px;
-  border: 1px solid var(--sent-border);
-  border-radius: 6px;
-  color: var(--sent-text-2);
-  font-size: 13px;
-  background: #fafafa;
-}
-.mini-cart em {
-  font-style: normal;
-}
-.mini-cart b {
-  color: var(--sent-accent);
-}
-
-/* ============================ 主导航 ============================ */
-.mainnav {
-  background: var(--sent-primary);
-  box-shadow: 0 2px 8px rgba(18, 102, 79, 0.18);
-  position: sticky;
-  top: 0;
-  z-index: 30;
-}
-.mainnav__inner {
-  display: flex;
-  align-items: center;
-  height: 44px;
-}
-.mainnav__item {
-  height: 100%;
-  display: flex;
-  align-items: center;
-  padding: 0 22px;
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 15px;
-  transition: background 0.15s;
-}
-.mainnav__item:hover,
-.mainnav__item.active {
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
-}
-
 /* ============================ 主体 ============================ */
 .site {
   min-height: 100vh;
@@ -346,11 +301,16 @@ a {
   margin-top: 8px;
   font-size: 11px;
   color: var(--sent-muted);
+  /* 5 列栅格下卡片只有 ~200px：标签必须不换行、不压缩，否则「包邮」会被拆成竖排 */
+  flex-wrap: nowrap;
+  overflow: hidden;
 }
 .tag {
   padding: 1px 6px;
   border-radius: 3px;
   line-height: 16px;
+  white-space: nowrap;
+  flex: none;
 }
 .tag--ship {
   color: var(--sent-primary);
@@ -362,6 +322,19 @@ a {
 }
 .good-card__sales {
   margin-left: auto;
+  white-space: nowrap;
+}
+
+/* 店铺名（分类结果页等需要「XX 店」行的场景才传 shop） */
+.good-card__shop {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed #f0f2f4;
+  font-size: 12px;
+  color: var(--sent-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 通用价格样式 */
@@ -434,3 +407,20 @@ a {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
+
+/* 站内信未读红点（顶栏「消息」） */
+.msg-badge {
+  display: inline-block;
+  margin-left: 3px;
+  min-width: 15px;
+  height: 15px;
+  line-height: 15px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #ff4a1f;
+  color: #fff;
+  font-size: 10px;
+  font-style: normal;
+  text-align: center;
+  vertical-align: 1px;
+}

@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.sent.sports.common.mybatis.BasePO;
 
+import java.time.LocalDateTime;
+
 /**
  * 客户持久化对象（收口阶段）：映射 V3 的 {@code customer} 表。
  * <p>仅承载行形状；会员等级 / 积分 / 成长值直接落在该表
@@ -20,6 +22,10 @@ public class CustomerPO extends BasePO {
     private String email;
     private String type;
     private String levelCode;
+
+    /** 人工授级有效期（V26）：NULL 表示长期有效；到期后等级按成长值重算。 */
+    private LocalDateTime levelValidTo;
+
     private Long growthValue;
     private Long pointsBalance;
     private Long ownerStaffId;
@@ -119,6 +125,14 @@ public class CustomerPO extends BasePO {
 
     public void setLevelCode(String levelCode) {
         this.levelCode = levelCode;
+    }
+
+    public LocalDateTime getLevelValidTo() {
+        return levelValidTo;
+    }
+
+    public void setLevelValidTo(LocalDateTime levelValidTo) {
+        this.levelValidTo = levelValidTo;
     }
 
     public Long getGrowthValue() {

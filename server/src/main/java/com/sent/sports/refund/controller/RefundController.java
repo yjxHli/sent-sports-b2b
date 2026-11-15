@@ -67,6 +67,18 @@ public class RefundController {
         return R.ok(refundQueryService.listMyRefunds(page, user.userId(), status));
     }
 
+    /**
+     * 我的售后计数（个人中心角标）。
+     * <p>路径是字面量 {@code /count}，Spring 会优先命中它而不是 {@code /{refundNo}}，
+     * 退款单号也不会恰好是 {@code count}（前缀恒为 RF…）。</p>
+     */
+    @GetMapping("/count")
+    public R<RefundDtos.RefundCountVO> count(
+            @RequestAttribute(value = CurrentUser.ATTR, required = false) CurrentUser user) {
+        requireUser(user);
+        return R.ok(refundQueryService.countMyRefunds(user.userId()));
+    }
+
     @GetMapping("/{refundNo}")
     public R<RefundDtos.RefundDetailVO> detail(@PathVariable String refundNo,
                                               @RequestAttribute(value = CurrentUser.ATTR, required = false) CurrentUser user) {
@@ -90,7 +102,7 @@ public class RefundController {
     private RefundApplyCmd toCmd(RefundDtos.ApplyRefundCmd cmd) {
         List<RefundApplyLineCmd> lines = cmd.lines().stream()
                 .map(l -> new RefundApplyLineCmd(l.skuId(), l.amountCent())).toList();
-        return new RefundApplyCmd(cmd.orderNo(), lines, cmd.reason(), cmd.proof());
+        return new RefundApplyCmd(cmd.orderNo(), lines, cmd.reason(), cmd.proof(), cmd.images());
     }
 
     private RefundDtos.RefundVO toVo(RefundApplyResult r) {

@@ -27,7 +27,8 @@ class ArchitectureTest {
     private static final String BASE = "com.sent.sports";
     private static final String[] MODULES = {
             "auth", "system", "customer", "member", "product", "stock", "cart",
-            "order", "payment", "refund", "customize", "finance", "chat", "notify", "report", "job"
+            "order", "payment", "refund", "customize", "finance", "chat", "notify", "report", "job",
+            "file"
     };
 
     private static JavaClasses classes;

@@ -8,6 +8,8 @@ import type { PageQuery, PageResult, StaffVO, RoleVO, SalesReportVO } from '@sen
 export interface StaffForm {
   username: string;
   name: string;
+  /** 手机号：sys_staff.phone 为 NOT NULL + 唯一键，新增必填 */
+  phone?: string;
   roleCode?: string;
 }
 
@@ -51,10 +53,27 @@ export interface LogQuery extends PageQuery {
   keyword?: string;
 }
 
+/** 销售业绩排行行（GET /admin/reports/sales-ranking，按归属销售聚合）。 */
 export interface SalesRankVO {
   rank: number;
+  staffId?: number;
   name: string;
+  customerCount?: number;
+  orderCount?: number;
   amountCent: number;
+}
+
+/** 工作台六卡 + 角色化待办数量（GET /admin/reports/dashboard，全部真库聚合）。 */
+export interface DashboardSummaryVO {
+  date: string;
+  todayOrderCount: number;
+  todayAmountCent: number;
+  pendingShipCount: number;
+  pendingCustomReviewCount: number;
+  pendingChatCount: number;
+  warningSkuCount: number;
+  pendingRefundCount: number;
+  overdueReceivableCount: number;
 }
 
 /** 销售趋势单日点（GET /admin/reports/sales-trend，批 4）。 */
@@ -108,6 +127,9 @@ export const systemApi = {
   salesReport: () => http.get<SalesReportVO>('/admin/reports/sales'),
   /** 销售趋势（真查 orders.paid_at + paid_cent，剔除全额退款订单）。 */
   salesTrend: (days = 30) => http.get<SalesTrendVO>('/admin/reports/sales-trend', { days }),
-  salesRankReport: () => http.get<SalesRankVO>('/admin/reports/sales-rank'),
+  /** 销售业绩排行：多行真实数据，统计区间由后端 SQL 下推。 */
+  salesRanking: (days = 30) => http.get<SalesRankVO[]>('/admin/reports/sales-ranking', { days }),
+  /** 工作台六卡与待办数量，一次请求取齐。 */
+  dashboard: () => http.get<DashboardSummaryVO>('/admin/reports/dashboard'),
   stockWarningReport: () => http.get<StockWarningVO>('/admin/reports/stock-warning'),
 };

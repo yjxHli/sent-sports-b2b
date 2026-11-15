@@ -49,11 +49,15 @@ public class FinanceQueryServiceImpl implements FinanceQueryService {
 
     @Override
     public PageResult<AdminFinanceDtos.ReceivableVO> receivables(PageQuery pageQuery, Long customerId,
-                                                                 String status, boolean openOnly) {
+                                                                 String status, boolean openOnly,
+                                                                 String orderNo) {
         String normalizedStatus = normalize(status);
+        String normalizedOrderNo = normalize(orderNo);
         Page<ReceivableListRow> page = new Page<>(pageQuery.getPage(), pageQuery.getSize());
-        receivableMapper.selectReceivablePage(page, customerId, normalizedStatus, openOnly);
-        long total = receivableMapper.countReceivable(customerId, normalizedStatus, openOnly);
+        receivableMapper.selectReceivablePage(page, customerId, normalizedStatus, openOnly,
+                normalizedOrderNo);
+        long total = receivableMapper.countReceivable(customerId, normalizedStatus, openOnly,
+                normalizedOrderNo);
         page.setTotal(total);
         LocalDate today = LocalDate.now();
         List<AdminFinanceDtos.ReceivableVO> list = page.getRecords().stream()
@@ -82,10 +86,12 @@ public class FinanceQueryServiceImpl implements FinanceQueryService {
     }
 
     @Override
-    public PageResult<AdminFinanceDtos.InvoiceVO> invoices(PageQuery pageQuery, String status) {
+    public PageResult<AdminFinanceDtos.InvoiceVO> invoices(PageQuery pageQuery, String status,
+                                                           String keyword) {
+        String normalizedKeyword = normalize(keyword);
         Page<InvoiceListItemPO> page = new Page<>(pageQuery.getPage(), pageQuery.getSize());
-        invoiceMapper.selectInvoicePage(page, status);
-        long total = invoiceMapper.countInvoice(status);
+        invoiceMapper.selectInvoicePage(page, status, normalizedKeyword);
+        long total = invoiceMapper.countInvoice(status, normalizedKeyword);
         page.setTotal(total);
         List<AdminFinanceDtos.InvoiceVO> list = page.getRecords().stream().map(this::toInvoiceVo).toList();
         return PageResult.of(list, total, pageQuery.getPage(), pageQuery.getSize());
@@ -93,12 +99,13 @@ public class FinanceQueryServiceImpl implements FinanceQueryService {
 
     @Override
     public PageResult<AdminFinanceDtos.ContractVO> contracts(PageQuery pageQuery, String status,
-                                                            String dueState) {
+                                                            String dueState, String keyword) {
         String normalizedStatus = normalize(status);
         String normalizedDueState = normalizeDueState(dueState);
+        String normalizedKeyword = normalize(keyword);
         Page<ContractListItemPO> page = new Page<>(pageQuery.getPage(), pageQuery.getSize());
-        contractMapper.selectContractPage(page, normalizedStatus, normalizedDueState);
-        long total = contractMapper.countContract(normalizedStatus, normalizedDueState);
+        contractMapper.selectContractPage(page, normalizedStatus, normalizedDueState, normalizedKeyword);
+        long total = contractMapper.countContract(normalizedStatus, normalizedDueState, normalizedKeyword);
         page.setTotal(total);
         List<AdminFinanceDtos.ContractVO> list = page.getRecords().stream().map(this::toContractVo).toList();
         return PageResult.of(list, total, pageQuery.getPage(), pageQuery.getSize());

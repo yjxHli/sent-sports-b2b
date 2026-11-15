@@ -3,6 +3,9 @@ package com.sent.sports.payment.service;
 import com.sent.sports.common.web.PageQuery;
 import com.sent.sports.common.web.PageResult;
 import com.sent.sports.payment.dto.PaymentDtos;
+import com.sent.sports.payment.service.dto.PaymentSummaryDto;
+
+import java.util.Optional;
 
 /**
  * 支付查询门面（P4-19 接口契约，跨模块可用）。
@@ -16,4 +19,11 @@ public interface PaymentQueryService {
 
     /** 支付结果轮询：返回 PAID / FAILED / PENDING 三态。 */
     PaymentDtos.PayResultVO getPayResult(String orderNo);
+
+    /**
+     * 某订单最近一笔支付摘要（订单详情「订单信息」用）。
+     * <p>未发起支付时返回 {@link Optional#empty()}，调用方按「未支付」空态渲染，
+     * 不要用异常表达「没付过钱」这种正常情况。</p>
+     */
+    Optional<PaymentSummaryDto> findSummary(String orderNo);
 }

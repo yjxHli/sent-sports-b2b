@@ -62,8 +62,25 @@ public abstract class FullStackIntegrationTest {
         return new OrderLineCmd(skuId, qty, "PERSON", 100, 100, false, List.of());
     }
 
+    /** 集成用例里的收货地址主键（每次 truncate 后重新播种，值固定便于断言）。 */
+    protected static final long ADDRESS_ID = 90001L;
+
+    /**
+     * 播一条收货地址（下单必填）。
+     * <p>{@code orderCmd()} 内部会自动调用，用例不必显式播；用 {@code INSERT IGNORE} 保证
+     * 同一用例里多次建单不会因主键冲突炸掉。</p>
+     */
+    protected long seedAddress(long customerId) {
+        jdbc.update("INSERT IGNORE INTO customer_address "
+                        + "(id, customer_id, receiver, phone, province, city, district, detail, is_default) "
+                        + "VALUES (?, ?, '验收客户', '13800138000', '江苏省', '南京市', '玄武区', '中山路 100 号', 1)",
+                ADDRESS_ID, customerId);
+        return ADDRESS_ID;
+    }
+
     protected CreateOrderCmd orderCmd(String idemKey, long skuId, int qty) {
-        return new CreateOrderCmd(1L, idemKey, 0, Integer.MAX_VALUE, 0, List.of(line(skuId, qty)));
+        return new CreateOrderCmd(1L, seedAddress(1L), idemKey, 0, Integer.MAX_VALUE, 0,
+                List.of(line(skuId, qty)));
     }
 
     protected long orderCount() {

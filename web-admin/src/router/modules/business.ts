@@ -54,6 +54,7 @@ export const MENU_ROUTES: MenuEntry[] = [
   { path: '/chat/workbench', title: '客服工作台', group: '客服', perm: 'chat:serve', icon: '服' },
 
   { path: '/finance/refund', title: '退款审核', group: '财务', perm: 'refund:audit', icon: '退' },
+  { path: '/finance/refund/:refundNo', title: '退款审核详情', group: '财务', perm: 'refund:audit', hidden: true },
   { path: '/finance/receivable', title: '应收台账', group: '财务', perm: 'finance:read', icon: '收' },
   { path: '/finance/payment-record', title: '回款登记与核销', group: '财务', perm: 'finance:payment', icon: '款' },
   { path: '/finance/invoice', title: '发票管理', group: '财务', perm: 'finance:invoice', icon: '票' },
@@ -98,6 +99,7 @@ const REAL_PAGES: Record<string, RouteComponentLoader> = {
   '/chat/workbench': () => import('@/views/chat/workbench.vue'),
 
   '/finance/refund': () => import('@/views/finance/refund.vue'),
+  '/finance/refund/:refundNo': () => import('@/views/finance/refund-detail.vue'),
   '/finance/receivable': () => import('@/views/finance/receivable.vue'),
   '/finance/payment-record': () => import('@/views/finance/payment-record.vue'),
   '/finance/invoice': () => import('@/views/finance/invoice.vue'),

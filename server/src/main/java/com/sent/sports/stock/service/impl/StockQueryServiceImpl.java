@@ -14,6 +14,9 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.StringJoiner;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 库存查询实现（收口阶段）：列表与流水从空桩换成真分页。
@@ -32,13 +35,25 @@ public class StockQueryServiceImpl implements StockQueryService {
     }
 
     @Override
-    public PageResult<AdminStockDtos.StockRow> list(PageQuery pageQuery, Long skuId) {
+    public PageResult<AdminStockDtos.StockRow> list(PageQuery pageQuery, Long skuId,
+                                                     boolean warningOnly) {
         Page<StockMapper.StockLedgerRow> page = new Page<>(pageQuery.getPage(), pageQuery.getSize());
-        IPage<StockMapper.StockLedgerRow> rows = stockMapper.selectStockPage(page, skuId);
+        IPage<StockMapper.StockLedgerRow> rows = stockMapper.selectStockPage(page, skuId, warningOnly);
         List<AdminStockDtos.StockRow> list = rows.getRecords().stream()
                 .map(StockQueryServiceImpl::toStockRow)
                 .toList();
         return PageResult.of(list, rows.getTotal(), pageQuery.getPage(), pageQuery.getSize());
+    }
+
+    @Override
+    public AdminStockDtos.StockWarningSummary warningSummary() {
+        StockMapper.StockLedgerRow row = stockMapper.selectMostCriticalWarning();
+        if (row == null) {
+            return new AdminStockDtos.StockWarningSummary(0L, "暂无预警", 0, 0);
+        }
+        AdminStockDtos.StockRow stock = toStockRow(row);
+        return new AdminStockDtos.StockWarningSummary(
+                stock.skuId(), stock.skuName(), stock.availableQty(), stock.safeQty());
     }
 
     @Override
@@ -95,18 +110,31 @@ public class StockQueryServiceImpl implements StockQueryService {
         return name.toString();
     }
 
-    /** 取 spec_json 首个值（形如 {"spec":"一筒(12只)"} 或 {"color":"黑"}），解析失败时用编码兜底。 */
+    /** 规格 JSON 的键值对：只取字符串值，跳过键名与转义引号。 */
+    private static final Pattern SPEC_VALUE = Pattern.compile(
+            "\"(?:[^\"\\\\]|\\\\.)*\"\\s*:\\s*(\"(?:[^\"\\\\]|\\\\.)*\"|[^,}\\s]+)");
+
+    /**
+     * 把 spec_json 拼成可读规格文本。
+     * <p>老实现只切第一个冒号后面的整段，多键规格（如 {@code {"size":"XL","color":"红"}}）
+     * 会把 {@code XL", "color": "红} 这种半截 JSON 拼进商品名。这里逐个取值用「 / 」连接；
+     * 单键规格仍返回原值（与既有列表口径一致），不是对象 JSON 时原样兜底。</p>
+     */
     private static String plainSpec(String json) {
         if (json == null || json.isBlank()) return "";
-        String body = json.trim();
-        if (body.startsWith("{")) body = body.substring(1);
-        if (body.endsWith("}")) body = body.substring(0, body.length() - 1);
-        int idx = body.indexOf(':');
-        if (idx < 0) return body.trim();
-        String value = body.substring(idx + 1).trim();
-        if (value.startsWith("\"")) value = value.substring(1);
-        if (value.endsWith("\"")) value = value.substring(0, value.length() - 1);
-        return value.replace("\\\"", "\"").replace("\\\\", "\\").trim();
+        Matcher matcher = SPEC_VALUE.matcher(json);
+        StringJoiner parts = new StringJoiner(" / ");
+        while (matcher.find()) {
+            String value = matcher.group(1).trim();
+            if (value.length() >= 2 && value.startsWith("\"") && value.endsWith("\"")) {
+                value = value.substring(1, value.length() - 1);
+            }
+            value = value.replace("\\\"", "\"").replace("\\\\", "\\").trim();
+            if (!value.isEmpty()) {
+                parts.add(value);
+            }
+        }
+        return parts.length() == 0 ? json.trim() : parts.toString();
     }
 
     private static int nvl(Integer value) {

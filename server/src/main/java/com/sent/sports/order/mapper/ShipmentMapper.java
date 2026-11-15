@@ -5,6 +5,8 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
+import java.time.LocalDateTime;
+
 /**
  * 包裹 Mapper（验收缺口补齐）：一次发货 = 一条 {@code shipment} + 若干 {@code shipment_item}。
  *
@@ -38,4 +40,29 @@ public interface ShipmentMapper {
                          @Param("orderId") long orderId,
                          @Param("skuId") long skuId,
                          @Param("qty") int qty);
+
+    /**
+     * 该订单最近一次发货的承运信息（订单详情右侧「订单信息」展示物流）。
+     * 部分发货会有多条包裹，取最新一条即可满足「发货时间/单号」的展示诉求。
+     */
+    @Select("SELECT shipment_no AS shipmentNo, carrier, tracking_no AS trackingNo, shipped_at AS shippedAt "
+            + "FROM shipment WHERE order_id = #{orderId} ORDER BY id DESC LIMIT 1")
+    ShipmentRow selectLatestByOrderId(@Param("orderId") long orderId);
+
+    /** 物流投影行（非表映射对象）。 */
+    class ShipmentRow {
+        private String shipmentNo;
+        private String carrier;
+        private String trackingNo;
+        private LocalDateTime shippedAt;
+
+        public String getShipmentNo() { return shipmentNo; }
+        public void setShipmentNo(String shipmentNo) { this.shipmentNo = shipmentNo; }
+        public String getCarrier() { return carrier; }
+        public void setCarrier(String carrier) { this.carrier = carrier; }
+        public String getTrackingNo() { return trackingNo; }
+        public void setTrackingNo(String trackingNo) { this.trackingNo = trackingNo; }
+        public LocalDateTime getShippedAt() { return shippedAt; }
+        public void setShippedAt(LocalDateTime shippedAt) { this.shippedAt = shippedAt; }
+    }
 }
