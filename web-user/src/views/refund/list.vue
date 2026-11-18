@@ -105,11 +105,18 @@
       </article>
     </div>
 
-    <div v-if="list.length < total" class="rf-more">
-      <button type="button" class="rf-more__btn" :disabled="loading" @click="loadMore">
-        {{ loading ? '加载中…' : '加载更多' }}
-      </button>
-    </div>
+    <el-pagination
+      v-if="total > 0"
+      class="list-page"
+      background
+      layout="total, sizes, prev, pager, next, jumper"
+      :total="total"
+      :page-size="size"
+      :page-sizes="[10, 15, 20, 50, 100]"
+      :current-page="page"
+      @current-change="onPage"
+      @size-change="onSize"
+    />
   </div>
 </template>
 
@@ -133,8 +140,6 @@ import { refundApi, type RefundVO } from '@/api/refund';
 import ProductThumb from '@/components/ProductThumb.vue';
 
 const router = useRouter();
-
-const PAGE_SIZE = 10;
 
 const FILTERS = [
   { label: '全部', value: '' },
@@ -164,6 +169,7 @@ const REFUND_TONES: Record<string, StatusTone> = {
 const list = ref<RefundVO[]>([]);
 const total = ref(0);
 const page = ref(1);
+const size = ref(10);
 const loading = ref(false);
 const active = ref('');
 
@@ -261,27 +267,29 @@ async function fetchPage(target: number): Promise<void> {
   loading.value = true;
   try {
     const query = active.value
-      ? { page: target, size: PAGE_SIZE, status: active.value }
-      : { page: target, size: PAGE_SIZE };
+      ? { page: target, size: size.value, status: active.value }
+      : { page: target, size: size.value };
     const res = await unwrap(refundApi.list(query));
-    const rows = res?.list ?? [];
-    list.value = target === 1 ? rows : [...list.value, ...rows];
+    // 分页器按页替换（不再追加），避免翻页/切条数重复
+    list.value = res?.list ?? [];
     total.value = Number(res?.total ?? 0);
     page.value = target;
   } catch (e) {
-    if (target === 1) {
-      list.value = [];
-      total.value = 0;
-    }
+    list.value = [];
+    total.value = 0;
     ElMessage.error((e as Error).message || '加载失败');
   } finally {
     loading.value = false;
   }
 }
 
-async function loadMore(): Promise<void> {
-  if (loading.value) return;
-  await fetchPage(page.value + 1);
+async function onPage(p: number): Promise<void> {
+  await fetchPage(p);
+}
+
+async function onSize(s: number): Promise<void> {
+  size.value = s;
+  await fetchPage(1);
 }
 
 onMounted(() => {
@@ -621,24 +629,6 @@ onMounted(() => {
 }
 .rf-empty__btn:hover {
   background: var(--sent-accent-dark);
-}
-
-.rf-more {
-  text-align: center;
-  padding: 22px 0 0;
-}
-.rf-more__btn {
-  border: 1px solid var(--sent-border);
-  background: #fff;
-  border-radius: 16px;
-  padding: 7px 26px;
-  font-size: 13px;
-  color: var(--sent-text-2);
-  cursor: pointer;
-}
-.rf-more__btn:hover {
-  border-color: var(--sent-primary);
-  color: var(--sent-primary);
 }
 
 @media (max-width: 1080px) {

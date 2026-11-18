@@ -1,7 +1,8 @@
 <template>
   <div class="container home">
     <!-- 顶部大促条（对齐参考图顶部红色通栏：文案 + 倒计时 + 立即抢购） -->
-    <div class="promo-bar">
+    <!-- 会员日横幅：仅周三、周四显示，其他日期不打扰 -->
+    <div class="promo-bar" v-if="isMemberDay">
       <div class="promo-bar__left">
         <span class="promo-bar__tag">会员日</span>
         <b class="promo-bar__title">森特体育 · 巅峰返场 全场装备低至 6.8 折</b>
@@ -36,14 +37,14 @@
       <!-- 中间：活动瓦片 + 轮播 -->
       <div class="home-main">
         <div class="promo-grid">
-          <div class="promo-main" @click="goMember">
+          <div class="promo-main" @click="goCouponCenter">
             <div class="promo-main__badge">会员日</div>
             <div class="promo-main__title">领券中心</div>
-            <p class="promo-main__sub">满 500 减 50 / 满 2000 减 300</p>
+            <p class="promo-main__sub">5 元无门槛 / 满 20 减 10 / 满 80 减 50</p>
             <div class="promo-main__cupons">
-              <span>¥50</span><span>¥300</span><span>¥80</span>
+              <span>¥5</span><span>¥10</span><span>¥50</span>
             </div>
-            <button class="promo-main__btn" @click.stop="goMember">立即领取</button>
+            <button class="promo-main__btn" @click.stop="goCouponCenter">立即领取</button>
           </div>
           <div class="promo-tiles">
             <div
@@ -104,6 +105,9 @@
         <div class="side-links">
           <router-link to="/orders" class="side-link">📦 我的订单</router-link>
           <router-link to="/custom" class="side-link">🎨 我的定制</router-link>
+          <router-link to="/favorites" class="side-link">⭐ 我的收藏</router-link>
+          <router-link to="/footprints" class="side-link">👣 我的足迹</router-link>
+          <router-link to="/chat" class="side-link side-link--chat">💬 在线客服</router-link>
         </div>
 
         <div class="side-tip">
@@ -172,6 +176,11 @@ const sentinel = ref<HTMLElement | null>(null);
 let observer: IntersectionObserver | undefined;
 
 const cartCount = computed(() => cart.totalQty);
+/** 周三(3)/周四(4) 是会员日：顶部大促横幅只在这两天出现 */
+const isMemberDay = computed(() => {
+  const day = new Date().getDay();
+  return day === 3 || day === 4;
+});
 
 /**
  * 顶部各模块的落点配置。
@@ -261,8 +270,9 @@ function goProducts(): void {
   router.push('/products');
 }
 /** 领券中心 → 会员中心（券包与权益都在这里查看） */
-function goMember(): void {
-  router.push('/member');
+/** 领券中心：进专门的领券页（上可领券 + 下商品），不再跳会员中心 */
+function goCouponCenter(): void {
+  router.push('/coupon/center');
 }
 /** 按入口配置跳转：有 path 直跳，否则带筛选条件进商品结果页 */
 function goEntry(e: EntryLink): void {
@@ -794,9 +804,9 @@ onUnmounted(() => {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  /* 与中间栏等高后把富余高度均分到各块之间，避免某一段突兀地空一大块 */
-  justify-content: space-between;
+  /* 2026-11-18：原 space-between 把富余高度均分到各块之间，看起来很散；
+     改为内容自然紧凑靠上，新增收藏/足迹/客服入口把信息填满同一只卡片。 */
+  gap: 9px;
 }
 .side-user {
   display: flex;
@@ -804,8 +814,8 @@ onUnmounted(() => {
   gap: 10px;
 }
 .side-user__avatar {
-  width: 42px;
-  height: 42px;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
   background: var(--sent-primary-soft);
   color: var(--sent-primary);
@@ -838,7 +848,7 @@ onUnmounted(() => {
   grid-template-columns: repeat(3, 1fr);
   background: #fafbfc;
   border-radius: 8px;
-  padding: 10px 0;
+  padding: 8px 0;
 }
 .side-stat {
   display: flex;
@@ -864,7 +874,7 @@ onUnmounted(() => {
   color: var(--sent-text-2);
   background: #fafbfc;
   border-radius: 6px;
-  padding: 8px 6px;
+  padding: 6px 4px;
   text-align: center;
   border: 1px solid #f2f3f5;
 }
@@ -880,7 +890,7 @@ onUnmounted(() => {
 }
 .side-tip {
   border-top: 1px dashed #eef0f2;
-  padding-top: 10px;
+  padding-top: 8px;
   font-size: 12px;
   color: var(--sent-muted);
 }

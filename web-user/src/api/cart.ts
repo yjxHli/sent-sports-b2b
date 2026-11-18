@@ -37,10 +37,16 @@ export interface QuoteVO {
   lines: QuoteLineVO[];
   goodsAmountCent: number;
   goodsAmountYuan: string;
+  /** 定制费（10 元/件，V33），普通订单为 0 */
+  customFeeCent?: number;
+  customFeeYuan?: string;
   freightCent: number;
   freightYuan: string;
   pointDeductCent: number;
   pointDeductYuan: string;
+  /** 优惠券抵扣（分 / 元）；没有券时为 0 */
+  couponDiscountCent: number;
+  couponDiscountYuan: string;
   payableCent: number;
   payableYuan: string;
 }
@@ -56,6 +62,8 @@ export const cartApi = {
     availablePoints: number;
     freightFreeThresholdCent: number;
     freightFeeCent: number;
+    /** 优惠券主键；不选传 undefined，后端按门槛实时判定，无效券静默按 0 抵扣 */
+    couponId?: number;
     items: PreviewItemCmd[];
   }) => http.post<QuoteVO>('/cart/checkout-preview', cmd),
   /** 下单幂等键经 config.headers 注入 */

@@ -83,6 +83,48 @@ export function maskName(name: string | null | undefined): string {
   return name.length <= 1 ? name : `${name.slice(0, 1)}${'*'.repeat(name.length - 1)}`;
 }
 
+/**
+ * 聊天消息时间分隔阈值：相邻两条消息相隔 5 分钟就重新显示一次当前时间（微信口径）。
+ * 两端共用同一份规则，避免客服端与客户看到一个显、一个不显。
+ */
+export const CHAT_TIME_GAP_MS = 5 * 60_000;
+
+/**
+ * 当前消息上方是否要插入时间提示。
+ *
+ * @param prevAt 上一条消息时间（毫秒 / 秒 / 时间字符串），首条传 null
+ * @param curAt  当前消息时间；无效时间一律不显示，避免 1970-01-01 出现在气泡上方
+ */
+export function shouldShowTimeDivider(
+  prevAt: number | string | null | undefined,
+  curAt: number | string | null | undefined,
+  gapMs: number = CHAT_TIME_GAP_MS,
+): boolean {
+  const cur = toDate(curAt);
+  if (!cur) return false;
+  const prev = toDate(prevAt);
+  if (!prev) return true;
+  return cur.getTime() - prev.getTime() >= gapMs;
+}
+
+/** 同一天用 HH:mm（对齐微信），跨天带「昨天 / MM月DD日」，跨年带年份。 */
+export function fmtChatTime(value: number | string | null | undefined, nowMs: number = Date.now()): string {
+  const date = toDate(value);
+  if (!date) return '';
+  const now = new Date(nowMs);
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  const hm = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  if (date.getFullYear() !== now.getFullYear()) {
+    return `${date.getFullYear()}年${pad(date.getMonth() + 1)}月${pad(date.getDate())}日 ${hm}`;
+  }
+  const sameDay = (d: Date) => d.getFullYear() === date.getFullYear()
+    && d.getMonth() === date.getMonth() && d.getDate() === date.getDate();
+  if (sameDay(now)) return hm;
+  const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+  if (sameDay(yesterday)) return `昨天 ${hm}`;
+  return `${pad(date.getMonth() + 1)}月${pad(date.getDate())}日 ${hm}`;
+}
+
 /** 逾期天数：负数按 0 处理，用于应收台账标红 */
 export function overdueDays(dueAt: number | string | null | undefined, now = Date.now()): number {
   const date = toDate(dueAt);

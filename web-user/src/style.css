@@ -95,6 +95,114 @@ a {
 .topbar__link:hover {
   color: var(--sent-accent);
 }
+/* 我的订单：hover 弹出「商品订单 / 定制订单」 */
+.topbar__orders {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.topbar__orders > .topbar__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.topbar__orders-arrow {
+  font-style: normal;
+  font-size: 10px;
+  transition: transform 0.15s;
+}
+.topbar__orders:hover .topbar__orders-arrow {
+  transform: rotate(180deg);
+}
+.topbar__orders-menu {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  min-width: 120px;
+  padding: 6px 0;
+  background: #fff;
+  border: 1px solid var(--sent-border);
+  border-radius: var(--sent-radius);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+}
+.topbar__orders:hover .topbar__orders-menu,
+.topbar__orders:focus-within .topbar__orders-menu {
+  display: block;
+}
+.topbar__orders-item {
+  display: block;
+  padding: 8px 16px;
+  font-size: 13px;
+  color: var(--sent-text-2);
+  white-space: nowrap;
+}
+.topbar__orders-item:hover {
+  background: var(--sent-primary-soft);
+  color: var(--sent-primary);
+}
+/* 账户名下拉：hover / 键盘聚焦都能展开，点击退出登录 */
+.topbar__account {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.topbar__account-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.topbar__account-arrow {
+  font-style: normal;
+  font-size: 10px;
+  transition: transform 0.15s;
+}
+.topbar__account:hover .topbar__account-arrow,
+.topbar__account:focus-within .topbar__account-arrow {
+  transform: rotate(180deg);
+}
+.topbar__account-menu {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  min-width: 132px;
+  padding: 6px 0;
+  background: #fff;
+  border: 1px solid var(--sent-border);
+  border-radius: var(--sent-radius);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+}
+.topbar__account:hover .topbar__account-menu,
+.topbar__account:focus-within .topbar__account-menu {
+  display: block;
+}
+.topbar__account-item {
+  display: block;
+  width: 100%;
+  padding: 8px 16px;
+  border: none;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  color: var(--sent-text-2);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.topbar__account-item:hover {
+  background: var(--sent-primary-soft);
+  color: var(--sent-primary);
+}
 .topbar__sep {
   width: 1px;
   height: 11px;
@@ -112,6 +220,54 @@ a {
   gap: 4px;
   color: var(--sent-accent);
   font-weight: 600;
+}
+/* 帮助中心：hover 弹出四分类下拉 */
+.topbar__help {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.topbar__help-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: default;
+}
+.topbar__help-arrow {
+  font-style: normal;
+  font-size: 10px;
+  transition: transform 0.15s;
+}
+.topbar__help:hover .topbar__help-arrow {
+  transform: rotate(180deg);
+}
+.topbar__help-menu {
+  display: none;
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 50;
+  min-width: 132px;
+  padding: 6px 0;
+  background: #fff;
+  border: 1px solid var(--sent-border);
+  border-radius: var(--sent-radius);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+}
+.topbar__help:hover .topbar__help-menu,
+.topbar__help:focus-within .topbar__help-menu {
+  display: block;
+}
+.topbar__help-item {
+  display: block;
+  padding: 8px 16px;
+  font-size: 13px;
+  color: var(--sent-text-2);
+  white-space: nowrap;
+}
+.topbar__help-item:hover {
+  background: var(--sent-primary-soft);
+  color: var(--sent-primary);
 }
 .cart-badge {
   font-style: normal;
@@ -179,27 +335,57 @@ a {
   padding-top: 4px;
 }
 .searchbox__field {
+  position: relative;
   display: flex;
   height: 44px;
   border: 2px solid var(--sent-primary);
   border-radius: 6px;
-  overflow: hidden;
   background: #fff;
 }
 .searchbox__input {
   flex: 1;
+  min-width: 0;
   border: none;
   outline: none;
+  border-radius: 4px 0 0 4px;
   padding: 0 16px;
   font-size: 14px;
   color: var(--sent-text);
 }
+/* 搜索联想下拉（2026-11-17）：绝对定位在输入框下方，盖住热搜词 */
+.search-suggest {
+  position: absolute; top: calc(100% + 2px); left: -2px; right: -2px; z-index: 30;
+  max-height: 360px; overflow-y: auto;
+  background: #fff; border: 1px solid #ff7a00; border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  padding: 8px 0;
+}
+.search-suggest__item {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  padding: 7px 16px; border: none; background: transparent;
+  font-size: 13px; color: var(--sent-text);
+}
+.search-suggest__item:hover { background: #f4f6fa; }
+.search-suggest__item small { margin-left: 8px; color: #9aa4b2; font-size: 11px; }
+.search-suggest__head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 4px 16px 8px; font-size: 12px; color: #9aa4b2;
+}
+.search-suggest__head button { border: none; background: none; cursor: pointer; color: #9aa4b2; font-size: 12px; }
+.search-suggest__history { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 16px 8px; }
+.search-suggest__history button {
+  border: 1px solid #e3e8ef; border-radius: 14px; background: #fff;
+  padding: 4px 12px; font-size: 12px; color: #4b5563; cursor: pointer;
+}
+.search-suggest__history button:hover { border-color: var(--sent-primary); color: var(--sent-primary); }
+.search-suggest__empty { padding: 10px 16px; font-size: 12px; color: #9aa4b2; }
 .searchbox__input::placeholder {
   color: #b6bcc6;
 }
 .searchbox__btn {
   width: 96px;
   border: none;
+  border-radius: 0 4px 4px 0;
   cursor: pointer;
   background: var(--sent-primary);
   color: #fff;
@@ -347,30 +533,19 @@ a {
 .site-footer {
   background: #1f2329;
   color: #9aa1ad;
-  padding: 34px 0 20px;
+  padding: 22px 0;
   font-size: 13px;
 }
-.footer__cols {
-  display: flex;
-  gap: 80px;
-  padding-bottom: 24px;
-  border-bottom: 1px solid #2f343c;
-}
-.footer__col h4 {
-  color: #fff;
-  font-size: 14px;
-  margin: 0 0 12px;
-  font-weight: 600;
-}
-.footer__col p {
-  margin: 0 0 8px;
-  line-height: 1.6;
-}
 .footer__copy {
-  padding-top: 16px;
   text-align: center;
   color: #6b7280;
   font-size: 12px;
+}
+
+/* 通用分页器（订单/定制/售后列表共用） */
+.list-page {
+  justify-content: center;
+  padding: 24px 0 10px;
 }
 
 /* 通用空状态/加载 */

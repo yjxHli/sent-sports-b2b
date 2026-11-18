@@ -11,7 +11,7 @@
         </p>
         <div class="gb-hero__actions">
           <button class="gb-hero__btn" @click="goChat">💬 联系客户经理</button>
-          <router-link to="/custom" class="gb-hero__btn gb-hero__btn--ghost">定制专属方案</router-link>
+          <router-link to="/chat" class="gb-hero__btn gb-hero__btn--ghost">定制专属方案</router-link>
         </div>
       </div>
       <ul class="gb-hero__stats">

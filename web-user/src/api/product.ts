@@ -45,6 +45,10 @@ export interface CategoryVO {
 export const productApi = {
   list: (query: { categoryId?: number | null; keyword?: string } & PageQuery) =>
     http.get<PageResult<CatalogProductVO>>('/products', query),
+  /** 首页搜索联想：按标题模糊匹配，返回商品名 + 分类，点击跳对应分类结果页 */
+  suggest: (keyword: string, limit = 10) =>
+    http.get<Array<{ productId: string; name: string; categoryId: number | null; categoryName?: string | null }>>(
+      '/products/suggest', { keyword, limit }),
   detail: (productId: string) =>
     http.get<CatalogProductVO>(`/products/${productId}`),
   skus: (productId: string) =>

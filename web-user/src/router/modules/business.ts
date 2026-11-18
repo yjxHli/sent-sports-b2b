@@ -21,7 +21,9 @@ export interface AppRoute {
 
 export const LOGIN_PATH = '/login';
 /** 路由守卫白名单（不含 base） */
-export const WHITE_LIST = ['/login', '/:pathMatch(.*)*'];
+export const WHITE_LIST = [
+  '/login', '/forgot-password', '/enterprise/login', '/enterprise/register', '/:pathMatch(.*)*',
+];
 
 export const MENU_ROUTES: AppRoute[] = [
   { path: '/home', title: '首页', icon: '🏠', tab: true },
@@ -33,6 +35,7 @@ export const MENU_ROUTES: AppRoute[] = [
   { path: '/checkout', title: '确认订单', hidden: true },
   { path: '/orders', title: '我的订单', hidden: true },
   { path: '/order/:orderNo', title: '订单详情', hidden: true },
+  { path: '/pay/:orderNo', title: '订单支付', hidden: true },
   { path: '/favorites', title: '我的收藏', hidden: true },
   { path: '/footprints', title: '我的足迹', hidden: true },
   { path: '/custom', title: '我的定制', hidden: true },
@@ -41,9 +44,13 @@ export const MENU_ROUTES: AppRoute[] = [
   { path: '/chat', title: '在线客服', hidden: true },
   { path: '/messages', title: '消息中心', hidden: true },
   { path: '/member', title: '会员中心', hidden: true },
+  { path: '/coupons', title: '我的优惠券', hidden: true },
+  { path: '/coupon/center', title: '领券中心', hidden: true },
+  { path: '/profile/edit', title: '编辑个人信息', hidden: true },
   { path: '/refunds', title: '我的售后', hidden: true },
   { path: '/refund/:refundNo', title: '售后详情', hidden: true },
   { path: '/refund/apply/:orderNo', title: '申请退款', hidden: true },
+  { path: '/help/category/:category', title: '帮助中心分类', hidden: true },
 ];
 
 type RouteComponentLoader = RouteRecordSingleView['component'];
@@ -57,6 +64,7 @@ const REAL_PAGES: Record<string, RouteComponentLoader> = {
   '/checkout': () => import('@/views/checkout/index.vue'),
   '/orders': () => import('@/views/order/list.vue'),
   '/order/:orderNo': () => import('@/views/order/detail.vue'),
+  '/pay/:orderNo': () => import('@/views/pay/index.vue'),
   '/favorites': () => import('@/views/favorites/index.vue'),
   '/footprints': () => import('@/views/footprints/index.vue'),
   '/custom': () => import('@/views/custom/index.vue'),
@@ -65,9 +73,13 @@ const REAL_PAGES: Record<string, RouteComponentLoader> = {
   '/chat': () => import('@/views/chat/index.vue'),
   '/messages': () => import('@/views/message/index.vue'),
   '/member': () => import('@/views/member/index.vue'),
+  '/coupons': () => import('@/views/coupon/index.vue'),
+  '/coupon/center': () => import('@/views/coupon/center.vue'),
+  '/profile/edit': () => import('@/views/mine/profile-edit.vue'),
   '/refunds': () => import('@/views/refund/list.vue'),
   '/refund/:refundNo': () => import('@/views/refund/detail.vue'),
   '/refund/apply/:orderNo': () => import('@/views/refund/apply.vue'),
+  '/help/category/:category': () => import('@/views/help/category.vue'),
 };
 
 const NotFound: RouteComponentLoader = () => import('@/views/error/404.vue');
@@ -79,6 +91,24 @@ export const staticRoutes: RouteRecordRaw[] = [
     name: 'Login',
     component: () => import('@/views/login/index.vue'),
     meta: { title: '登录', hidden: true },
+  },
+  {
+    path: '/forgot-password',
+    name: 'ForgotPassword',
+    component: () => import('@/views/login/forgot.vue'),
+    meta: { title: '忘记密码', hidden: true },
+  },
+  {
+    path: '/enterprise/login',
+    name: 'EnterpriseLogin',
+    component: () => import('@/views/enterprise/login.vue'),
+    meta: { title: '企业登录', hidden: true },
+  },
+  {
+    path: '/enterprise/register',
+    name: 'EnterpriseRegister',
+    component: () => import('@/views/enterprise/register.vue'),
+    meta: { title: '企业注册', hidden: true },
   },
   {
     path: '/:pathMatch(.*)*',

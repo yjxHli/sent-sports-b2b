@@ -121,14 +121,14 @@
               <span>已选商品</span><span>{{ selectedItems.length }} 种 / {{ selectedQty }} 件</span>
             </div>
             <div class="aside-line">
-              <span>商品金额</span><span>¥{{ goodsAmountText }}</span>
+              <span>商品金额</span><span>{{ goodsAmountText }}</span>
             </div>
             <div class="aside-line">
               <span>运费</span><span class="aside-muted">结算页计算</span>
             </div>
             <div class="aside-line aside-line--total">
               <span>合计</span>
-              <b class="aside-total">¥{{ goodsAmountText }}</b>
+              <b class="aside-total">{{ goodsAmountText }}</b>
             </div>
           </template>
 

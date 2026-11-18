@@ -50,22 +50,56 @@
           <span>{{ it.name }}</span>
           <span>×{{ it.qty }}</span>
         </div>
-        <el-checkbox v-model="customFlag" class="co-custom">
+        <el-checkbox v-model="customFlag" class="co-custom" @change="refreshQuote">
           含 UV 定制件（下单后需上传图稿并经客服审图）
         </el-checkbox>
       </div>
 
       <div v-if="quote" class="sent-card">
         <div class="quote-line"><span>商品金额</span><span>¥{{ quote.goodsAmountYuan }}</span></div>
+        <div v-if="Number(quote.customFeeCent ?? 0) > 0" class="quote-line">
+          <span>定制费（10 元/件）</span><span>¥{{ quote.customFeeYuan }}</span>
+        </div>
         <div class="quote-line"><span>运费</span><span>¥{{ quote.freightYuan }}</span></div>
+        <div v-if="couponOptions.length" class="quote-line quote-line--coupon">
+          <span>优惠券</span>
+          <el-select
+            v-model="selectedCouponId"
+            clearable
+            placeholder="不使用优惠券"
+            popper-class="checkout-coupon-popper"
+            data-testid="checkout-coupon"
+            style="width: 220px"
+            @change="onCouponChange"
+          >
+            <el-option
+              v-for="c in couponOptions"
+              :key="c.couponId"
+              :label="couponLabel(c)"
+              :class="couponOptionClass(c)"
+              :value="Number(c.couponId)"
+            />
+          </el-select>
+        </div>
+        <p v-if="couponOptions.length" class="quote-coupon-hint">灰色券未满足当前订单使用要求</p>
+        <div v-if="Number(quote.couponDiscountCent ?? 0) > 0" class="quote-line quote-line--discount">
+          <span>券抵扣</span><span class="sent-price">-¥{{ quote.couponDiscountYuan }}</span>
+        </div>
         <div class="quote-line quote-line--total">
           <span>应付</span><span class="sent-price">¥{{ quote.payableYuan }}</span>
         </div>
       </div>
 
-      <el-button type="primary" class="co-submit" :loading="submitting" @click="submit">
-        提交订单并支付
-      </el-button>
+      <div class="co-submit-row">
+        <el-button type="primary" class="co-submit" :loading="submitting" @click="submitAndPay">
+          提交订单并支付
+        </el-button>
+        <!-- 暂不支付：只生成订单，进详情页给你 5 分钟倒计时，超时自动取消 -->
+        <el-button class="co-submit co-submit--later" :loading="submitting" @click="submitLater">
+          暂不支付
+        </el-button>
+      </div>
+      <p class="co-submit-hint">暂不支付也可下单，请在 5 分钟内完成支付，超时订单将自动取消</p>
     </template>
 
     <!-- 新增收货地址 -->
@@ -126,6 +160,7 @@ import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { unwrap } from '@/utils/http';
 import { cartApi, type QuoteVO } from '@/api/cart';
+import { couponApi, type CouponVO } from '@/api/coupon';
 import { orderApi } from '@/api/order';
 import { addressApi, type AddressVO } from '@/api/address';
 import { customApi, readPendingDraft, clearPendingDraft } from '@/api/custom';
@@ -141,6 +176,16 @@ const auth = useAuthStore();
 interface PayItem { skuId: number; qty: number; name: string; }
 
 const quote = ref<QuoteVO | null>(null);
+/**
+ * 结算页券列表：展示用户未使用的全部券，按「当前订单是否可用」分两级样式。
+ * 可用与否只认后端 `/coupons/usable` 的结果，门槛口径 = 商品额 + 定制费（不含运费），
+ * 前端不自己拿 threshold 重算，避免和下单时的二次校验漂移。
+ */
+const allCoupons = ref<CouponVO[]>([]);
+const usableCouponIds = ref<Set<number>>(new Set());
+const selectedCouponId = ref<number | undefined>(undefined);
+/** 上一次真正可用的券：点灰券被拦截后要回到这里，不能让 v-model 留下非法值 */
+const lastUsableCouponId = ref<number | undefined>(undefined);
 const submitting = ref(false);
 const paid = ref(false);
 const paidOrderNo = ref('');
@@ -183,11 +228,11 @@ const PRICE_ARGS = {
   ladderTiers: [],
 };
 function quoteItems() {
-  return items.value.map((i) => ({ skuId: i.skuId, qty: i.qty, ...PRICE_ARGS }));
+  return items.value.map((i) => ({ skuId: i.skuId, qty: i.qty, ...PRICE_ARGS,
+    customFlag: customFlag.value }));
 }
-/** 下单行才携带 customFlag：试算接口契约不含该字段，避免向前兼容问题。 */
 function orderItems() {
-  return quoteItems().map((i) => ({ ...i, customFlag: customFlag.value }));
+  return quoteItems();
 }
 
 const orderIdem = createIdempotencyScope('user-order');
@@ -200,7 +245,11 @@ const items = computed<PayItem[]>(() => {
 });
 
 function goProducts(): void { router.push('/products'); }
-function goOrders(): void { router.push('/orders'); }
+/** 支付成功「查看订单」→ 直接进该订单详情（不再先落到列表） */
+function goOrders(): void {
+  if (paidOrderNo.value) router.push(`/order/${paidOrderNo.value}`);
+  else router.push('/orders');
+}
 function goHome(): void { router.push('/home'); }
 
 /** 拉地址簿并自动选中：优先默认地址，其次第一条 */
@@ -295,20 +344,116 @@ async function removeAddress(a: AddressVO): Promise<void> {
   }
 }
 
-onMounted(async () => {
-  buyNowLocal.value = cart.buyNow;
-  await cart.clearBuyNow();
-  await loadAddresses();
+function yuan(cent: number | string): string {
+  const n = Number(cent ?? 0);
+  return Number.isInteger(n / 100) ? String(n / 100) : (n / 100).toFixed(2);
+}
+
+/**
+ * 券门槛口径 = 商品额 + 定制费，不含运费。
+ * 与后端 CartQuoteUseCase / CreateOrderUseCase 完全一致，前后端不会一处能用一处不能用。
+ */
+function couponEligibleCent(): number {
+  const q = quote.value;
+  if (!q) return 0;
+  return Number(q.goodsAmountCent ?? 0) + Number(q.customFeeCent ?? 0);
+}
+
+/** 可用券排前面、不可用券排后面；已使用的券不再出现在结算选择里 */
+const couponOptions = computed<CouponVO[]>(() => {
+  const candidates = allCoupons.value.filter((c) => c.status !== 'USED');
+  return candidates.sort((a, b) => {
+    const au = usableCouponIds.value.has(Number(a.couponId)) ? 0 : 1;
+    const bu = usableCouponIds.value.has(Number(b.couponId)) ? 0 : 1;
+    return au - bu || Number(b.amountCent) - Number(a.amountCent);
+  });
+});
+
+function couponIsUsable(c: CouponVO): boolean {
+  return usableCouponIds.value.has(Number(c.couponId));
+}
+
+/**
+ * 券名本身已经带面额（如「8元券」），这里只补门槛/状态，不再拼 ¥ 前缀，
+ * 否则下拉里会出现「¥8 8元券」这种价格重复两遍的展示。
+ */
+function couponLabel(c: CouponVO): string {
+  const name = c.name || '优惠券';
+  if (c.status === 'EXPIRED') return `${name} · 已过期`;
+  const threshold = Number(c.thresholdCent ?? 0);
+  return threshold > 0 ? `${name} · 满${yuan(threshold)}元可用` : `${name} · 无门槛`;
+}
+
+function couponOptionClass(c: CouponVO): string {
+  return couponIsUsable(c) ? 'coupon-option--usable' : 'coupon-option--unusable';
+}
+
+/** 点灰券：提示未满足要求并把 v-model 回退到上一次可用的券，不生成任何抵扣请求 */
+function onCouponChange(value: number | undefined): void {
+  const id = value === undefined || value === null ? undefined : Number(value);
+  if (id !== undefined && !usableCouponIds.value.has(id)) {
+    ElMessage.warning('该优惠券未满足使用要求，无法使用');
+    selectedCouponId.value = lastUsableCouponId.value;
+    void loadQuote();
+    return;
+  }
+  lastUsableCouponId.value = id;
+  void loadQuote();
+}
+
+/** 同时拉「我的券」与「当前订单可用券」；订单金额变化后已选券失效则自动取消 */
+async function loadCoupons(): Promise<void> {
+  const goodsCent = couponEligibleCent();
+  if (goodsCent <= 0) {
+    allCoupons.value = [];
+    usableCouponIds.value = new Set();
+    selectedCouponId.value = undefined;
+    lastUsableCouponId.value = undefined;
+    return;
+  }
+  try {
+    const [mine, usable] = await Promise.all([
+      unwrap(couponApi.mine()),
+      // 带上购物车 SKU：品类券只有命中范围内商品才算可用，否则选了也抵扣 0
+      unwrap(couponApi.usable(goodsCent, items.value.map((i) => i.skuId))),
+    ]);
+    allCoupons.value = mine ?? [];
+    usableCouponIds.value = new Set((usable ?? []).map((c) => Number(c.couponId)));
+  } catch {
+    allCoupons.value = [];
+    usableCouponIds.value = new Set();
+  }
+  if (selectedCouponId.value !== undefined && !usableCouponIds.value.has(selectedCouponId.value)) {
+    selectedCouponId.value = undefined;
+    lastUsableCouponId.value = undefined;
+  }
+}
+
+async function loadQuote(): Promise<void> {
   try {
     quote.value = await unwrap(cartApi.checkoutPreview({
       availablePoints: 0,
       freightFreeThresholdCent: 0,
       freightFeeCent: 0,
+      couponId: selectedCouponId.value,
       items: quoteItems(),
     }));
   } catch {
     quote.value = null;
   }
+}
+
+/** 定制勾选变化会改变券门槛，取价与可用券列表必须一起刷新 */
+async function refreshQuote(): Promise<void> {
+  await loadQuote();
+  await loadCoupons();
+}
+
+onMounted(async () => {
+  buyNowLocal.value = cart.buyNow;
+  await cart.clearBuyNow();
+  await loadAddresses();
+  await refreshQuote();
 });
 
 /**
@@ -332,7 +477,12 @@ async function attachPendingDraft(): Promise<void> {
   }
 }
 
-async function submit(): Promise<void> {
+/**
+ * 提交订单。
+ * @param payNow true = 立即支付（原有链路）；false = 「暂不支付」，只下单并跳到详情页，
+ *               由详情页的 5 分钟倒计时提醒 + 后端 OrderTimeoutJob 负责超时关单
+ */
+async function submit(payNow: boolean): Promise<void> {
   const customerId = auth.userId;
   if (!customerId) {
     ElMessage.warning('请先登录');
@@ -360,6 +510,7 @@ async function submit(): Promise<void> {
       availablePoints: 0,
       freightFreeThresholdCent: 0,
       freightFeeCent: 0,
+      couponId: selectedCouponId.value,
       items: orderItems(),
     }, { headers: orderIdem.headers() }));
 
@@ -369,6 +520,15 @@ async function submit(): Promise<void> {
       for (const id of ids) await cart.remove(id);
     }
     orderIdem.clear();
+
+    // 「暂不支付」：订单已经落库（WAIT_PAY + 5 分钟 expire_at），直接进详情页看倒计时。
+    // 不在这里补任何定时器——关单只有后端 OrderTimeoutJob 一个执行者，前端只负责展示。
+    if (!payNow) {
+      void attachPendingDraft();
+      ElMessage.success('订单已生成，请在 5 分钟内完成支付');
+      await router.push(`/order/${order.orderNo}`);
+      return;
+    }
 
     const pay = await unwrap(paymentApi.create({
       orderNo: order.orderNo,
@@ -398,6 +558,16 @@ async function submit(): Promise<void> {
     submitting.value = false;
   }
 }
+
+/** 立即支付（按钮回调不能直接绑 submit，否则 MouseEvent 会被当成 payNow） */
+function submitAndPay(): void {
+  void submit(true);
+}
+
+/** 暂不支付：只下单，进详情页倒计时 */
+function submitLater(): void {
+  void submit(false);
+}
 </script>
 
 <style scoped>
@@ -416,6 +586,9 @@ async function submit(): Promise<void> {
   color: #555;
   padding: 3px 0;
 }
+.quote-line--coupon { align-items: center; min-height: 34px; }
+.quote-coupon-hint { margin: 0 0 4px; text-align: right; font-size: 11px; color: var(--sent-muted); }
+.quote-line--discount span:last-child { color: var(--sent-accent-dark); }
 .quote-line--total {
   font-size: 15px;
   font-weight: 600;
@@ -424,6 +597,27 @@ async function submit(): Promise<void> {
   margin-top: 4px;
   padding-top: 8px;
 }
+/* 两个提交入口并排：主操作「提交订单并支付」、次操作「暂不支付」 */
+.co-submit-row {
+  display: flex;
+  gap: 10px;
+  margin: 10px;
+}
+.co-submit-row .co-submit {
+  flex: 1;
+  width: auto;
+  margin: 0;
+}
+.co-submit--later {
+  flex: none;
+}
+.co-submit-hint {
+  margin: 0 10px 14px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--sent-muted);
+}
+
 .co-submit {
   width: calc(100% - 20px);
   margin: 10px;
@@ -534,4 +728,16 @@ async function submit(): Promise<void> {
 }
 .co-mini:hover { color: var(--sent-primary); }
 .co-mini--danger:hover { color: #e5484d; }
+</style>
+
+<!-- ElementPlus 下拉浮层挂在 body 上，scoped 样式到不了，这里用 popper-class 单独生效 -->
+<style>
+.checkout-coupon-popper .el-select-dropdown__item.coupon-option--usable {
+  color: var(--sent-accent-dark) !important;
+  font-weight: 600;
+}
+.checkout-coupon-popper .el-select-dropdown__item.coupon-option--unusable {
+  color: #a8abb2 !important;
+  background: #fafafa;
+}
 </style>

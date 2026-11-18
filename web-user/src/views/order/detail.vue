@@ -53,6 +53,21 @@
             该订单未记录收货地址（历史订单或虚拟商品）
           </div>
 
+          <!-- 待付款 5 分钟倒计时：时间源是后端 orders.expire_at，与超时取消任务同一口径 -->
+          <div
+            v-if="order.status === 'WAIT_PAY' && hasPayDeadline"
+            class="od-countdown"
+            :class="{ 'od-countdown--over': payExpired }"
+            data-testid="pay-countdown"
+          >
+            <template v-if="!payExpired">
+              请在 <b class="od-countdown__time">{{ payCountdownText }}</b> 内完成支付，超时订单将自动取消
+            </template>
+            <template v-else>
+              支付已超时，订单正在自动取消…
+            </template>
+          </div>
+
           <!-- 操作按钮：按状态给不同组合，与淘宝「状态决定按钮」一致 -->
           <div class="od-actions">
             <template v-if="order.status === 'WAIT_PAY'">
@@ -312,14 +327,13 @@
  * 数据仍是一次 `GET /api/orders/{orderNo}`：时间戳、物流、支付摘要都由后端补齐，
  * 前端不再拼装多个接口。`JacksonConfig` 把 Long 序列化成字符串，所有数字先 `Number()` 再判断。
  */
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { fmtCent, fmtDateTime, statusLabel, statusTone, type StatusTone } from '@sent/shared';
 import { unwrap } from '@/utils/http';
 import { orderApi, type OrderItemLine, type OrderVO } from '@/api/order';
 import { cartApi } from '@/api/cart';
-import { paymentApi } from '@/api/payment';
 import { invoiceApi, type InvoiceVO } from '@/api/invoice';
 import ProductThumb from '@/components/ProductThumb.vue';
 import InvoiceApplyDialog from '@/components/InvoiceApplyDialog.vue';
@@ -652,23 +666,10 @@ async function loadInvoice(): Promise<void> {
   }
 }
 
-async function pay(): Promise<void> {
+/** 与订单列表同口径：先跳独立支付页，由用户确认后再真正发起支付 */
+function pay(): void {
   if (!order.value) return;
-  acting.value = true;
-  try {
-    await unwrap(paymentApi.create({
-      orderNo: order.value.orderNo,
-      amountCent: order.value.payableCent ?? 0,
-      channel: 'BALANCE',
-      idemKey: `pay_${order.value.orderNo}`,
-    }));
-    ElMessage.success('支付成功');
-    await load();
-  } catch (e) {
-    ElMessage.error((e as Error).message || '支付失败');
-  } finally {
-    acting.value = false;
-  }
+  void router.push(`/pay/${order.value.orderNo}`);
 }
 
 async function cancel(): Promise<void> {
@@ -735,8 +736,82 @@ async function load(): Promise<void> {
   } finally {
     loading.value = false;
   }
+  startPayCountdown();
   await loadInvoice();
 }
+
+/* ---------------- 待付款 5 分钟倒计时 ---------------- */
+/**
+ * 用户要求（第 2 轮第 4 点）：商城端可以「暂不支付」，5 分钟内未付款订单自动取消，
+ * 并且在页面上给出 5 分钟实时倒计时提醒。
+ *
+ * 时间源只有一个：后端 {@code orders.expire_at}（详情接口回 {@code expireAtMillis}），
+ * 与 {@code OrderTimeoutJob} 判超时用的是同一列。前端自己算「创建时间 + 5 分钟」会在
+ * 服务端时钟 / 时区不一致时和实际关单时间对不上，出现「倒计时结束但订单还在」。
+ */
+const payRemainMs = ref(0);
+/** 没有截止时间的历史单不显示倒计时（否则会一直停在「支付已超时」） */
+const hasPayDeadline = computed(() => Number(order.value?.expireAtMillis ?? 0) > 0);
+const payExpired = computed(() => order.value?.status === 'WAIT_PAY' && payRemainMs.value <= 0);
+/** 超时后只走一次「等任务关单」的轮询，避免 load() → startPayCountdown() → 超时 的无限循环 */
+let payTimeoutHandled = false;
+let payTimer: ReturnType<typeof setInterval> | undefined;
+
+function stopPayTimer(): void {
+  if (payTimer) clearInterval(payTimer);
+  payTimer = undefined;
+}
+
+const payCountdownText = computed(() => {
+  const total = Math.max(0, Math.ceil(payRemainMs.value / 1000));
+  const mm = Math.floor(total / 60).toString().padStart(2, '0');
+  const ss = (total % 60).toString().padStart(2, '0');
+  return `${mm}:${ss}`;
+});
+
+function tickPayCountdown(): void {
+  const expireAt = Number(order.value?.expireAtMillis ?? 0);
+  if (expireAt <= 0) {
+    // 没有截止时间：不渲染倒计时，也不触发「超时等关单」轮询
+    payRemainMs.value = 0;
+    stopPayTimer();
+    return;
+  }
+  payRemainMs.value = Math.max(0, expireAt - Date.now());
+  if (payRemainMs.value <= 0) {
+    stopPayTimer();
+    void onPayTimeout();
+  }
+}
+
+function startPayCountdown(): void {
+  stopPayTimer();
+  if (order.value?.status !== 'WAIT_PAY' || !hasPayDeadline.value) {
+    payRemainMs.value = 0;
+    return;
+  }
+  tickPayCountdown();
+  if (payRemainMs.value > 0) payTimer = setInterval(tickPayCountdown, 1000);
+}
+
+/**
+ * 倒计时归零：后端超时任务是每分钟扫一轮，所以这里不等一次就断言失败，
+ * 而是最多轮询约 30 秒，等订单真的被关掉再提示（用户看到的是「自动取消」而不是「还是待付款」）。
+ */
+async function onPayTimeout(): Promise<void> {
+  if (payTimeoutHandled) return;
+  payTimeoutHandled = true;
+  for (let i = 0; i < 12; i += 1) {
+    await load();
+    if (order.value?.status !== 'WAIT_PAY') {
+      ElMessage.warning('支付超时，订单已自动取消');
+      return;
+    }
+    await new Promise((resolve) => { setTimeout(resolve, 2500); });
+  }
+}
+
+onUnmounted(stopPayTimer);
 
 onMounted(load);
 </script>
@@ -913,6 +988,27 @@ onMounted(load);
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 16px;
+}
+/* 待付款倒计时：橙红提示条，数字等宽避免每秒跳动时抖动 */
+.od-countdown {
+  margin-top: 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #fff7e6;
+  border: 1px solid #ffd591;
+  color: #b8741a;
+  font-size: 13px;
+}
+.od-countdown--over {
+  background: #fff1f0;
+  border-color: #ffa39e;
+  color: #cf1322;
+}
+.od-countdown__time {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  color: #d4380d;
 }
 /* 操作按钮做成淘宝那种等宽胶囊，主操作实心 */
 .od-actions :deep(.od-btn) {

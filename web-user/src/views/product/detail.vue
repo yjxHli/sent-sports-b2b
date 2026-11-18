@@ -64,7 +64,7 @@
           <div class="buy__meta">
             <span>累计销量 <b>{{ salesText }}</b></span>
             <span class="buy__meta-sep"></span>
-            <span>可售库存 <b>{{ currentStock }}</b></span>
+            <span>可售库存 <b data-testid="available-stock">{{ remainingStock }}</b></span>
             <span class="buy__meta-sep"></span>
             <span>发货地 <b>广东 · 深圳</b></span>
             <span class="buy__meta-sep"></span>
@@ -98,21 +98,30 @@
           <div class="buy__row">
             <div class="buy__label">数量</div>
             <div class="buy__value buy__qty">
+              <!--
+                不设 max：输入超过库存时保留用户输入并给出「库存不足」提示 + 禁用购买，
+                而不是被 el-input-number 静默钳制到库存值（那样用户看不到任何提示，
+                会以为输入 8 就买了 7 件）。拦截统一交给 qtyExceedStock。
+              -->
               <el-input-number
                 v-model="qty"
                 :min="uvCustom ? 30 : 1"
-                :max="Math.max(uvCustom ? 30 : 1, currentStock)"
               />
-              <span class="buy__qty-hint">
-                库存 {{ currentStock }} 件<template v-if="uvCustom">，定制 30 件起订</template>
-              </span>
+              <!--
+                可售数只在顶部信息区显示一次，这里不重复「库存 N 件」；
+                只留红色的「仅剩 N 件」提示购买上限。
+                不附「定制 30 件起订」：勾选框文案与库存不足提示里都有，挤在一起会折行。
+                出现「库存不足」警示块时隐藏它——那块里已经写明可售 N 件，两处红字挨着太吵。
+              -->
+              <span v-if="!qtyExceedStock" class="buy__qty-hint">仅剩 {{ currentStock }} 件</span>
+              <span v-if="qtyExceedStock" class="stock-alert">库存不足：当前规格可售 {{ currentStock }} 件{{ uvCustom ? '，不满足定制 30 件起订' : '' }}</span>
             </div>
           </div>
 
           <!-- UV 定制 -->
           <div class="custom-panel">
             <el-checkbox v-model="uvCustom" class="custom-panel__check">
-              需要 <b>UV 定制</b>（企业队服 / 印 logo，定制费按件另计，30 件起订）
+              需要 <b>UV 定制</b>（企业队服 / 印 logo，定制费 +¥10/件，30 件起订）
             </el-checkbox>
 
             <div v-if="uvCustom" class="upload-area">
@@ -139,8 +148,8 @@
 
           <!-- 操作按钮（两个橙色）+ 收藏 -->
           <div class="buy__actions">
-            <button class="buy-btn buy-btn--cart" :disabled="!currentSku || currentStock <= 0" @click="addToCart">加入购物车</button>
-            <button class="buy-btn buy-btn--now" :disabled="!currentSku || currentStock <= 0" @click="buyNow">立即购买</button>
+            <button class="buy-btn buy-btn--cart" :disabled="!currentSku || currentStock <= 0 || qtyExceedStock" @click="addToCart">加入购物车</button>
+            <button class="buy-btn buy-btn--now" :disabled="!currentSku || currentStock <= 0 || qtyExceedStock" @click="buyNow">立即购买</button>
             <!-- 收藏：淘宝把心形放在「加入购物车」右侧，与加购并列而不是塞进工具栏 -->
             <button
               type="button"
@@ -210,6 +219,14 @@ const currentSku = computed(() => product.value?.skus?.find((s) => s.skuId === s
 const currentPrice = computed(() => currentSku.value?.price.retailPriceCent ?? 0);
 const originPrice = computed(() => Math.round(currentPrice.value * 1.25));
 const currentStock = computed(() => currentSku.value?.stockQty ?? 0);
+/**
+ * 可售库存固定显示该 SKU 的真实可售数，不随已选数量递减。
+ * 递减会让「可售库存 6 / 库存 7 件」两个数打架，用户误以为只能买 6 件；
+ * 真实库存是多少就显示多少，输入超过它才提示库存不足。
+ */
+const remainingStock = computed(() => currentStock.value);
+/** 数量超出可售库存，或定制起订 30 件但库存不足：拦截购买 */
+const qtyExceedStock = computed(() => qty.value > currentStock.value || (uvCustom.value && currentStock.value < 30));
 
 const priceParts = computed(() => {
   const [int, dec] = fmtCent(currentPrice.value).split('.');
@@ -273,6 +290,10 @@ function clearUpload(): void {
 
 async function addToCart(): Promise<void> {
   if (!currentSku.value) return;
+  if (qtyExceedStock.value) {
+    ElMessage.warning(`库存不足：当前规格可售 ${currentStock.value} 件${uvCustom.value ? '，定制需 30 件起订' : ''}`);
+    return;
+  }
   try {
     await cartApi.add(Number(currentSku.value.skuId), qty.value);
     await cart.load(true);
@@ -284,6 +305,10 @@ async function addToCart(): Promise<void> {
 
 async function buyNow(): Promise<void> {
   if (!product.value || !currentSku.value) return;
+  if (qtyExceedStock.value) {
+    ElMessage.warning(`库存不足：当前规格可售 ${currentStock.value} 件${uvCustom.value ? '，定制需 30 件起订' : ''}`);
+    return;
+  }
   await cart.setBuyNow({
     skuId: Number(currentSku.value.skuId),
     qty: qty.value,
@@ -543,9 +568,20 @@ onMounted(async () => {
   align-items: center;
   gap: 12px;
 }
+/* 「仅剩 N 件」红色强调购买上限；flex:none + nowrap 防止被右侧警示块挤到换行 */
 .buy__qty-hint {
+  flex: none;
   font-size: 12px;
-  color: var(--sent-muted);
+  font-weight: 600;
+  color: #c93644;
+  white-space: nowrap;
+}
+.stock-alert {
+  font-size: 12px;
+  color: #c93644;
+  background: #fdeaec;
+  padding: 4px 10px;
+  border-radius: 4px;
 }
 
 /* 定制面板 */

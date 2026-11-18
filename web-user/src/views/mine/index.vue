@@ -3,7 +3,17 @@
     <!-- 顶部资料卡：左头像 + 昵称，右三张小卡（对齐参考图的「我的淘宝」资料区） -->
     <section class="profile-card">
       <div class="profile-main">
-        <div class="profile-avatar">{{ avatarText }}</div>
+        <!-- 头像即「编辑个人信息」入口（2026-11-17 用户要求） -->
+        <button
+          class="profile-avatar profile-avatar--edit"
+          data-testid="edit-profile-entry"
+          title="编辑头像和昵称"
+          @click="router.push('/profile/edit')"
+        >
+          <img v-if="profile?.avatarFileId" class="profile-avatar__img"
+               :src="fileApi.url(profile.avatarFileId)" alt="我的头像" />
+          <template v-else>{{ avatarText }}</template>
+        </button>
         <div class="profile-info">
           <div class="profile-name">
             {{ profile?.nickname || '森特会员' }}
@@ -29,7 +39,7 @@
         </div>
         <router-link to="/member" class="side-coupon">
           <span class="side-coupon__icon">🎫</span>
-          <span>领券中心<b>会员专享折扣券</b></span>
+          <span>前往会员中心<b>会员专享折扣券</b></span>
           <em>去领取</em>
         </router-link>
       </div>
@@ -160,6 +170,7 @@ import { ElMessageBox } from 'element-plus';
 import { OrderStatus, statusLabel, type UserMeVO } from '@sent/shared';
 import { unwrap } from '@/utils/http';
 import { profileApi } from '@/api/profile';
+import { fileApi } from '@/api/file';
 import { orderApi, type OrderListItem } from '@/api/order';
 import { productApi, type CatalogProductVO } from '@/api/product';
 import { favoriteApi, type FavoriteVO } from '@/api/favorite';
@@ -356,6 +367,9 @@ onMounted(async () => {
   font-weight: 700;
   flex: none;
 }
+.profile-avatar--edit { border: none; cursor: pointer; color: inherit; padding: 0; overflow: hidden; }
+.profile-avatar__img { width: 100%; height: 100%; object-fit: cover; }
+.profile-avatar--edit:hover { box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.6); }
 .profile-name {
   font-size: 18px;
   font-weight: 700;

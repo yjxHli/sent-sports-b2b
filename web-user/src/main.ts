@@ -1,6 +1,7 @@
 import { createApp } from 'vue';
 import { createPinia } from 'pinia';
 import ElementPlus, { ElMessage } from 'element-plus';
+import zhCn from 'element-plus/es/locale/lang/zh-cn';
 import 'element-plus/dist/index.css';
 import './style.css';
 import App from './App.vue';
@@ -14,6 +15,6 @@ setHttpErrorHandler((error) => {
 
 const app = createApp(App);
 app.use(createPinia()); // 必须先于 router：守卫里要用 Pinia store
-app.use(ElementPlus);
+app.use(ElementPlus, { locale: zhCn });
 app.use(router);
 app.mount('#app');

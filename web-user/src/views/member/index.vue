@@ -135,6 +135,7 @@ const LINKS = [
   { to: '/orders', label: '我的订单', icon: '📦' },
   { to: '/custom', label: '我的定制', icon: '🎨' },
   { to: '/refunds', label: '我的售后', icon: '↩️' },
+  { to: '/coupons', label: '我的优惠券', icon: '🎫' },
   { to: '/chat', label: '在线客服', icon: '💬' },
 ];
 

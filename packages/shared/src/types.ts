@@ -48,6 +48,8 @@ export interface UserMeVO {
   customerId: number;
   customerNo: string;
   nickname: string;
+  /** 头像 fileId（V32），null/空表示未上传 */
+  avatarFileId?: string | null;
   phone: string;
   email: string;
   type: 'PERSON' | 'ENTERPRISE';

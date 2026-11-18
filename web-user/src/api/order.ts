@@ -51,6 +51,11 @@ export interface OrderVO {
   payChannel?: string | null;
   payTxnNo?: string | null;
   tradeNo?: string | null;
+  /**
+   * 支付截止时间（毫秒）：待付款单下 5 分钟倒计时用，已付款 / 历史单为 null。
+   * 与后端超时取消任务同一个 `orders.expire_at`，倒计时归零后订单确实会被关掉。
+   */
+  expireAtMillis?: number | null;
 }
 
 /** 订单商品行（标题/规格取快照，后端已做空快照兜底） */
@@ -83,6 +88,8 @@ export interface OrderListItem {
   createdAt?: number | null;
   /** 商品行（列表页一次返回，无需逐单再查详情） */
   items?: OrderItemLine[];
+  /** 支付截止时间（毫秒）：待付款卡片就地倒计时 */
+  expireAtMillis?: number | null;
 }
 
 export const orderApi = {
@@ -94,9 +101,12 @@ export const orderApi = {
     availablePoints: number;
     freightFreeThresholdCent: number;
     freightFeeCent: number;
+    /** 优惠券主键；与结算试算同一张券，下单时后端二次校验并核销 */
+    couponId?: number;
     items: OrderItemCmd[];
   }, config?: SentRequestConfig) => http.post<OrderVO>('/orders', cmd, config),
-  list: (query: PageQuery & { status?: string | null }) =>
+  /** keyword 同时匹配订单号与商品名，过滤下推后端，分页 total 才不会失真 */
+  list: (query: PageQuery & { status?: string | null; keyword?: string | null }) =>
     http.get<PageResult<OrderListItem>>('/orders', query),
   detail: (orderNo: string) =>
     http.get<OrderVO>(`/orders/${orderNo}`),
