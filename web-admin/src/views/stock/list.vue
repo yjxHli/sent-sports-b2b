@@ -10,12 +10,24 @@
         :size="size"
         :loading="loading"
         :operation-width="92"
+        :selectable="deleteMode"
+        row-key="skuId"
         exportable
         export-name="库存台账"
+        @selection-change="selected = $event"
         @update:page="onPage"
         @update:size="onSize"
         @refresh="load"
       >
+        <template #toolbar-actions>
+          <BatchDeleteButton
+            v-model:active="deleteMode"
+            :ids="selected.map((r: any) => String(r.skuId))"
+            :summary="`已选择 ${selected.length} 个 SKU：${selected.map((r: any) => r.skuId).join('、')}（删除后下架并从台账隐藏，库存数量不变）`"
+            :delete-fn="(ids, config) => unwrap(stockApi.batchDelete(ids, config))"
+            @done="onDeleted"
+          />
+        </template>
         <template #toolbar>
           <el-input v-model="skuKeyword" placeholder="SKU ID" clearable style="width: 180px" @keyup.enter="onSearch" />
           <el-button type="primary" @click="onSearch">查询</el-button>
@@ -51,8 +63,10 @@ import { ElMessage } from 'element-plus';
 import { unwrap } from '@/utils/http';
 import { stockApi } from '@/api';
 import { usePagination } from '@/composables/usePagination';
+import { useBatchDelete } from '@/composables/useBatchDelete';
 import SentTable from '@/components/SentTable.vue';
 import StatusTag from '@/components/StatusTag.vue';
+import BatchDeleteButton from '@/components/BatchDeleteButton.vue';
 import type { TableColumn } from '@/components/types';
 
 const router = useRouter();
@@ -69,6 +83,7 @@ const columns: TableColumn[] = [
 ];
 
 const rows = ref<any[]>([]);
+const { deleteMode, selected, onDeleted } = useBatchDelete(load);
 const total = ref(0);
 const { page, size } = usePagination();
 const loading = ref(false);

@@ -20,6 +20,7 @@ export const CONFIRM_ACTIONS = {
   STOCK_CHECK_APPROVE: { label: '盘点调整审批', phrase: '确认调整' },
   REFUND_APPROVE: { label: '退款审核通过', phrase: '确认退款' },
   STAFF_LOGOUT_ALL: { label: '强制全端下线', phrase: '确认下线' },
+  BATCH_DELETE: { label: '批量删除', phrase: '删除' },
 } as const;
 
 export type ConfirmAction = keyof typeof CONFIRM_ACTIONS;

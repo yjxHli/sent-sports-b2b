@@ -9,13 +9,25 @@
         :page="page"
         :size="size"
         :loading="loading"
+        :selectable="deleteMode"
+        row-key="orderNo"
         exportable
         export-name="订单列表"
         :operation-width="200"
+        @selection-change="selected = $event"
         @update:page="onPage"
         @update:size="onSize"
         @refresh="load"
       >
+        <template #toolbar-actions>
+          <BatchDeleteButton
+            v-model:active="deleteMode"
+            :ids="selected.map((r: any) => String(r.orderNo))"
+            :summary="`已选择 ${selected.length} 笔订单：${selected.map((r: any) => r.orderNo).join('、')}`"
+            :delete-fn="(ids, config) => unwrap(orderApi.batchDelete(ids, config))"
+            @done="onDeleted"
+          />
+        </template>
         <template #toolbar>
           <el-input
             v-model="query.keyword"
@@ -70,8 +82,10 @@ import { orderApi } from '@/api';
 import { OrderStatus, fmtCent, fmtDateTime, fmtMoney, statusLabel } from '@sent/shared';
 import { openConfirm } from '@/utils/confirm';
 import { usePagination } from '@/composables/usePagination';
+import { useBatchDelete } from '@/composables/useBatchDelete';
 import SentTable from '@/components/SentTable.vue';
 import StatusTag from '@/components/StatusTag.vue';
+import BatchDeleteButton from '@/components/BatchDeleteButton.vue';
 import type { TableColumn } from '@/components/types';
 
 const router = useRouter();
@@ -90,6 +104,7 @@ const columns: TableColumn[] = [
 ];
 
 const rows = ref<any[]>([]);
+const { deleteMode, selected, onDeleted } = useBatchDelete(load);
 const total = ref(0);
 const { page, size } = usePagination();
 const loading = ref(false);

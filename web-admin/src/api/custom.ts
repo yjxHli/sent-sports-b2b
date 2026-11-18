@@ -1,7 +1,7 @@
 /**
  * 定制审核 API（P6-17，对应 AdminCustomController / CustomController）。
  */
-import { http } from '@/utils/http';
+import { http, type SentRequestConfig } from '@/utils/http';
 import type { PageQuery, PageResult, CustomVO, DraftVO } from '@sent/shared';
 
 export interface ReviewVO {
@@ -58,6 +58,9 @@ export interface CustomDetailVO extends CustomVO {
 export const customApi = {
   pending: (query: PageQuery & { customNo?: string }) =>
     http.get<PageResult<CustomVO>>('/admin/custom-orders', query),
+  /** 定制列表批量软删：必须带 openConfirm 的 X-Confirm-Token */
+  batchDelete: (ids: string[], config?: SentRequestConfig) =>
+    http.post<{ deleted: number }>('/admin/custom-orders/batch-delete', { ids }, config),
   detail: (id: string) => http.get<CustomDetailVO>(`/admin/custom-orders/${id}`),
   pass: (id: string) => http.post<ReviewVO>(`/admin/custom-orders/${id}/pass`),
   reject: (id: string, cmd: RejectCmd) =>

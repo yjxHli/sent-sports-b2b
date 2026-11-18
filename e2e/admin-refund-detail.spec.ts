@@ -47,7 +47,8 @@ test('退款审核列表点「详情」进入独立审核页，页内含订单�
   await page.waitForSelector('.el-table__body tbody tr');
 
   const firstRow = page.locator('.el-table__body tbody tr').first();
-  const refundNo = (await firstRow.locator('td').first().innerText()).trim();
+  // 默认无勾选列：第 1 列退款单号、第 2 列订单号
+  const refundNo = (await firstRow.locator('td').nth(0).innerText()).trim();
   const orderNo = (await firstRow.locator('td').nth(1).innerText()).trim();
   console.log('列表首行:', refundNo, orderNo);
   expect(refundNo, '列表首行应有退款单号').toMatch(/^RF\w+/);

@@ -50,6 +50,9 @@ export const stockApi = {
   /** warningOnly 由后端 SQL 判定「可用 <= 安全库存」，不要在前端把当前页再过滤一遍 */
   list: (query: PageQuery & { skuId?: number; warningOnly?: boolean }) =>
     http.get<PageResult<StockVO>>('/admin/stock', query),
+  /** 库存列表批量软删：SKU 下架并隐藏，库存台账数量不动 */
+  batchDelete: (ids: string[], config?: SentRequestConfig) =>
+    http.post<{ deleted: number }>('/admin/stock/batch-delete', { ids }, config),
   flows: (query: PageQuery & { skuId?: number; bizType?: string }) =>
     http.get<PageResult<StockFlowVO>>('/admin/stock/flows', query),
   inbound: (cmd: InboundCmd, config?: SentRequestConfig) =>

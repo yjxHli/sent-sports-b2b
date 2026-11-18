@@ -5,6 +5,7 @@
         <slot name="toolbar" />
       </div>
       <div class="sent-table-actions">
+        <slot name="toolbar-actions" />
         <el-button size="small" @click="emit('refresh')">刷新</el-button>
         <el-dropdown v-if="columnToggle" trigger="click" :hide-on-click="false">
           <el-button size="small">列显隐</el-button>
@@ -21,7 +22,9 @@
             </el-dropdown-menu>
           </template>
         </el-dropdown>
-        <el-button v-if="exportable" size="small" @click="exportCsv">导出 CSV</el-button>
+        <el-button v-if="exportable" size="small" :loading="exporting" @click="exportCsv">
+          {{ exporting ? '导出中…' : '导出 CSV' }}
+        </el-button>
       </div>
     </div>
 
@@ -112,6 +115,11 @@ const props = withDefaults(defineProps<{
    * 否则每行 key 都是 undefined，el-table 会把所有行当成同一行（勾一个全勾）。
    */
   rowKey?: string;
+  /**
+   * 「导出整个列表」：传了它就按它返回的全量行导出（通常是循环拉完所有分页），
+   * 不传则只导出当前页 —— 券模板/发放记录要「整张表下载」，靠这个钩子拿全量。
+   */
+  exportRows?: () => Promise<any[]>;
 }>(), {
   total: 0,
   page: 1,
@@ -134,6 +142,8 @@ const emit = defineEmits<{
 }>();
 
 const hidden = ref<string[]>([]);
+/** 导出全量时的按钮 loading，避免连点重复拉页 */
+const exporting = ref(false);
 /**
  * JacksonConfig 把 Long 序列化成字符串，接口分页的 total 到前端会变成 "62"。
  * Element Plus 的 total 只收 Number，传字符串会触发类型警告并让分页器渲染异常，这里统一兜底。
@@ -162,11 +172,24 @@ function csvCell(value: string): string {
   return `"${value.replace(/"/g, '""')}"`;
 }
 
-/** 导出当前页可见列为 CSV（带 BOM，Excel 直接打开不乱码） */
-function exportCsv(): void {
+/** 导出当前页可见列为 CSV（带 BOM，Excel 直接打开不乱码）；传了 exportRows 则导出全量 */
+async function exportCsv(): Promise<void> {
+  if (exporting.value) return;
+  let rows = props.rows;
+  if (props.exportRows) {
+    exporting.value = true;
+    try {
+      rows = await props.exportRows();
+    } catch {
+      // 拉全量失败就退回当前页，至少别让按钮一直转
+      rows = props.rows;
+    } finally {
+      exporting.value = false;
+    }
+  }
   const cols = visibleColumns.value;
   const header = cols.map((c) => csvCell(c.label)).join(',');
-  const lines = props.rows.map((row) => cols.map((c) => csvCell(textOf(c, row))).join(','));
+  const lines = rows.map((row) => cols.map((c) => csvCell(textOf(c, row))).join(','));
   const blob = new Blob(['\uFEFF' + [header, ...lines].join('\r\n')], {
     type: 'text/csv;charset=utf-8',
   });
@@ -175,7 +198,9 @@ function exportCsv(): void {
   anchor.href = url;
   anchor.download = `${props.exportName}.csv`;
   anchor.click();
-  URL.revokeObjectURL(url);
+  // 立刻 revoke 会让部分 Chromium 版本在下载真正开始前失效（点完什么都没下到），
+  // 延后释放，文件已经落到本地再回收 blob。
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 </script>
 

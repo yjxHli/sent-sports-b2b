@@ -124,4 +124,13 @@ export const productApi = {
 
   /** 分类树来自用户端公开目录接口 */
   categories: () => http.get<CategoryVO[]>('/categories'),
+
+  /**
+   * 公开商品目录（带 SKU 明细）：券的「适用商品」选择器用它，
+   * 管理端列表接口不含 SKU 明细，选不到「指定规格」。
+   */
+  catalog: (query: { keyword?: string } & PageQuery) =>
+    http.get<PageResult<CatalogProductVO>>('/products', query),
+  catalogSkus: (productId: number | string) =>
+    http.get<CatalogSkuVO[]>(`/products/${productId}/skus`),
 };

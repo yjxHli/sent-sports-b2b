@@ -8,6 +8,7 @@ export * from './stock';
 export * from './order';
 export * from './custom';
 export * from './customer';
+export * from './coupon';
 export * from './finance';
 export * from './chat';
 export * from './system';

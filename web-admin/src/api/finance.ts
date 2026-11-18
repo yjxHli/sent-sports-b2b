@@ -196,4 +196,12 @@ export const financeApi = {
    */
   contracts: (query: PageQuery & { status?: string; dueState?: string; keyword?: string }) =>
     http.get<PageResult<ContractVO>>('/admin/contracts', query),
+
+  /** 六列表批量软删（C2）：config 必须带 openConfirm 换来的 X-Confirm-Token */
+  batchDeleteRefunds: (ids: string[], config?: SentRequestConfig) =>
+    http.post<{ deleted: number }>('/admin/refunds/batch-delete', { ids }, config),
+  batchDeleteInvoices: (ids: string[], config?: SentRequestConfig) =>
+    http.post<{ deleted: number }>('/admin/invoices/batch-delete', { ids }, config),
+  batchDeleteContracts: (ids: string[], config?: SentRequestConfig) =>
+    http.post<{ deleted: number }>('/admin/contracts/batch-delete', { ids }, config),
 };

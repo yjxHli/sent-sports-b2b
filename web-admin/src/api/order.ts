@@ -61,6 +61,9 @@ export const orderApi = {
    */
   close: (orderNo: string, reason: string, config?: SentRequestConfig) =>
     http.post<AdminOrderVO>(`/admin/orders/${orderNo}/close`, { reason }, config),
+  /** 订单列表批量软删（只写管理端删除时间，不动金额/支付/客户侧可见性） */
+  batchDelete: (ids: string[], config?: SentRequestConfig) =>
+    http.post<{ deleted: number }>('/admin/orders/batch-delete', { ids }, config),
 
   /** 用户端退款单查询（管理端退款审核端点待后端补齐） */
   refunds: (query: PageQuery) => http.get<PageResult<RefundVO>>('/refunds', query),

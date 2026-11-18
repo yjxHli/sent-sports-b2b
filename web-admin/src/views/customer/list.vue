@@ -101,7 +101,8 @@ const columns: TableColumn[] = [
   { prop: 'level', label: '等级', width: 120, align: 'center' },
   { prop: 'ownerStaffId', label: '归属员工', width: 110, align: 'center' },
   { prop: 'creditLimitCent', label: '授信额度', width: 140, align: 'right',
-    formatter: (_r, v) => fmtMoney(v) },
+    // 个人客户没有企业授信；未授信（0）也不显示 ¥0.00
+    formatter: (r, v) => (r?.type === 'PERSON' || Number(v) <= 0 ? '--' : fmtMoney(v)) },
   { prop: 'createdAt', label: '创建时间', width: 160, formatter: (_r, v) => fmtDateTime(v) },
 ];
 
