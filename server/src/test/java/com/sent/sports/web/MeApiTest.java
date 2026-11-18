@@ -4,6 +4,7 @@ import com.sent.sports.common.web.CurrentUser;
 import com.sent.sports.customer.controller.user.MeController;
 import com.sent.sports.customer.dto.user.MeVO;
 import com.sent.sports.customer.service.CustomerProfileQueryService;
+import com.sent.sports.customer.service.UpdateProfileUseCase;
 import com.sent.sports.support.BaseApiTest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -28,6 +29,9 @@ class MeApiTest extends BaseApiTest {
     @MockBean
     private CustomerProfileQueryService profileQueryService;
 
+    @MockBean
+    private UpdateProfileUseCase updateProfileUseCase;
+
     private MockHttpServletRequestBuilder meWith(CurrentUser user) {
         MockHttpServletRequestBuilder builder = get("/api/me");
         if (user != null) {
@@ -40,7 +44,7 @@ class MeApiTest extends BaseApiTest {
     @DisplayName("携带 user 端令牌返回个人资料 200")
     void returnsProfileForUser() throws Exception {
         when(profileQueryService.profile(123L)).thenReturn(
-                new MeVO(123L, "C1001", "小明", "13800000000", "m@x.com",
+                new MeVO(123L, "C1001", "小明", "FILE-AVATAR-1", "13800000000", "m@x.com",
                         "PERSON", "LV2", 120L, 880L, "ACTIVE"));
 
         mvc.perform(meWith(new CurrentUser(CurrentUser.AUD_USER, 123L, "jti-1")))

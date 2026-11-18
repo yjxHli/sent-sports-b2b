@@ -1,11 +1,14 @@
 package com.sent.sports.web;
 
 import com.sent.sports.auth.controller.AuthController;
+import com.sent.sports.auth.service.EnterpriseRegisterUseCase;
 import com.sent.sports.auth.service.LoginUseCase;
 import com.sent.sports.auth.service.RefreshTokenUseCase;
+import com.sent.sports.auth.service.RegisterUseCase;
 import com.sent.sports.auth.service.dto.TokenPair;
 import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
+import com.sent.sports.customer.service.dto.RegisteredCustomer;
 import com.sent.sports.support.BaseApiTest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -36,6 +39,12 @@ class AuthApiTest extends BaseApiTest {
 
     @MockBean
     private RefreshTokenUseCase refreshTokenUseCase;
+
+    @MockBean
+    private RegisterUseCase registerUseCase;
+
+    @MockBean
+    private EnterpriseRegisterUseCase enterpriseRegisterUseCase;
 
     @Test
     @DisplayName("登录成功返回双令牌与有效期")
@@ -95,5 +104,25 @@ class AuthApiTest extends BaseApiTest {
                         .content(toJson(Map.of("refreshToken", "rt-1"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0));
+    }
+
+    @Test
+    @DisplayName("企业注册返回 PENDING，不签发令牌")
+    void enterpriseRegisterReturnsPending() throws Exception {
+        when(enterpriseRegisterUseCase.register(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new RegisteredCustomer(9100L, "13912345678", "企业用户5678", "CUS-9100"));
+
+        mvc.perform(post("/api/auth/enterprise/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(toJson(Map.of(
+                                "phone", "13912345678",
+                                "password", "secret1",
+                                "confirmPassword", "secret1",
+                                "companyName", "森特测试有限公司",
+                                "creditCode", "91310000MA1FL0AB1X",
+                                "licenseFileId", "lic-file-1"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.auditStatus").value("PENDING"));
     }
 }

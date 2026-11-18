@@ -55,8 +55,9 @@ class ValueObjectsTest {
     }
 
     @Test
-    void sevenActionsExactPhrases() {
-        assertEquals(7, ConfirmAction.values().length);
+    void allActionsExactPhrases() {
+        // 7 个历史危险操作 + 1 个六列表批量删除（短语「删除」）
+        assertEquals(8, ConfirmAction.values().length);
         for (ConfirmAction a : ConfirmAction.values()) {
             assertTrue(ConfirmPhrase.matches(a, a.phrase()));
             assertFalse(ConfirmPhrase.matches(a, a.phrase() + "x"));

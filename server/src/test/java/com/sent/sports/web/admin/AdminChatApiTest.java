@@ -7,6 +7,8 @@ import com.sent.sports.chat.service.AssignSessionUseCase;
 import com.sent.sports.chat.service.ChatAdminQueryService;
 import com.sent.sports.chat.service.CloseSessionUseCase;
 import com.sent.sports.chat.service.PresenceUseCase;
+import com.sent.sports.chat.service.SaveSessionNoteUseCase;
+import com.sent.sports.chat.service.SendSatisfactionCardUseCase;
 import com.sent.sports.chat.service.dto.AssignSessionResult;
 import com.sent.sports.chat.service.dto.PresenceResult;
 import com.sent.sports.common.error.BizException;
@@ -48,6 +50,12 @@ class AdminChatApiTest extends BaseApiTest {
 
     @MockBean
     private ChatAdminQueryService chatAdminQueryService;
+
+    @MockBean
+    private SendSatisfactionCardUseCase sendSatisfactionCardUseCase;
+
+    @MockBean
+    private SaveSessionNoteUseCase saveSessionNoteUseCase;
 
     @Test
     @DisplayName("切换在线状态成功返回状态 200")

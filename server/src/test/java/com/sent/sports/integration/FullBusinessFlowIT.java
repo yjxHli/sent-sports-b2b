@@ -1,7 +1,5 @@
 package com.sent.sports.integration;
 
-import com.sent.sports.auth.domain.UserAccount;
-import com.sent.sports.auth.repository.UserAccountRepository;
 import com.sent.sports.auth.service.LoginUseCase;
 import com.sent.sports.auth.service.dto.LoginCmd;
 import com.sent.sports.auth.service.dto.TokenPair;
@@ -100,8 +98,6 @@ class FullBusinessFlowIT extends FullStackIntegrationTest {
     private static final long CREDIT_TOTAL_CENT = 1_000_000L;
 
     @Autowired
-    private UserAccountRepository userAccountRepository;
-    @Autowired
     private LoginUseCase loginUseCase;
     @Autowired
     private TokenService tokenService;
@@ -144,8 +140,7 @@ class FullBusinessFlowIT extends FullStackIntegrationTest {
         // ------------------------------------------------------------------
         // 1) 企业客户登录，获取 Token
         // ------------------------------------------------------------------
-        userAccountRepository.save(new UserAccount(CUSTOMER_ID, "ent-buyer", "P@ssw0rd"));
-        TokenPair tokens = loginUseCase.login(new LoginCmd("ent-buyer", "P@ssw0rd", "user", "device-accept"));
+        TokenPair tokens = loginUseCase.login(new LoginCmd("13800008801", "P@ssw0rd", "user", "device-accept"));
         assertThat(tokens.accessToken()).isNotBlank();
         assertThat(tokens.refreshToken()).isNotBlank();
         // 登录闭环：登录返回的 AT 必须是 AuthFilter 能验签的真实 JWT，sub = 当前客户
@@ -465,7 +460,7 @@ class FullBusinessFlowIT extends FullStackIntegrationTest {
         jdbc.update("INSERT INTO customer (id, customer_no, phone, password_hash, nickname, type, "
                         + "level_code, growth_value, points_balance, status, token_version, deleted) "
                         + "VALUES (?, ?, ?, ?, ?, 'ENTERPRISE', 'LV1', 0, 0, 'ACTIVE', 0, 0)",
-                CUSTOMER_ID, "ENT-8801", "13800008801", "hash", "森特企业客户");
+                CUSTOMER_ID, "ENT-8801", "13800008801", "P@ssw0rd", "森特企业客户");
         jdbc.update("INSERT INTO enterprise_profile (customer_id, company_name, credit_limit_cent, "
                         + "credit_used_cent, payment_term_days, status) VALUES (?, ?, ?, 0, 30, 'ACTIVE')",
                 CUSTOMER_ID, "森特体育企业", CREDIT_TOTAL_CENT);

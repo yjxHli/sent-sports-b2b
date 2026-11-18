@@ -9,6 +9,10 @@ import com.sent.sports.chat.mapper.po.ChatSessionPO;
 import com.sent.sports.customize.mapper.CustomOrderMapper;
 import com.sent.sports.customize.mapper.po.CustomOrderPO;
 import com.sent.sports.customer.mapper.CustomerMapper;
+import com.sent.sports.coupon.mapper.CouponMapper;
+import com.sent.sports.coupon.mapper.CouponTemplateMapper;
+import com.sent.sports.coupon.mapper.po.CouponTemplatePO;
+import com.sent.sports.coupon.mapper.po.CustomerCouponPO;
 import com.sent.sports.finance.mapper.InvoiceMapper;
 import com.sent.sports.finance.mapper.PaymentRecordMapper;
 import com.sent.sports.finance.mapper.ReceivableMapper;
@@ -92,19 +96,56 @@ class MapperIT extends BaseIntegrationTest {
     private UserMessageMapper userMessageMapper;
     @Autowired
     private CustomerMapper customerMapper;
+    @Autowired
+    private CouponTemplateMapper couponTemplateMapper;
+    @Autowired
+    private CouponMapper couponMapper;
 
     @Test
-    @DisplayName("V1~V30：三十次迁移全部应用，58 张表就位（V28 软删列 / V29 演示地址 / V30 收藏与足迹）")
+    @DisplayName("V1~V44：四十四次迁移全部应用，62 张表就位（V44 券模板管理）")
     void migrationsApplyAllThirteenVersions() {
         Integer versions = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1", Integer.class);
-        assertThat(versions).isEqualTo(30);
+        assertThat(versions).isEqualTo(44);
 
         Integer tables = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM information_schema.tables "
                         + "WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE' "
                         + "AND table_name <> 'flyway_schema_history'", Integer.class);
-        assertThat(tables).isEqualTo(58);
+        assertThat(tables).isEqualTo(62);
+
+        // V37：客服小结表就位（种子行由 IT 基类 TRUNCATE，不在本用例断言）
+        Integer noteTable = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.tables "
+                        + "WHERE table_schema = DATABASE() AND table_name = 'chat_session_note'", Integer.class);
+        assertThat(noteTable).isEqualTo(1);
+
+        // V38：登录名列独立持久化 + 唯一索引
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() "
+                        + "AND table_name = 'sys_staff' AND column_name = 'username'", Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() "
+                        + "AND table_name = 'sys_staff' AND index_name = 'uk_staff_username'", Integer.class))
+                .isEqualTo(1);
+        for (String column : new String[]{"fail_count", "locked_until"}) {
+            assertThat(jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() "
+                            + "AND table_name = 'customer' AND column_name = ?", Integer.class, column)).isEqualTo(1);
+        }
+
+        // V39：客服审查软删标记（只影响审查列表，不改会话/消息历史）
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() "
+                        + "AND table_name = 'chat_session' AND column_name = 'audit_deleted'", Integer.class))
+                .isEqualTo(1);
+
+        // V31：聊天超时只认 app.chat.idle-minutes，sys_config 里的历史键必须彻底消失，
+        // 否则运营在业务参数页改一个永远不生效的值
+        Integer legacyKeyCount = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM sys_config WHERE config_key = 'chat.session.idle.minutes'",
+                Integer.class);
+        assertThat(legacyKeyCount).isZero();
 
         Integer levelValidToColumn = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM information_schema.columns "
@@ -145,6 +186,73 @@ class MapperIT extends BaseIntegrationTest {
                         + "WHERE table_schema = DATABASE() AND table_name = 'product' "
                         + "AND column_name = 'min_visible_level'", Integer.class);
         assertThat(minLevelColumn).isEqualTo(1);
+
+        // V34：六列表软删标记列必须齐备，否则批量删除 SQL 会报 Unknown column
+        for (String table : new String[]{"refund_order", "invoice_request", "contract", "custom_order", "sku"}) {
+            Integer deletedColumn = jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM information_schema.columns "
+                            + "WHERE table_schema = DATABASE() AND table_name = ? "
+                            + "AND column_name = 'deleted'", Integer.class, table);
+            assertThat(deletedColumn).as("%s.deleted", table).isEqualTo(1);
+        }
+        Integer adminDeletedColumn = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns "
+                        + "WHERE table_schema = DATABASE() AND table_name = 'orders' "
+                        + "AND column_name = 'admin_deleted_at'", Integer.class);
+        assertThat(adminDeletedColumn).isEqualTo(1);
+
+        // V43：四类券型/适用范围/领取凭证列，两表都要有，否则发券与抵扣 SQL 直接 Unknown column
+        for (String table : new String[]{"coupon_template", "customer_coupon"}) {
+            for (String column : new String[]{"coupon_type", "discount_type", "discount_rate",
+                    "scope_type", "scope_ids", "customer_scope"}) {
+                assertThat(jdbc.queryForObject(
+                        "SELECT COUNT(*) FROM information_schema.columns "
+                                + "WHERE table_schema = DATABASE() AND table_name = ? "
+                                + "AND column_name = ?", Integer.class, table, column))
+                        .as("%s.%s", table, column).isEqualTo(1);
+            }
+        }
+        // 领券中心：库存与领取限额在模板侧，领取凭证在用户券侧
+        for (String column : new String[]{"claimable", "claim_limit", "total_qty", "claimed_qty"}) {
+            assertThat(jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM information_schema.columns "
+                            + "WHERE table_schema = DATABASE() AND table_name = 'coupon_template' "
+                            + "AND column_name = ?", Integer.class, column)).as(column).isEqualTo(1);
+        }
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns "
+                        + "WHERE table_schema = DATABASE() AND table_name = 'customer_coupon' "
+                        + "AND column_name = 'claim_key'", Integer.class)).isEqualTo(1);
+
+        // 重复领取靠唯一索引兜底（禁分布式锁）：claim_key 为 NULL 的多次发放不受影响
+        Integer claimUk = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.statistics "
+                        + "WHERE table_schema = DATABASE() AND table_name = 'customer_coupon' "
+                        + "AND index_name = 'uk_coupon_claim' AND non_unique = 0", Integer.class);
+        assertThat(claimUk).isEqualTo(2); // (customer_id, claim_key) 两列
+
+        // V44：券模板要能记券号 / 创建人 / 软删标记，发放记录要能软删
+        for (String column : new String[]{"template_no", "created_by", "deleted"}) {
+            assertThat(jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM information_schema.columns "
+                            + "WHERE table_schema = DATABASE() AND table_name = 'coupon_template' "
+                            + "AND column_name = ?", Integer.class, column))
+                    .as("coupon_template.%s", column).isEqualTo(1);
+        }
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns "
+                        + "WHERE table_schema = DATABASE() AND table_name = 'customer_coupon' "
+                        + "AND column_name = 'deleted'", Integer.class)).isEqualTo(1);
+        // 券号唯一：运营口头报券号时要能唯一定位
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.statistics "
+                        + "WHERE table_schema = DATABASE() AND table_name = 'coupon_template' "
+                        + "AND index_name = 'uk_template_no' AND non_unique = 0", Integer.class))
+                .isEqualTo(1);
+        // 存量模板必须都补上券号，否则列表里出现空券号
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM coupon_template WHERE template_no IS NULL OR template_no = ''",
+                Integer.class)).isZero();
     }
 
     @Test
@@ -416,7 +524,7 @@ class MapperIT extends BaseIntegrationTest {
         insertOrderForList("SO-LIST-WAIT-2", "PART_SHIPPED");
         insertOrderForList("SO-LIST-DONE-1", "COMPLETED");
 
-        IPage<OrderPO> waitPage = orderMapper.selectAllPage(new Page<>(1, 10), "WAIT_SHIP");
+        IPage<OrderPO> waitPage = orderMapper.selectAllPage(new Page<>(1, 10), "WAIT_SHIP", null);
 
         assertThat(waitPage.getRecords()).isNotEmpty()
                 .allMatch(o -> "WAIT_SHIP".equals(o.getStatus()))
@@ -424,9 +532,31 @@ class MapperIT extends BaseIntegrationTest {
         assertThat(waitPage.getRecords()).extracting(OrderPO::getOrderNo)
                 .doesNotContain("SO-LIST-WAIT-2", "SO-LIST-DONE-1");
 
-        IPage<OrderPO> all = orderMapper.selectAllPage(new Page<>(1, 10), null);
+        IPage<OrderPO> all = orderMapper.selectAllPage(new Page<>(1, 10), null, null);
         assertThat(all.getRecords()).extracting(OrderPO::getOrderNo)
                 .contains("SO-LIST-WAIT-1", "SO-LIST-WAIT-2", "SO-LIST-DONE-1");
+    }
+
+    @Test
+    @DisplayName("管理端订单分页：keyword 按订单号模糊匹配，且与 status 可叠加（订单号搜索曾完全不生效）")
+    void adminOrderListFiltersByKeyword() {
+        insertOrderForList("SO-KW-AAA-585", "WAIT_SHIP");
+        insertOrderForList("SO-KW-BBB-585", "COMPLETED");
+        insertOrderForList("SO-KW-CCC-999", "WAIT_SHIP");
+
+        IPage<OrderPO> hit = orderMapper.selectAllPage(new Page<>(1, 10), null, "585");
+        assertThat(hit.getRecords()).extracting(OrderPO::getOrderNo)
+                .contains("SO-KW-AAA-585", "SO-KW-BBB-585")
+                .doesNotContain("SO-KW-CCC-999");
+
+        // 关键字 + 状态叠加：两个 585 里只有 WAIT_SHIP 那条命中
+        IPage<OrderPO> combined = orderMapper.selectAllPage(new Page<>(1, 10), "WAIT_SHIP", "585");
+        assertThat(combined.getRecords()).extracting(OrderPO::getOrderNo)
+                .contains("SO-KW-AAA-585")
+                .doesNotContain("SO-KW-BBB-585", "SO-KW-CCC-999");
+
+        IPage<OrderPO> miss = orderMapper.selectAllPage(new Page<>(1, 10), null, "NOT-EXIST-KW");
+        assertThat(miss.getRecords()).isEmpty();
     }
 
     private void insertOrderForList(String orderNo, String status) {
@@ -524,6 +654,29 @@ class MapperIT extends BaseIntegrationTest {
         assertThat(receivableMapper.selectOpenByCustomer(88L)).hasSize(1);
         assertThat(receivableMapper.subtractReceived(receivable.getId(), 6000L)).isEqualTo(1);
         assertThat(receivableMapper.selectByIdForUpdate(receivable.getId()).getReceivedCent()).isZero();
+    }
+
+    /**
+     * 2026-11-16 用户要求：客户超过 10 分钟没发消息自动结束会话。
+     * <p>扫描口径是 {@code last_msg_at}（双方最后一条消息时间）：客服回一句也会刷新，
+     * 所以「客服正在对话」不会被 10 分钟规则掐断；只有真的双方都不说话才会命中。</p>
+     */
+    @Test
+    @DisplayName("会话空闲扫描按最后消息时间判定：超过 10 分钟命中，刚发过消息不命中")
+    void chatIdleScanUsesLastMessageTime() {
+        long stale = insertActiveSessionAt(LocalDateTime.now().minusMinutes(15));
+        long fresh = insertActiveSessionAt(LocalDateTime.now().minusMinutes(2));
+
+        assertThat(chatSessionMapper.selectIdleSessions(LocalDateTime.now().minusMinutes(10), 50))
+                .extracting(ChatSessionPO::getId)
+                .contains(stale)
+                .doesNotContain(fresh);
+
+        // 发消息会刷新 last_msg_at（WS 与 REST 两条路径都走 touch + save），刷新后不能再被判空闲
+        assertThat(chatSessionMapper.touchLastMsg(stale)).isEqualTo(1);
+        assertThat(chatSessionMapper.selectIdleSessions(LocalDateTime.now().minusMinutes(10), 50))
+                .extracting(ChatSessionPO::getId)
+                .doesNotContain(stale);
     }
 
     @Test
@@ -737,6 +890,21 @@ class MapperIT extends BaseIntegrationTest {
         return session.getId();
     }
 
+    /** 一条指定最后消息时间的 ACTIVE 会话（空闲扫描用例专用）。 */
+    private long insertActiveSessionAt(LocalDateTime lastMsgAt) {
+        ChatSessionPO session = new ChatSessionPO();
+        session.setCustomerId(88L);
+        session.setStaffId(7L);
+        session.setStatus("ACTIVE");
+        session.setSourceType("NONE");
+        session.setVip(0);
+        session.setPriority(0);
+        session.setSeq(0L);
+        session.setLastMsgAt(lastMsgAt);
+        chatSessionMapper.insert(session);
+        return session.getId();
+    }
+
     @Test
     @DisplayName("我的订单分页：状态条件下推到 SQL，商品行可按订单 id 批量取")
     void myOrderPageFiltersByStatusAndLoadsItems() {
@@ -766,12 +934,33 @@ class MapperIT extends BaseIntegrationTest {
                 + "unit_price_cent, amount_cent) VALUES (?, 9209, '专业比赛篮球', '7号', 2, 2500, 5000)",
                 waitShip.getId());
 
-        IPage<OrderPO> all = orderMapper.selectMyPage(new Page<>(1, 20), customerId, null);
+        IPage<OrderPO> all = orderMapper.selectMyPage(new Page<>(1, 20), customerId, null, null);
         assertThat(all.getTotal()).isEqualTo(2);
 
-        IPage<OrderPO> onlyShip = orderMapper.selectMyPage(new Page<>(1, 20), customerId, "WAIT_SHIP");
+        IPage<OrderPO> onlyShip = orderMapper.selectMyPage(new Page<>(1, 20), customerId, "WAIT_SHIP", null);
         assertThat(onlyShip.getTotal()).isEqualTo(1);
         assertThat(onlyShip.getRecords()).extracting(OrderPO::getStatus).containsOnly("WAIT_SHIP");
+
+        // 关键字过滤：订单号 / 商品名都要命中，且与状态条件叠加；total 与分页同源不虚高
+        IPage<OrderPO> byOrderNo = orderMapper.selectMyPage(
+                new Page<>(1, 20), customerId, null, "SO-IT-SHIP");
+        assertThat(byOrderNo.getTotal()).isEqualTo(1);
+        assertThat(byOrderNo.getRecords()).extracting(OrderPO::getOrderNo)
+                .containsExactly(waitShip.getOrderNo());
+
+        IPage<OrderPO> byGoodsTitle = orderMapper.selectMyPage(
+                new Page<>(1, 20), customerId, null, "比赛篮球");
+        assertThat(byGoodsTitle.getTotal()).as("商品名搜索不应因一单多行而重复计数").isEqualTo(1);
+        assertThat(byGoodsTitle.getRecords()).extracting(OrderPO::getOrderNo)
+                .containsExactly(waitShip.getOrderNo());
+
+        IPage<OrderPO> byStatusAndKeyword = orderMapper.selectMyPage(
+                new Page<>(1, 20), customerId, "WAIT_PAY", "SO-IT-SHIP");
+        assertThat(byStatusAndKeyword.getTotal()).as("状态与关键字必须同时生效").isZero();
+
+        IPage<OrderPO> byMissing = orderMapper.selectMyPage(
+                new Page<>(1, 20), customerId, null, "NOT-EXIST-KEYWORD");
+        assertThat(byMissing.getTotal()).isZero();
 
         List<OrderItemListRow> items = orderMapper.selectItemsByOrderIds(List.of(waitShip.getId()));
         assertThat(items).hasSize(1);
@@ -816,6 +1005,76 @@ class MapperIT extends BaseIntegrationTest {
 
         assertThat(userMessageMapper.markAllRead(customerId)).isEqualTo(1);
         assertThat(userMessageMapper.countUnread(customerId)).isZero();
+    }
+
+    /**
+     * 券模板分页要 LEFT JOIN sys_staff 取创建人姓名 —— 两张表都有 id / name，
+     * 列名不加表前缀会直接抛「Column 'id' in field list is ambiguous」（2026-11-18 实测踩到）。
+     * 这条用例就是那次缺陷的回归：能查出记录、创建人不空、券号关键字命中唯一一张、软删同步消失。
+     */
+    @Test
+    @DisplayName("券模板分页：联表取创建人不报列名歧义，关键字与软删口径一致")
+    void couponTemplatePageJoinsCreator() {
+        // sent_test 不灌演示券（历史上被清过），这条用例自带数据，绝不依赖种子行数
+        long baseTotal = couponTemplateMapper.countTemplates(null, null);
+        String suffix = String.valueOf(System.currentTimeMillis());
+        String keepNo = "CPTIT" + suffix;
+        String goneNo = "CPTITX" + suffix;
+
+        jdbc.update("INSERT INTO coupon_template (template_no, name, amount_cent, threshold_cent, scene, "
+                        + "status, created_by, deleted) VALUES (?, ?, 500, 0, 'ADMIN', 'ACTIVE', 9001, 0)",
+                keepNo, "IT 券-" + suffix);
+        jdbc.update("INSERT INTO coupon_template (template_no, name, amount_cent, threshold_cent, scene, "
+                        + "status, created_by, deleted) VALUES (?, ?, 500, 0, 'ADMIN', 'ACTIVE', 9001, 1)",
+                goneNo, "IT 已删券-" + suffix);
+        long templateId = jdbc.queryForObject(
+                "SELECT id FROM coupon_template WHERE template_no = ?", Long.class, keepNo);
+
+        try {
+            // 1) 联表分页能跑（历史缺陷：SELECT id ... LEFT JOIN sys_staff 直接 50001 列名歧义）
+            IPage<CouponTemplatePO> byNo =
+                    couponTemplateMapper.selectTemplatePage(new Page<>(1, 10), null, keepNo);
+            assertThat(byNo.getTotal()).as("券号是唯一键，只应命中一张").isEqualTo(1);
+            CouponTemplatePO row = byNo.getRecords().get(0);
+            assertThat(row.getId()).isEqualTo(templateId);
+            assertThat(row.getTemplateNo()).isEqualTo(keepNo);
+            assertThat(row.getCreatorName()).as("创建人不能为空（空值也要回落成占位符）").isNotBlank();
+
+            // 2) 软删的不出现，列表与 count 同口径
+            IPage<CouponTemplatePO> all =
+                    couponTemplateMapper.selectTemplatePage(new Page<>(1, 200), null, suffix);
+            assertThat(all.getRecords()).extracting(CouponTemplatePO::getTemplateNo).containsExactly(keepNo);
+            assertThat(all.getTotal()).isEqualTo(1);
+            assertThat(couponTemplateMapper.countTemplates(null, suffix)).isEqualTo(1);
+            assertThat(couponTemplateMapper.countTemplates(null, null)).as("软删行不计入总数")
+                    .isEqualTo(baseTotal + 1);
+
+            // 3) 软删后 count 与列表同步少一条，否则分页器会多出一页空白
+            jdbc.update("UPDATE coupon_template SET deleted = 1 WHERE id = ?", templateId);
+            assertThat(couponTemplateMapper.countTemplates(null, null)).isEqualTo(baseTotal);
+            assertThat(couponTemplateMapper.selectTemplatePage(new Page<>(1, 200), null, suffix)
+                    .getRecords()).isEmpty();
+        } finally {
+            jdbc.update("DELETE FROM coupon_template WHERE template_no IN (?, ?)", keepNo, goneNo);
+        }
+
+        // 4) 发放记录同样 LEFT JOIN customer 取客户名：customer 也有 id / name，列名同样必须带前缀
+        String couponNo = "CPNIT" + suffix;
+        jdbc.update("INSERT INTO customer_coupon (customer_id, template_id, coupon_no, name, amount_cent, "
+                        + "source, reason, expire_at) "
+                        + "VALUES (?, ?, ?, 'IT 发放记录', 500, 'REGISTER', 'IT', DATE_ADD(NOW(3), INTERVAL 30 DAY))",
+                990_005L, templateId, couponNo);
+        try {
+            IPage<CustomerCouponPO> issues =
+                    couponMapper.selectIssuePage(new Page<>(1, 10), null, couponNo);
+            assertThat(issues.getTotal()).as("按券号应命中唯一一条发放记录").isEqualTo(1);
+            assertThat(issues.getRecords().get(0).getCouponNo()).isEqualTo(couponNo);
+            assertThat(issues.getRecords().get(0).getCustomerName())
+                    .as("客户列必须有值（没有昵称/手机号时回落占位符）").isNotBlank();
+            assertThat(couponMapper.countIssues(null, couponNo)).isEqualTo(1);
+        } finally {
+            jdbc.update("DELETE FROM customer_coupon WHERE coupon_no = ?", couponNo);
+        }
     }
 
     private void insertMessage(long sessionId, long seq, String clientMsgId) {

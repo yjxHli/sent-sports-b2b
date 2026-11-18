@@ -125,7 +125,7 @@ class OrderApiTest extends BaseApiTest {
     @Test
     @DisplayName("我的订单返回空分页 200")
     void listMyOrdersReturnsEmptyPage() throws Exception {
-        when(orderQueryService.listMyOrders(any(), any(), any()))
+        when(orderQueryService.listMyOrders(any(), any(), any(), any()))
                 .thenReturn(PageResult.of(List.of(), 0L, 1, 10));
         mvc.perform(get("/api/orders").param("page", "1").param("size", "10"))
                 .andExpect(status().isOk())
@@ -137,14 +137,27 @@ class OrderApiTest extends BaseApiTest {
     @Test
     @DisplayName("我的订单带 status 时把状态透传给 service（订单页 Tab 筛选）")
     void listMyOrdersPassesStatus() throws Exception {
-        when(orderQueryService.listMyOrders(any(), eq("WAIT_SHIP"), any()))
+        when(orderQueryService.listMyOrders(any(), eq("WAIT_SHIP"), any(), any()))
                 .thenReturn(PageResult.of(List.of(), 0L, 1, 20));
 
         mvc.perform(get("/api/orders").param("status", "WAIT_SHIP"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0));
 
-        verify(orderQueryService).listMyOrders(any(), eq("WAIT_SHIP"), any());
+        verify(orderQueryService).listMyOrders(any(), eq("WAIT_SHIP"), any(), any());
+    }
+
+    @Test
+    @DisplayName("我的订单带 keyword 时把搜索词透传给 service（订单页搜索）")
+    void listMyOrdersPassesKeyword() throws Exception {
+        when(orderQueryService.listMyOrders(any(), any(), eq("SO20261116"), any()))
+                .thenReturn(PageResult.of(List.of(), 0L, 1, 10));
+
+        mvc.perform(get("/api/orders").param("keyword", "SO20261116"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+
+        verify(orderQueryService).listMyOrders(any(), any(), eq("SO20261116"), any());
     }
 
     @Test

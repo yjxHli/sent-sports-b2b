@@ -62,6 +62,15 @@ class OrderFlowIT extends FullStackIntegrationTest {
                 "SELECT COUNT(*) FROM order_item WHERE order_id = "
                         + "(SELECT id FROM orders WHERE order_no = ?)", Integer.class, order.orderNo()))
                 .isEqualTo(1);
+        // 待付款超时取消依赖 expire_at：下单必须落库截止时间，且恰好是 5 分钟后
+        java.sql.Timestamp expireAt = jdbc.queryForObject(
+                "SELECT expire_at FROM orders WHERE order_no = ?", java.sql.Timestamp.class, order.orderNo());
+        assertThat(expireAt).as("expire_at 不能为 NULL，否则超时任务扫不到").isNotNull();
+        java.sql.Timestamp createdAt = jdbc.queryForObject(
+                "SELECT created_at FROM orders WHERE order_no = ?", java.sql.Timestamp.class, order.orderNo());
+        assertThat(expireAt.getTime() - createdAt.getTime())
+                .isBetween(299_000L, 301_000L)
+                .as("支付截止 = 下单后 5 分钟");
 
         // 2) 发起支付：生成 CREATED 流水
         CreatePaymentResult payment = createPaymentUseCase.create(new CreatePaymentCmd(

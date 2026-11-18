@@ -6,6 +6,7 @@ import com.sent.sports.chat.domain.SenderType;
 import com.sent.sports.chat.dto.ChatDtos;
 import com.sent.sports.chat.service.ChatQueryService;
 import com.sent.sports.chat.service.CreateSessionUseCase;
+import com.sent.sports.chat.service.RateSatisfactionUseCase;
 import com.sent.sports.chat.service.SendMessageUseCase;
 import com.sent.sports.chat.service.dto.CreateSessionResult;
 import com.sent.sports.chat.service.dto.SendMessageCmd;
@@ -53,6 +54,9 @@ class ChatApiTest extends BaseApiTest {
 
     @MockBean
     private ChatQueryService chatQueryService;
+
+    @MockBean
+    private RateSatisfactionUseCase rateSatisfactionUseCase;
 
     @Test
     @DisplayName("发起会话返回会话号与状态 200")

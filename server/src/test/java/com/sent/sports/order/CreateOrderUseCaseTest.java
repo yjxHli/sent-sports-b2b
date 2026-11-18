@@ -38,7 +38,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
@@ -70,6 +72,8 @@ class CreateOrderUseCaseTest extends BaseUseCaseTest {
     private CreditFacade creditFacade;
     @Mock
     private AddressService addressService;
+    @Mock
+    private com.sent.sports.coupon.service.CouponDeduction couponDeduction;
     @Mock
     private java.time.Clock clock;
 
@@ -141,6 +145,95 @@ class CreateOrderUseCaseTest extends BaseUseCaseTest {
 
         verify(stockRepository).lock(1L, 2);
         verify(idGen).nextOrderNo();
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("下单写入支付截止时间 = 创建时间 + 5 分钟（超时取消的数据源）")
+    void createSetsPayExpireAtFiveMinutesLater() {
+        when(clock.instant()).thenReturn(FIXED);
+        stubAddress();
+        when(pricingFacade.price(any())).thenReturn(new LinePrice(9000L, "RETAIL", false));
+        when(pointFacade.maxDeductibleCent(anyInt(), anyLong())).thenReturn(0L);
+        when(idGen.nextOrderNo()).thenReturn("SO20240101000003");
+
+        OrderLineCmd item = new OrderLineCmd(1L, 1, "PERSON", 100, 100, false, List.of());
+        useCase.create(new CreateOrderCmd(100L, ADDRESS_ID, "idem-expire", 0, 19900, 1200, List.of(item)));
+
+        verify(orderRepository).save(orderCaptor.capture());
+        assertEquals(FIXED.plusSeconds(5 * 60L).toEpochMilli(),
+                orderCaptor.getValue().getExpireAtMillis(),
+                "待付款订单必须带 expire_at = 下单时间 + 5 分钟，否则超时取消任务永远扫不到");
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("UV 定制件每件加收 10 元，并计入应付与订单行快照")
+    void customLineAddsTenYuanPerUnit() {
+        when(clock.instant()).thenReturn(FIXED);
+        stubAddress();
+        when(pricingFacade.price(any())).thenReturn(new LinePrice(1000L, "RETAIL", false));
+        when(pointFacade.maxDeductibleCent(anyInt(), anyLong())).thenReturn(0L);
+        when(idGen.nextOrderNo()).thenReturn("SO20240101000004");
+
+        // 3 件定制 + 2 件普通：商品 50 元 + 定制费 30 元 = 80 元，再加运费 12 元
+        OrderLineCmd custom = new OrderLineCmd(1L, 3, "PERSON", 100, 100, false, List.of(), true);
+        OrderLineCmd normal = new OrderLineCmd(2L, 2, "PERSON", 100, 100, false, List.of(), false);
+        CreateOrderCmd cmd = new CreateOrderCmd(100L, ADDRESS_ID, "idem-custom-fee", 0, 19900, 1200,
+                List.of(custom, normal));
+
+        CreateOrderResult result = useCase.create(cmd);
+
+        assertEquals(5000L, result.goodsAmountCent());
+        assertEquals(9200L, result.payableCent(), "商品 50 + 定制费 30 + 运费 12 = 92 元");
+        verify(orderRepository).save(orderCaptor.capture());
+        Order saved = orderCaptor.getValue();
+        assertEquals(3000L, saved.getCustomFeeCent());
+        assertEquals(3000L, saved.getItems().get(0).getCustomFeeCent(), "定制费要落到订单行快照");
+        assertEquals(0L, saved.getItems().get(1).getCustomFeeCent());
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("券抵扣按行金额比例分摊到订单行，退款行实付不再虚高")
+    void couponDiscountAllocatedToOrderLines() {
+        when(clock.instant()).thenReturn(FIXED);
+        stubAddress();
+        // 两行金额 100.01 + 79.99 = 180.00 元：存在除不尽，余数必须落到最后一行，保证分摊总额精确
+        when(pricingFacade.price(any())).thenAnswer(inv -> {
+            com.sent.sports.product.service.dto.PriceRequest req = inv.getArgument(0);
+            return req.skuId() == 1L
+                    ? new LinePrice(10001L, "RETAIL", false)
+                    : new LinePrice(7999L, "RETAIL", false);
+        });
+        when(pointFacade.maxDeductibleCent(anyInt(), anyLong())).thenReturn(0L);
+        when(couponDeduction.discountFor(eq(3000L), eq(100L), anyList())).thenReturn(3000L);
+        when(idGen.nextOrderNo()).thenReturn("SO20240101000010");
+
+        OrderLineCmd line1 = new OrderLineCmd(1L, 1, "PERSON", 100, 100, false, List.of());
+        OrderLineCmd line2 = new OrderLineCmd(2L, 1, "PERSON", 100, 100, false, List.of());
+        CreateOrderCmd cmd = new CreateOrderCmd(100L, ADDRESS_ID, "idem-coupon-alloc", 0,
+                19900, 1200, List.of(line1, line2), 3000L);
+
+        CreateOrderResult result = useCase.create(cmd);
+
+        assertEquals(16200L, result.payableCent(), "商品 180 − 券 30 + 运费 12 = 162 元");
+        verify(orderRepository).save(orderCaptor.capture());
+        Order saved = orderCaptor.getValue();
+        assertEquals(3000L, saved.getDiscountCent());
+        assertEquals(2, saved.getItems().size());
+        assertEquals(1666L, saved.getItems().get(0).getDiscountAllocCent(),
+                "首行按金额比例分摊：floor(3000 × 10001 / 18000)");
+        assertEquals(1334L, saved.getItems().get(1).getDiscountAllocCent(),
+                "除不尽的余数落到最后一行，两行之和必须等于券抵扣总额");
+        assertEquals(3000L, saved.getItems().stream()
+                .mapToLong(com.sent.sports.order.domain.OrderItem::getDiscountAllocCent).sum());
+        // 券必须按行明细计算：品类券只对命中 SPU/SKU 的行金额生效
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<com.sent.sports.coupon.service.dto.CouponLine>> lineCaptor =
+                ArgumentCaptor.forClass(List.class);
+        verify(couponDeduction).discountFor(eq(3000L), eq(100L), lineCaptor.capture());
+        assertEquals(List.of(new com.sent.sports.coupon.service.dto.CouponLine(1L, 10001L),
+                        new com.sent.sports.coupon.service.dto.CouponLine(2L, 7999L)),
+                lineCaptor.getValue(), "传给券模块的是逐行金额，不是整单汇总");
+        verify(couponDeduction).markUsed(3000L, "SO20240101000010");
     }
 
     @Test

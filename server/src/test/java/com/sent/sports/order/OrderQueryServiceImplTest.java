@@ -103,13 +103,13 @@ class OrderQueryServiceImplTest extends BaseUnitTest {
     @Test
     @DisplayName("状态筛选下推到 SQL，不会全量拉取后前端筛")
     void statusPushedDown() {
-        when(orderMapper.selectMyPage(any(), eq(9002L), eq("WAIT_SHIP")))
+        when(orderMapper.selectMyPage(any(), eq(9002L), eq("WAIT_SHIP"), eq((String) null)))
                 .thenReturn(pageOf(List.of(order(1L, "WAIT_SHIP", 12345L)), 1L));
         when(orderMapper.selectItemsByOrderIds(any())).thenReturn(List.of(item(1L, 2, 5000L)));
 
-        var result = service.listMyOrders(9002L, "WAIT_SHIP", pageQuery());
+        var result = service.listMyOrders(9002L, "WAIT_SHIP", null, pageQuery());
 
-        verify(orderMapper).selectMyPage(any(), eq(9002L), eq("WAIT_SHIP"));
+        verify(orderMapper).selectMyPage(any(), eq(9002L), eq("WAIT_SHIP"), eq((String) null));
         assertEquals(1, result.getList().size());
         assertEquals("WAIT_SHIP", result.getList().get(0).status());
     }
@@ -117,12 +117,12 @@ class OrderQueryServiceImplTest extends BaseUnitTest {
     @Test
     @DisplayName("列表项带下单时间（毫秒）与商品行，且商品行按订单归组")
     void listItemCarriesCreatedAtAndItems() {
-        when(orderMapper.selectMyPage(any(), eq(9002L), eq((String) null)))
+        when(orderMapper.selectMyPage(any(), eq(9002L), eq((String) null), eq((String) null)))
                 .thenReturn(pageOf(List.of(order(1L, "WAIT_PAY", 12345L), order(2L, "COMPLETED", 8800L)), 2L));
         when(orderMapper.selectItemsByOrderIds(any()))
                 .thenReturn(List.of(item(1L, 2, 5000L), item(1L, 1, 2345L), item(2L, 3, 2900L)));
 
-        var result = service.listMyOrders(9002L, null, pageQuery());
+        var result = service.listMyOrders(9002L, null, null, pageQuery());
 
         long expectedMillis = LocalDateTime.of(2026, 11, 10, 9, 30)
                 .atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
@@ -142,10 +142,10 @@ class OrderQueryServiceImplTest extends BaseUnitTest {
     @Test
     @DisplayName("没有订单时不查商品行（避免 IN () 空集）")
     void emptyListSkipsItemsQuery() {
-        when(orderMapper.selectMyPage(any(), eq(9002L), eq((String) null)))
+        when(orderMapper.selectMyPage(any(), eq(9002L), eq((String) null), eq((String) null)))
                 .thenReturn(pageOf(List.of(), 0L));
 
-        var result = service.listMyOrders(9002L, null, pageQuery());
+        var result = service.listMyOrders(9002L, null, null, pageQuery());
 
         assertTrue(result.getList().isEmpty());
         verify(orderMapper, never()).selectItemsByOrderIds(any());
@@ -154,11 +154,37 @@ class OrderQueryServiceImplTest extends BaseUnitTest {
     @Test
     @DisplayName("匿名（无 customerId）直接返回空页，不查库")
     void anonymousReturnsEmpty() {
-        var result = service.listMyOrders(null, null, pageQuery());
+        var result = service.listMyOrders(null, null, null, pageQuery());
 
         assertTrue(result.getList().isEmpty());
         assertEquals(0L, result.getTotal());
-        verify(orderMapper, never()).selectMyPage(any(), anyLong(), any());
+        verify(orderMapper, never()).selectMyPage(any(), anyLong(), any(), any());
+    }
+
+    @Test
+    @DisplayName("搜索词下推到 SQL：trim 后透传给 Mapper，状态筛选互不影响")
+    void keywordPushedDown() {
+        when(orderMapper.selectMyPage(any(), eq(9002L), eq((String) null), eq("SO2026")))
+                .thenReturn(pageOf(List.of(order(1L, "WAIT_SHIP", 12345L)), 1L));
+        when(orderMapper.selectItemsByOrderIds(any())).thenReturn(List.of());
+
+        var result = service.listMyOrders(9002L, null, "  SO2026  ", pageQuery());
+
+        verify(orderMapper).selectMyPage(any(), eq(9002L), eq((String) null), eq("SO2026"));
+        assertEquals(1, result.getList().size());
+        assertEquals("SO1", result.getList().get(0).orderNo());
+    }
+
+    @Test
+    @DisplayName("空白搜索词归一为 null，不当成「匹配空订单号」")
+    void blankKeywordNormalizedToNull() {
+        when(orderMapper.selectMyPage(any(), eq(9002L), eq((String) null), eq((String) null)))
+                .thenReturn(pageOf(List.of(order(1L, "WAIT_SHIP", 12345L)), 1L));
+        when(orderMapper.selectItemsByOrderIds(any())).thenReturn(List.of());
+
+        service.listMyOrders(9002L, null, "   ", pageQuery());
+
+        verify(orderMapper).selectMyPage(any(), eq(9002L), eq((String) null), eq((String) null));
     }
 
     @Test
@@ -250,5 +276,56 @@ class OrderQueryServiceImplTest extends BaseUnitTest {
         org.junit.jupiter.api.Assertions.assertNull(vo.payChannel());
         org.junit.jupiter.api.Assertions.assertNull(vo.payTxnNo());
         org.junit.jupiter.api.Assertions.assertNull(vo.tradeNo());
+    }
+
+    /**
+     * 待付款订单必须把「支付截止时间」回给商城端，否则前端做不出 5 分钟实时倒计时
+     * （用户要求：结算时可选择暂不支付，5 分钟内未付自动取消并显示倒计时）。
+     */
+    @Test
+    @DisplayName("订单详情回传支付截止时间（毫秒）：商城端 5 分钟倒计时据此计算")
+    void detailCarriesPayExpireAtMillis() {
+        OrderPO po = order(9L, "WAIT_PAY", 2590L);
+        LocalDateTime expireAt = LocalDateTime.of(2026, 11, 17, 12, 5, 0);
+        po.setExpireAt(expireAt);
+        when(orderMapper.selectByOrderNo("SO9")).thenReturn(po);
+        when(orderMapper.selectItemsByOrderIds(List.of(9L))).thenReturn(List.of());
+
+        OrderDtos.OrderVO vo = service.getDetail("SO9");
+
+        assertEquals(
+                expireAt.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
+                vo.expireAtMillis(),
+                "支付截止时间要按毫秒回给前端");
+    }
+
+    /** 已付款 / 历史单没有截止时间时返回 null，前端据此不渲染倒计时。 */
+    @Test
+    @DisplayName("没有支付截止时间的订单：expireAtMillis 返回 null，前端不显示倒计时")
+    void detailWithoutExpireAtKeepsNull() {
+        when(orderMapper.selectByOrderNo("SO10")).thenReturn(order(10L, "COMPLETED", 100L));
+        when(orderMapper.selectItemsByOrderIds(List.of(10L))).thenReturn(List.of());
+
+        OrderDtos.OrderVO vo = service.getDetail("SO10");
+
+        org.junit.jupiter.api.Assertions.assertNull(vo.expireAtMillis());
+    }
+
+    /** 列表页「待付款」卡片也要倒计时，同样随列表一次返回，避免逐单再查详情。 */
+    @Test
+    @DisplayName("订单列表回传支付截止时间：待付款卡片可直接倒计时")
+    void listCarriesPayExpireAtMillis() {
+        OrderPO po = order(11L, "WAIT_PAY", 1990L);
+        LocalDateTime expireAt = LocalDateTime.of(2026, 11, 17, 12, 6, 30);
+        po.setExpireAt(expireAt);
+        when(orderMapper.selectMyPage(any(), eq(9002L), eq((String) null), eq((String) null)))
+                .thenReturn(pageOf(List.of(po), 1L));
+        when(orderMapper.selectItemsByOrderIds(any())).thenReturn(List.of());
+
+        var result = service.listMyOrders(9002L, null, null, pageQuery());
+
+        assertEquals(
+                expireAt.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
+                result.getList().get(0).expireAtMillis());
     }
 }

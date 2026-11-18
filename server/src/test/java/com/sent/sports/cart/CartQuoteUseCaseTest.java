@@ -30,6 +30,8 @@ class CartQuoteUseCaseTest extends BaseUseCaseTest {
     private PricingServiceFacade pricingFacade;
     @Mock
     private PointFacade pointFacade;
+    @Mock
+    private com.sent.sports.coupon.service.CouponDeduction couponDeduction;
 
     @InjectMocks
     private CartQuoteUseCase useCase;

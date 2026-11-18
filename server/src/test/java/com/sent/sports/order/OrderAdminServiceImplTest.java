@@ -64,23 +64,45 @@ class OrderAdminServiceImplTest {
     @Test
     @DisplayName("列表：status 筛选必须透传到 Mapper，发货工作台只应看到待发货单")
     void listPassesStatusToMapper() {
-        when(orderMapper.selectAllPage(any(Page.class), eq("WAIT_SHIP")))
+        when(orderMapper.selectAllPage(any(Page.class), eq("WAIT_SHIP"), isNull()))
                 .thenReturn(new Page<OrderPO>(1, 10));
 
-        service.list(new PageQuery(), "WAIT_SHIP");
+        service.list(new PageQuery(), "WAIT_SHIP", null);
 
-        verify(orderMapper).selectAllPage(any(Page.class), eq("WAIT_SHIP"));
+        verify(orderMapper).selectAllPage(any(Page.class), eq("WAIT_SHIP"), isNull());
     }
 
     @Test
     @DisplayName("列表：未传 status 时透传 null，保持全量分页")
     void listWithoutStatusPassesNull() {
-        when(orderMapper.selectAllPage(any(Page.class), isNull()))
+        when(orderMapper.selectAllPage(any(Page.class), isNull(), isNull()))
                 .thenReturn(new Page<OrderPO>(1, 10));
 
-        service.list(new PageQuery(), null);
+        service.list(new PageQuery(), null, null);
 
-        verify(orderMapper).selectAllPage(any(Page.class), isNull());
+        verify(orderMapper).selectAllPage(any(Page.class), isNull(), isNull());
+    }
+
+    @Test
+    @DisplayName("列表：订单号关键字必须透传到 Mapper（前端输 585 查询此前被静默丢弃）")
+    void listPassesKeywordToMapper() {
+        when(orderMapper.selectAllPage(any(Page.class), isNull(), eq("585")))
+                .thenReturn(new Page<OrderPO>(1, 10));
+
+        service.list(new PageQuery(), null, "  585  ");
+
+        verify(orderMapper).selectAllPage(any(Page.class), isNull(), eq("585"));
+    }
+
+    @Test
+    @DisplayName("列表：空白关键字归一为 null，避免 LIKE '%%' 退化成全表扫描")
+    void listBlankKeywordBecomesNull() {
+        when(orderMapper.selectAllPage(any(Page.class), isNull(), isNull()))
+                .thenReturn(new Page<OrderPO>(1, 10));
+
+        service.list(new PageQuery(), null, "   ");
+
+        verify(orderMapper).selectAllPage(any(Page.class), isNull(), isNull());
     }
 
     @Test

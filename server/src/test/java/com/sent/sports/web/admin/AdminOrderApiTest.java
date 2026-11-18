@@ -50,7 +50,7 @@ class AdminOrderApiTest extends BaseApiTest {
     @Test
     @DisplayName("多维筛选列表返回空分页 200")
     void listReturnsEmptyPage() throws Exception {
-        when(orderAdminService.list(any(), any())).thenReturn(PageResult.of(List.of(), 0L, 1, 10));
+        when(orderAdminService.list(any(), any(), any())).thenReturn(PageResult.of(List.of(), 0L, 1, 10));
         mvc.perform(get("/api/admin/orders").param("page", "1").param("size", "10"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
@@ -60,24 +60,35 @@ class AdminOrderApiTest extends BaseApiTest {
     @Test
     @DisplayName("列表：status=WAIT_SHIP 必须透传给服务，发货工作台不再拿到 COMPLETED 单")
     void listPassesStatusToService() throws Exception {
-        when(orderAdminService.list(any(), eq("WAIT_SHIP")))
+        when(orderAdminService.list(any(), eq("WAIT_SHIP"), any()))
                 .thenReturn(PageResult.of(List.of(), 0L, 1, 10));
         mvc.perform(get("/api/admin/orders")
                         .param("page", "1").param("size", "10").param("status", "WAIT_SHIP"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0));
-        verify(orderAdminService).list(any(PageQuery.class), eq("WAIT_SHIP"));
+        verify(orderAdminService).list(any(PageQuery.class), eq("WAIT_SHIP"), any());
     }
 
     @Test
     @DisplayName("列表：未带 status 时按 null 透传，保持订单列表全量分页")
     void listWithoutStatusPassesNull() throws Exception {
-        when(orderAdminService.list(any(), isNull()))
+        when(orderAdminService.list(any(), isNull(), any()))
                 .thenReturn(PageResult.of(List.of(), 0L, 1, 10));
         mvc.perform(get("/api/admin/orders").param("page", "1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0));
-        verify(orderAdminService).list(any(PageQuery.class), isNull());
+        verify(orderAdminService).list(any(PageQuery.class), isNull(), any());
+    }
+
+    @Test
+    @DisplayName("列表：keyword 必须透传给服务（前端订单号搜索此前被接口签名吞掉）")
+    void listPassesKeywordToService() throws Exception {
+        when(orderAdminService.list(any(), isNull(), eq("585")))
+                .thenReturn(PageResult.of(List.of(), 0L, 1, 10));
+        mvc.perform(get("/api/admin/orders").param("page", "1").param("keyword", "585"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+        verify(orderAdminService).list(any(PageQuery.class), isNull(), eq("585"));
     }
 
     @Test

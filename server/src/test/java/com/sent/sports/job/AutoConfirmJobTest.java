@@ -43,7 +43,20 @@ class AutoConfirmJobTest {
     }
 
     @Test
-    @DisplayName("批量自动确认发货超过 15 天的待收货订单")
+    @DisplayName("自动确认阈值收紧为 7 天（原 15 天）")
+    void usesSevenDayThreshold() {
+        when(orderMapper.selectAwaitingReceiveBefore(any(), anyInt())).thenReturn(List.of());
+
+        job.runOnce();
+
+        ArgumentCaptor<java.time.LocalDateTime> before = ArgumentCaptor.forClass(java.time.LocalDateTime.class);
+        verify(orderMapper).selectAwaitingReceiveBefore(before.capture(), anyInt());
+        assertThat(before.getValue()).as("用户要求：已送达的待收货订单超过 7 天自动收货")
+                .isEqualTo(java.time.LocalDateTime.parse("2026-10-28T02:00:00"));
+    }
+
+    @Test
+    @DisplayName("批量自动确认送达超过 7 天的待收货订单")
     void confirmsAllAwaitingReceiveOrders() {
         when(orderMapper.selectAwaitingReceiveBefore(any(), anyInt()))
                 .thenReturn(List.of(order("O0001"), order("O0002")));
