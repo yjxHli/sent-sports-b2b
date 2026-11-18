@@ -54,6 +54,15 @@ public class CustomerQueryServiceImpl implements CustomerQueryService {
         return toRow(po);
     }
 
+    @Override
+    public String typeOf(long customerId) {
+        CustomerPO po = customerMapper.selectById(customerId);
+        if (po == null || Integer.valueOf(1).equals(po.getDeleted())) {
+            return null;
+        }
+        return po.getType();
+    }
+
     private static AdminCustomerDtos.CustomerRow toRow(CustomerPO po) {
         long id = po.getId() == null ? 0L : po.getId();
         String name = po.getNickname() == null || po.getNickname().isBlank()
@@ -64,7 +73,8 @@ public class CustomerQueryServiceImpl implements CustomerQueryService {
                 po.getGrowthValue() == null ? 0L : po.getGrowthValue(),
                 po.getPointsBalance() == null ? 0L : po.getPointsBalance(),
                 toMillis(po.getCreatedAt()),
-                po.getCreditUsedCent(), po.getEnterpriseStatus());
+                po.getCreditUsedCent(), po.getEnterpriseStatus(),
+                po.getCompanyName(), po.getLicenseNo(), po.getLicenseUrl());
     }
 
     private static long toMillis(LocalDateTime value) {

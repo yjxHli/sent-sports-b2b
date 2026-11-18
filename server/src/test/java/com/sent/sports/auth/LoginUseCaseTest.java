@@ -25,6 +25,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
@@ -133,11 +134,80 @@ class LoginUseCaseTest extends BaseUseCaseTest {
     }
 
     @Test
+    void customerAccountCannotLoginAsAdmin() {
+        UserAccount account = new UserAccount(9002L, "13800138000", "13800138000", "123456");
+        when(userAccountRepository.findByPhone("13800138000")).thenReturn(Optional.of(account));
+
+        BizException e = assertThrows(BizException.class,
+                () -> useCase.login(new LoginCmd("13800138000", "123456", "admin", "device-x")));
+        assertEquals(ErrorCode.NOT_FOUND, e.getErrorCode());
+        verify(userAccountRepository, never()).save(any());
+    }
+
+    @Test
     void unknownUserNotFound() {
         when(userAccountRepository.findByUsername("ghost")).thenReturn(Optional.empty());
 
         BizException e = assertThrows(BizException.class,
                 () -> useCase.login(new LoginCmd("ghost", "x")));
         assertEquals(ErrorCode.NOT_FOUND, e.getErrorCode());
+    }
+
+    @Test
+    void pendingEnterpriseCannotLoginBeforeAdminAudit() {
+        UserAccount account = enterpriseAccount("PENDING");
+        when(userAccountRepository.findByPhone("13912345678")).thenReturn(Optional.of(account));
+
+        BizException e = assertThrows(BizException.class,
+                () -> useCase.login(new LoginCmd("13912345678", "123456", "user", "d")));
+
+        assertEquals(ErrorCode.BIZ_REJECT, e.getErrorCode());
+        assertTrue(e.resolvedMessage().contains("审核"), "提示应明确告知需管理端审核");
+        verify(userAccountRepository, never()).save(any());
+        verify(refreshTokenStore, never()).save(any(), anyLong(), any(), any(), anyLong());
+    }
+
+    @Test
+    void rejectedEnterpriseCannotLogin() {
+        UserAccount account = enterpriseAccount("REJECTED");
+        when(userAccountRepository.findByPhone("13912345678")).thenReturn(Optional.of(account));
+
+        BizException e = assertThrows(BizException.class,
+                () -> useCase.login(new LoginCmd("13912345678", "123456", "user", "d")));
+
+        assertEquals(ErrorCode.BIZ_REJECT, e.getErrorCode());
+        assertTrue(e.resolvedMessage().contains("未通过") || e.resolvedMessage().contains("驳回"));
+    }
+
+    @Test
+    void legacyNormalEnterpriseAlsoLogsIn() {
+        UserAccount account = enterpriseAccount("NORMAL");
+        when(userAccountRepository.findByPhone("13912345678")).thenReturn(Optional.of(account));
+        when(clock.instant()).thenReturn(NOW);
+        when(idGen.next("RT")).thenReturn("RT-NORMAL");
+        when(tokenService.issueAccess(any())).thenReturn(new TokenService.Issued("jwt-normal", 9_000_000L));
+
+        TokenPair r = useCase.login(new LoginCmd("13912345678", "123456", "user", "d"));
+
+        assertEquals("jwt-normal", r.accessToken());
+    }
+
+    @Test
+    void approvedEnterpriseLogsInNormally() {
+        UserAccount account = enterpriseAccount("ACTIVE");
+        when(userAccountRepository.findByPhone("13912345678")).thenReturn(Optional.of(account));
+        when(clock.instant()).thenReturn(NOW);
+        when(idGen.next("RT")).thenReturn("RT-ENT");
+        when(tokenService.issueAccess(any())).thenReturn(new TokenService.Issued("jwt-ent", 9_000_000L));
+
+        TokenPair r = useCase.login(new LoginCmd("13912345678", "123456", "user", "d"));
+
+        assertEquals("jwt-ent", r.accessToken());
+        verify(refreshTokenStore).save(eq("user"), eq(9100L), eq("d"), eq("RT-ENT"), anyLong());
+    }
+
+    private static UserAccount enterpriseAccount(String auditStatus) {
+        return UserAccount.rehydrate(9100L, UserAccount.AUD_USER, "13912345678", null,
+                "13912345678", "123456", "ACTIVE", 0, 0L, 0L, "ENTERPRISE", auditStatus);
     }
 }

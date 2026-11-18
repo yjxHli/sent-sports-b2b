@@ -1,8 +1,10 @@
 package com.sent.sports.auth.controller;
 
 import com.sent.sports.auth.dto.AuthDtos;
+import com.sent.sports.auth.service.EnterpriseRegisterUseCase;
 import com.sent.sports.auth.service.LoginUseCase;
 import com.sent.sports.auth.service.RefreshTokenUseCase;
+import com.sent.sports.auth.service.RegisterUseCase;
 import com.sent.sports.auth.service.dto.LoginCmd;
 import com.sent.sports.auth.service.dto.LogoutCmd;
 import com.sent.sports.auth.service.dto.RefreshCmd;
@@ -28,11 +30,38 @@ public class AuthController {
 
     private final RefreshTokenUseCase refreshTokenUseCase;
 
+    private final RegisterUseCase registerUseCase;
+
+    private final EnterpriseRegisterUseCase enterpriseRegisterUseCase;
+
     private static final long ACCESS_TOKEN_TTL_SECONDS = 7200L;
 
-    public AuthController(LoginUseCase loginUseCase, RefreshTokenUseCase refreshTokenUseCase) {
+    public AuthController(LoginUseCase loginUseCase, RefreshTokenUseCase refreshTokenUseCase,
+                          RegisterUseCase registerUseCase,
+                          EnterpriseRegisterUseCase enterpriseRegisterUseCase) {
         this.loginUseCase = loginUseCase;
         this.refreshTokenUseCase = refreshTokenUseCase;
+        this.registerUseCase = registerUseCase;
+        this.enterpriseRegisterUseCase = enterpriseRegisterUseCase;
+    }
+
+    /** 商城注册：直连 customer 表落账号，前端拿到结果后自动走标准登录换取令牌。 */
+    @PostMapping("/register")
+    public R<AuthDtos.RegisterVO> register(@Valid @RequestBody AuthDtos.RegisterCmd cmd) {
+        var registered = registerUseCase.register(cmd.phone(), cmd.password(), cmd.confirmPassword());
+        return R.ok(new AuthDtos.RegisterVO(registered.customerId(), registered.phone(),
+                registered.nickname(), registered.customerNo()));
+    }
+
+    /**
+     * 企业注册：账号与企业档案一起落库（PENDING），不自动登录；管理端审核通过后才可登录。
+     */
+    @PostMapping("/enterprise/register")
+    public R<AuthDtos.EnterpriseRegisterVO> enterpriseRegister(
+            @Valid @RequestBody AuthDtos.EnterpriseRegisterCmd cmd) {
+        var registered = enterpriseRegisterUseCase.register(cmd.phone(), cmd.password(),
+                cmd.confirmPassword(), cmd.companyName(), cmd.creditCode(), cmd.licenseFileId());
+        return R.ok(new AuthDtos.EnterpriseRegisterVO(registered.phone(), registered.nickname(), "PENDING"));
     }
 
     @PostMapping("/login")

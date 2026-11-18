@@ -71,6 +71,21 @@
                   :tone="enterpriseStatusTone(current.enterpriseStatus)"
                 />
               </el-descriptions-item>
+              <!-- 企业自助注册提交的材料：不展示就只能「盲审」 -->
+              <el-descriptions-item label="企业名称">{{ current.companyName || '--' }}</el-descriptions-item>
+              <el-descriptions-item label="统一社会信用代码">{{ current.licenseNo || '--' }}</el-descriptions-item>
+              <el-descriptions-item label="营业执照">
+                <el-image
+                  v-if="current.licenseUrl"
+                  :src="fileApi.url(current.licenseUrl)"
+                  :preview-src-list="[fileApi.url(current.licenseUrl)]"
+                  :preview-teleported="true"
+                  fit="contain"
+                  class="license-thumb"
+                  data-testid="enterprise-license-img"
+                />
+                <span v-else class="sent-hint">未上传（历史档案或线下提交）</span>
+              </el-descriptions-item>
               <el-descriptions-item label="当前授信额度">{{ fmtMoney(current.creditLimitCent) }}</el-descriptions-item>
               <el-descriptions-item label="已用额度">{{ fmtMoney(current.creditUsedCent) }}</el-descriptions-item>
               <el-descriptions-item label="可用额度">{{ fmtMoney(availableCent) }}</el-descriptions-item>
@@ -122,6 +137,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'v
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { unwrap } from '@/utils/http';
 import { customerApi, financeApi } from '@/api';
+import { fileApi } from '@/api/file';
 import { fmtMoney, yuanToCent } from '@sent/shared';
 import { openConfirm } from '@/utils/confirm';
 import { usePagination } from '@/composables/usePagination';
@@ -131,7 +147,9 @@ import type { TableColumn } from '@/components/types';
 
 const columns: TableColumn[] = [
   { prop: 'customerId', label: '客户 ID', width: 110 },
-  { prop: 'name', label: '企业名称', minWidth: 160 },
+  { prop: 'name', label: '企业名称', minWidth: 160,
+    // 自助注册的企业有公司全称就显示全称，历史演示档案退回昵称
+    formatter: (r, v) => r.companyName || String(v ?? '') },
   { prop: 'enterpriseStatus', label: '认证状态', width: 100, align: 'center' },
   { prop: 'creditLimitCent', label: '授信额度', width: 120, align: 'right',
     formatter: (_r, v) => fmtMoney(v) },
@@ -417,6 +435,15 @@ onBeforeUnmount(() => {
 <style scoped>
 .section-title { margin: 0 0 14px; font-size: 15px; color: #33463f; }
 .sub-title { margin: 18px 0 10px; font-size: 14px; color: #33463f; }
+/* 营业执照缩略图：点击可放大预览，审核时能看清企业名称与信用代码 */
+.license-thumb {
+  width: 96px;
+  height: 64px;
+  border: 1px solid #e6ece9;
+  border-radius: 6px;
+  background: #fafcfb;
+  cursor: zoom-in;
+}
 
 /*
  * 双列等高（lg ≥1200px）：「企业客户」与「审核与授信」两张卡片底边对齐。

@@ -21,6 +21,16 @@ import java.time.LocalDateTime;
 @Mapper
 public interface CustomerMapper extends BaseMapper<CustomerPO> {
 
+    /**
+     * 用户端改昵称/头像（2026-11-17）。显式写两列：MyBatis-Plus 的 updateById 会跳过 null，
+     * 客户想清空头像时根本写不进去。
+     */
+    @Update("UPDATE customer SET nickname = #{nickname}, avatar_file_id = #{avatarFileId} "
+            + "WHERE id = #{customerId} AND deleted = 0")
+    int updateProfile(@Param("customerId") long customerId,
+                      @Param("nickname") String nickname,
+                      @Param("avatarFileId") String avatarFileId);
+
     /** 成长值累加（growth_log 唯一键确认是首次发放后才调用，不重复加钱）。 */
     @Update("UPDATE customer SET growth_value = growth_value + #{delta} WHERE id = #{customerId}")
     int addGrowth(@Param("customerId") long customerId, @Param("delta") long delta);
@@ -34,7 +44,8 @@ public interface CustomerMapper extends BaseMapper<CustomerPO> {
      * 手动翻页找太慢，把 BIGINT 转字符串参与 LIKE 即可。</p>
      */
     @Select("<script>"
-            + "SELECT c.*, e.credit_limit_cent, e.credit_used_cent, e.status AS enterprise_status "
+            + "SELECT c.*, e.credit_limit_cent, e.credit_used_cent, e.status AS enterprise_status, "
+            + "e.company_name, e.license_no, e.license_url "
             + "FROM customer c LEFT JOIN enterprise_profile e ON e.customer_id = c.id "
             + "WHERE c.deleted = 0 "
             + "<if test=\"keyword != null and keyword != ''\">"

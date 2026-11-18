@@ -54,28 +54,24 @@ public class RefreshTokenUseCase {
 
     @UseCase
     public TokenPair refresh(RefreshCmd cmd) {
-        UserAccount account = userAccountRepository.findByRefreshToken(cmd.refreshToken())
-                .orElseThrow(() -> new BizException(ErrorCode.REFRESH_TOKEN_INVALID));
         if (logoutTokenRepository.exists(cmd.refreshToken())) {
             throw new BizException(ErrorCode.REFRESH_TOKEN_INVALID); // 已登出/已用
         }
         long now = clock.instant().toEpochMilli();
+        String refreshToken = idGen.next("RT");
+        // 权威一次性轮换：不在存储中的 RT（重放 / 已登出 / 已过期 / 应用重启）一律拒绝。
+        // 先轮换再从数据库回读账号，账号仓储不再保存 refresh_token（进程内 store 仍是 RT 真源）。
+        RefreshTokenStore.Session session = refreshTokenStore.rotate(
+                        cmd.refreshToken(), refreshToken, now + refreshTtlMillis)
+                .orElseThrow(() -> new BizException(ErrorCode.REFRESH_TOKEN_INVALID));
+        UserAccount account = userAccountRepository.findById(session.aud(), session.userId())
+                .orElseThrow(() -> new BizException(ErrorCode.REFRESH_TOKEN_INVALID));
         if (account.isLocked(now)) {
             throw new BizException(ErrorCode.REFRESH_TOKEN_INVALID);
         }
-        String oldRefreshToken = account.getRefreshToken();
-        String refreshToken = idGen.next("RT");
-        // 权威一次性轮换：不在存储中的 RT（重放 / 已登出 / 已过期 / 应用重启）一律拒绝
-        RefreshTokenStore.Session session = refreshTokenStore.rotate(
-                        oldRefreshToken == null ? cmd.refreshToken() : oldRefreshToken,
-                        refreshToken, now + refreshTtlMillis)
-                .orElseThrow(() -> new BizException(ErrorCode.REFRESH_TOKEN_INVALID));
-        if (session.userId() != account.getUserId()) {
-            throw new BizException(ErrorCode.REFRESH_TOKEN_INVALID); // 令牌与账号绑定不一致
-        }
         account.rotateToken(refreshToken);
         userAccountRepository.save(account);
-        logoutTokenRepository.save(new LogoutToken(oldRefreshToken, now)); // 旧 RT 失效
+        logoutTokenRepository.save(new LogoutToken(cmd.refreshToken(), now)); // 旧 RT 失效
         TokenService.Issued issued = tokenService.issueAccess(new TokenService.Claims(
                 session.aud(), account.getUserId(), JWT_TOKEN_VERSION, null));
         return new TokenPair(issued.accessToken(), refreshToken);

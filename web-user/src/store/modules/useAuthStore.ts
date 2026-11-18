@@ -23,7 +23,7 @@ import {
   type TokenVO,
 } from '@/utils/auth';
 import { refreshSingleFlight } from '@/utils/http';
-import { authApi } from '@/api/auth';
+import { authApi, type RegisterPayload, type RegisterVO } from '@/api/auth';
 
 export const useAuthStore = defineStore('sent-user-auth', () => {
   const revision = ref(0);
@@ -57,6 +57,17 @@ export const useAuthStore = defineStore('sent-user-auth', () => {
     return res.data;
   }
 
+  /**
+   * 注册成功后自动登录：后端分配客户号（用户不可见），前端只拿 token。
+   * 注册本身不写登录态，防止「注册成功但登录失败」时留下半个会话。
+   */
+  async function register(payload: RegisterPayload): Promise<RegisterVO> {
+    const res = await authApi.register(payload);
+    if (res.code !== ErrorCode.SUCCESS) throw new Error(res.message || '注册失败');
+    await login(payload.phone, payload.password);
+    return res.data;
+  }
+
   async function refresh(): Promise<string> {
     const token = await refreshSingleFlight();
     touch();
@@ -79,6 +90,6 @@ export const useAuthStore = defineStore('sent-user-auth', () => {
 
   return {
     accessToken, refreshToken, isLoggedIn, userId, aud, deviceId,
-    setToken, clearTokens, login, refresh, logout, logoutToLogin, isExpired,
+    setToken, clearTokens, login, register, refresh, logout, logoutToLogin, isExpired,
   };
 });

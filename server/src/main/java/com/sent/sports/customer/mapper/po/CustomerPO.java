@@ -19,6 +19,8 @@ public class CustomerPO extends BasePO {
     private String phone;
     private String passwordHash;
     private String nickname;
+    /** 头像：文件服务 fileId（V32），只存 ID 不存二进制/URL */
+    private String avatarFileId;
     private String email;
     private String type;
     private String levelCode;
@@ -46,6 +48,43 @@ public class CustomerPO extends BasePO {
 
     @TableField(exist = false)
     private String enterpriseStatus;
+
+    /**
+     * 企业审核材料：同样只由列表 LEFT JOIN {@code enterprise_profile} 带出。
+     * 管理端审核页必须看到企业名称、信用代码与营业执照，否则只能「盲审」。
+     */
+    @TableField(exist = false)
+    private String companyName;
+
+    @TableField(exist = false)
+    private String licenseNo;
+
+    @TableField(exist = false)
+    private String licenseUrl;
+
+    public String getCompanyName() {
+        return companyName;
+    }
+
+    public void setCompanyName(String companyName) {
+        this.companyName = companyName;
+    }
+
+    public String getLicenseNo() {
+        return licenseNo;
+    }
+
+    public void setLicenseNo(String licenseNo) {
+        this.licenseNo = licenseNo;
+    }
+
+    public String getLicenseUrl() {
+        return licenseUrl;
+    }
+
+    public void setLicenseUrl(String licenseUrl) {
+        this.licenseUrl = licenseUrl;
+    }
 
     public Long getCreditLimitCent() {
         return creditLimitCent;
@@ -101,6 +140,14 @@ public class CustomerPO extends BasePO {
 
     public void setNickname(String nickname) {
         this.nickname = nickname;
+    }
+
+    public String getAvatarFileId() {
+        return avatarFileId;
+    }
+
+    public void setAvatarFileId(String avatarFileId) {
+        this.avatarFileId = avatarFileId;
     }
 
     public String getEmail() {

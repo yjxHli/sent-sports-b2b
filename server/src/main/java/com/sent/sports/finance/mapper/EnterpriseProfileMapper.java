@@ -32,6 +32,18 @@ public interface EnterpriseProfileMapper {
             + "WHERE customer_id = #{customerId}")
     int subtractCreditUsed(@Param("customerId") long customerId, @Param("amountCent") long amountCent);
 
+    /** 商城企业注册：新建 PENDING 档案，license_url 只存 fileId（二进制不进 JSON 列）。 */
+    @Insert("INSERT INTO enterprise_profile (customer_id, company_name, license_no, license_url, "
+            + "invoice_title, tax_no, status) "
+            + "VALUES (#{customerId}, #{companyName}, #{creditCode}, #{licenseFileId}, "
+            + "#{invoiceTitle}, #{taxNo}, 'PENDING')")
+    int insertPending(@Param("customerId") long customerId,
+                      @Param("companyName") String companyName,
+                      @Param("creditCode") String creditCode,
+                      @Param("licenseFileId") String licenseFileId,
+                      @Param("invoiceTitle") String invoiceTitle,
+                      @Param("taxNo") String taxNo);
+
     /** 演示数据：为企业客户建档时一并写入授信档案。 */
     @Insert("INSERT INTO enterprise_profile (customer_id, company_name, license_no, invoice_title, tax_no, "
             + "credit_limit_cent, credit_used_cent, payment_term_days, status) "

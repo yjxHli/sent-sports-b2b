@@ -5,9 +5,14 @@ import com.sent.sports.common.error.ErrorCode;
 import com.sent.sports.common.web.CurrentUser;
 import com.sent.sports.common.web.R;
 import com.sent.sports.customer.dto.user.MeVO;
+import com.sent.sports.customer.dto.user.UpdateProfileCmd;
 import com.sent.sports.customer.service.CustomerProfileQueryService;
+import com.sent.sports.customer.service.UpdateProfileUseCase;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestAttribute;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -22,9 +27,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class MeController {
 
     private final CustomerProfileQueryService profileQueryService;
+    private final UpdateProfileUseCase updateProfileUseCase;
 
-    public MeController(CustomerProfileQueryService profileQueryService) {
+    public MeController(CustomerProfileQueryService profileQueryService,
+                        UpdateProfileUseCase updateProfileUseCase) {
         this.profileQueryService = profileQueryService;
+        this.updateProfileUseCase = updateProfileUseCase;
     }
 
     @GetMapping
@@ -33,5 +41,15 @@ public class MeController {
             throw new BizException(ErrorCode.UNAUTHENTICATED);
         }
         return R.ok(profileQueryService.profile(user.userId()));
+    }
+
+    /** 编辑昵称 / 头像（2026-11-17）：身份只认令牌里的 user.userId，不信请求体里的客户号。 */
+    @PutMapping("/profile")
+    public R<MeVO> update(@Valid @RequestBody UpdateProfileCmd cmd,
+                          @RequestAttribute(value = CurrentUser.ATTR, required = false) CurrentUser user) {
+        if (user == null || !CurrentUser.AUD_USER.equals(user.aud())) {
+            throw new BizException(ErrorCode.UNAUTHENTICATED);
+        }
+        return R.ok(updateProfileUseCase.update(user.userId(), cmd.nickname(), cmd.avatarFileId()));
     }
 }

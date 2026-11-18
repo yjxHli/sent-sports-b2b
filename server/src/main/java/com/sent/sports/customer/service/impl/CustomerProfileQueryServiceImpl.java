@@ -31,6 +31,7 @@ public class CustomerProfileQueryServiceImpl implements CustomerProfileQueryServ
                 po.getId(),
                 po.getCustomerNo(),
                 po.getNickname(),
+                po.getAvatarFileId(),
                 po.getPhone(),
                 po.getEmail(),
                 po.getType(),

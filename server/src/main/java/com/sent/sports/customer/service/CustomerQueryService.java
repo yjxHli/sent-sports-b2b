@@ -17,4 +17,7 @@ public interface CustomerQueryService {
 
     /** 客户详情：订单/售后/会话/应收四 Tab 上下文。 */
     Object detail(long customerId);
+
+    /** 客户类型 PERSON / ENTERPRISE；客户不存在或已软删返回 null。 */
+    String typeOf(long customerId);
 }

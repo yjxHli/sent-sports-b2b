@@ -24,6 +24,31 @@ public final class AuthDtos {
             @NotBlank(message = "刷新令牌不能为空") String refreshToken) {
     }
 
+    /** 注册请求：未注册手机号 + 两次密码（后端校验一致性与格式）。 */
+    public record RegisterCmd(
+            @NotBlank(message = "手机号不能为空") String phone,
+            @NotBlank(message = "密码不能为空") String password,
+            @NotBlank(message = "请再次输入密码") String confirmPassword) {
+    }
+
+    /** 企业注册请求：账号密码 + 企业资质；验证码暂不启用，营业执照传 fileId。 */
+    public record EnterpriseRegisterCmd(
+            @NotBlank(message = "手机号不能为空") String phone,
+            @NotBlank(message = "密码不能为空") String password,
+            @NotBlank(message = "请再次输入密码") String confirmPassword,
+            @NotBlank(message = "企业名称不能为空") String companyName,
+            @NotBlank(message = "统一社会信用代码不能为空") String creditCode,
+            @NotBlank(message = "请上传营业执照") String licenseFileId) {
+    }
+
+    /** 注册结果：只回业务身份，令牌由前端随后走标准登录链路获取。 */
+    public record RegisterVO(long customerId, String phone, String nickname, String customerNo) {
+    }
+
+    /** 企业注册结果：不签发令牌，必须等管理端审核通过后才能登录。 */
+    public record EnterpriseRegisterVO(String phone, String nickname, String auditStatus) {
+    }
+
     /** 令牌响应：双令牌 + 访问令牌有效期（秒）。 */
     public record TokenVO(String accessToken, String refreshToken, long expiresIn) {
     }

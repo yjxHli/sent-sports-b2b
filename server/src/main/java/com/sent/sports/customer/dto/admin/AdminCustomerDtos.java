@@ -57,14 +57,25 @@ public final class AdminCustomerDtos {
     public record CustomerRow(long customerId, String customerNo, String name, String phone,
                               String type, String level, Long ownerStaffId, Long creditLimitCent,
                               long growthValue, long pointsBalance, long createdAt,
-                              Long creditUsedCent, String enterpriseStatus) {
+                              Long creditUsedCent, String enterpriseStatus,
+                              String companyName, String licenseNo, String licenseUrl) {
 
         /** 兼容旧调用方（不含企业授信列）的构造入口。 */
         public CustomerRow(long customerId, String customerNo, String name, String phone,
                            String type, String level, Long ownerStaffId, Long creditLimitCent,
                            long growthValue, long pointsBalance, long createdAt) {
             this(customerId, customerNo, name, phone, type, level, ownerStaffId, creditLimitCent,
-                    growthValue, pointsBalance, createdAt, null, null);
+                    growthValue, pointsBalance, createdAt, null, null, null, null, null);
+        }
+
+        /** 兼容只带授信列的调用方（企业审核材料为空）。 */
+        public CustomerRow(long customerId, String customerNo, String name, String phone,
+                           String type, String level, Long ownerStaffId, Long creditLimitCent,
+                           long growthValue, long pointsBalance, long createdAt,
+                           Long creditUsedCent, String enterpriseStatus) {
+            this(customerId, customerNo, name, phone, type, level, ownerStaffId, creditLimitCent,
+                    growthValue, pointsBalance, createdAt, creditUsedCent, enterpriseStatus,
+                    null, null, null);
         }
     }
 

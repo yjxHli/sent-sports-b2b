@@ -7,6 +7,7 @@ package com.sent.sports.customer.dto.user;
  * @param customerId    客户主键（即登录令牌中的 userId）
  * @param customerNo    客户编号
  * @param nickname      昵称
+ * @param avatarFileId  头像 fileId（V32；null 表示未上传，前端用昵称首字兜底）
  * @param phone         手机号
  * @param email         邮箱
  * @param type          客户类型（PERSON / ENTERPRISE）
@@ -15,6 +16,7 @@ package com.sent.sports.customer.dto.user;
  * @param pointsBalance 可用积分
  * @param status        账户状态（ACTIVE / DISABLED ...）
  */
-public record MeVO(long customerId, String customerNo, String nickname, String phone, String email,
-                   String type, String levelCode, long growthValue, long pointsBalance, String status) {
+public record MeVO(long customerId, String customerNo, String nickname, String avatarFileId, String phone,
+                   String email, String type, String levelCode, long growthValue, long pointsBalance,
+                   String status) {
 }

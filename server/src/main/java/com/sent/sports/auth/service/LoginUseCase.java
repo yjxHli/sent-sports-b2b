@@ -62,6 +62,11 @@ public class LoginUseCase {
     @UseCase
     public TokenPair login(LoginCmd cmd) {
         UserAccount account = resolveAccount(cmd.username());
+        // 账号与登录端必须匹配：客户手机号/密码不能拿去签 admin 令牌（原内存仓储没有这道校验）。
+        if (!cmd.normalizedAud().equals(account.getAud())) {
+            throw new BizException(ErrorCode.NOT_FOUND);
+        }
+        ensureEnterpriseApproved(account);
         long now = clock.instant().toEpochMilli();
         try {
             account.authenticate(cmd.password(), now);
@@ -80,6 +85,28 @@ public class LoginUseCase {
         TokenService.Issued issued = tokenService.issueAccess(new TokenService.Claims(
                 cmd.normalizedAud(), account.getUserId(), JWT_TOKEN_VERSION, null));
         return new TokenPair(issued.accessToken(), refreshToken);
+    }
+
+    /** 企业账号必须等管理端审核通过才能签令牌；个人客户与员工不受影响。 */
+    private static void ensureEnterpriseApproved(UserAccount account) {
+        if (!UserAccount.AUD_USER.equals(account.getAud())
+                || !"ENTERPRISE".equals(account.getCustomerType())) {
+            return;
+        }
+        String status = account.getEnterpriseStatus();
+        // 历史演示企业档案用 NORMAL 表示审核通过，必须与 ACTIVE 同等放行
+        if ("ACTIVE".equals(status) || "NORMAL".equals(status)) {
+            return;
+        }
+        String reason;
+        if (status == null || status.isBlank()) {
+            reason = "企业账号尚未提交认证资料";
+        } else if ("PENDING".equals(status)) {
+            reason = "企业账号正在审核中，请等待管理端审核";
+        } else {
+            reason = "企业认证未通过或已被驳回，请重新提交资料";
+        }
+        throw new BizException(ErrorCode.BIZ_REJECT, reason);
     }
 
     /**
