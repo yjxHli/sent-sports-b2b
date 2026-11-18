@@ -75,7 +75,7 @@ test('合同管理：可按合同号 / 客户 ID 搜索', async ({ page }) => {
   const before = await totalOf(page);
   expect(before).toBeGreaterThan(1);
 
-  // ① 按合同号搜（第 2 列）
+  // ① 按合同号搜（默认无勾选列 → 合同号第 2 列）
   const contractNos = await cellTexts(page, 2);
   const contractNo = contractNos[0];
   expect(contractNo).toBeTruthy();
@@ -133,7 +133,7 @@ test('退款审核：可按退款单号 / 订单号搜索', async ({ page }) => 
   await page.waitForSelector('.el-table__body-wrapper tbody tr');
   await page.waitForTimeout(1200);
 
-  // ① 退款单号（第 1 列）
+  // ① 退款单号（默认无勾选列 → 业务列第 1 列）
   const refundNos = await cellTexts(page, 1);
   const refundNo = refundNos[0];
   expect(refundNo).toBeTruthy();
@@ -191,6 +191,7 @@ test('定制列表：可按定制单号搜索', async ({ page }) => {
   const before = await totalOf(page);
   expect(before).toBeGreaterThan(1);
 
+  // 默认无勾选列 → 定制单号就是第 1 列
   const customNos = await cellTexts(page, 1);
   const customNo = customNos[0];
   expect(customNo).toBeTruthy();

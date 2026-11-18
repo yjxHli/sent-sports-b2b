@@ -11,11 +11,11 @@
  *   1) 进消息页时顶栏红点 = 3（种子 3 条未读）；
  *   2) 点一条未读 → 顶栏红点变 2、页头「未读 2 条」；
  *   3) 点「全部已读」→ 顶栏红点消失、页头「未读 0 条」；
- *   4) 无 console error。
+ *   4) 收尾把演示账号的收件箱还原（不重灌未读，否则用户会看到「重启又变未读」）；
+ *   5) 无 console error。
  */
-import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
 import { test, expect, type Page } from '@playwright/test';
+import { restoreInbox, snapshotInbox } from './fixtures/inbox';
 
 const USER_URL = process.env.E2E_USER_URL ?? 'http://127.0.0.1:5173';
 const CUSTOMER_PHONE = process.env.E2E_USER_NAME ?? '13800138000';
@@ -23,28 +23,15 @@ const CUSTOMER_PASSWORD = process.env.E2E_USER_PASSWORD ?? '123456';
 
 const NOISE = /Failed to load resource|net::ERR|ERR_NAME_NOT_RESOLVED/i;
 
+/**
+ * 9002 是商城演示账号本身：直接 DELETE + 重灌会让用户看到
+ * 「站内信每次重启又变未读」。统一走快照 → 播种 → 还原（见 fixtures/inbox.ts）。
+ */
 const CUSTOMER_ID = 9002;
-const LOCAL_MYSQL = 'D:/MySQL/MySQL Server 8.0/bin/mysql.exe';
-
-function resolveMysqlBin(): string {
-  const fromEnv = process.env.E2E_MYSQL_BIN;
-  if (fromEnv) return fromEnv;
-  return existsSync(LOCAL_MYSQL) ? LOCAL_MYSQL : 'mysql';
-}
-
-function runSql(sql: string): void {
-  const mysql = resolveMysqlBin();
-  const password = process.env.E2E_DB_PASSWORD ?? '123456';
-  execFileSync(
-    mysql,
-    ['-h127.0.0.1', '-P3306', '-uroot', `-p${password}`, 'sent_dev', '-e', sql],
-    { stdio: 'ignore' },
-  );
-}
 
 /** 固定 3 条未读：红点数字才有确定基准（演示数据被读过一次就再也回不到 3） */
 function resetMessages(): void {
-  runSql(`DELETE FROM user_message WHERE customer_id = ${CUSTOMER_ID};
+  snapshotInbox(CUSTOMER_ID, `DELETE FROM user_message WHERE customer_id = ${CUSTOMER_ID};
 INSERT INTO user_message (customer_id, msg_type, title, content, biz_type, biz_no, read_flag) VALUES
 (${CUSTOMER_ID}, 'ORDER', '订单已发货', '您的订单已由顺丰发出，请注意查收', 'ORDER', NULL, 0),
 (${CUSTOMER_ID}, 'PROMO', '会员日专享优惠', '本月会员日满 300 减 30', 'COUPON', NULL, 0),
@@ -95,4 +82,8 @@ test('顶栏红点跟随「部分已读 / 全部已读」实时变化', async ({
   await expect(page.locator('.msg-item--unread'), '不应再有未读样式').toHaveCount(0);
 
   expect(consoleErrors, `console errors: ${consoleErrors.join(' | ')}`).toHaveLength(0);
+
+  // 4) 收尾必须还原用例开始前的收件箱：这是演示账号的真实收件箱，
+  //    以前「跑完重新灌 3 条未读」正是用户看到「重启又变未读」的根因
+  restoreInbox(CUSTOMER_ID);
 });

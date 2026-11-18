@@ -15,6 +15,7 @@
  *   3) 双方刷新后（走历史接口）图片依然是图片，而不是路径文本。
  */
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
+import { startConsultation } from './chat-helpers';
 import path from 'node:path';
 
 const USER_URL = process.env.E2E_USER_URL ?? 'http://127.0.0.1:5173';
@@ -100,14 +101,20 @@ test('客服双向发图：客户发的图客服看得到，客服发的图客�
   for (const staffId of STAFF_IDS) {
     await apiPost(request, '/admin/chat/presence', { staffId, presence: 'OFFLINE' }, adminToken);
   }
+  // 清「所有」未结束会话：排队栏（/sessions/open）不受分页影响，能捞到 id 最小、落在列表最后一页的
+  // 两条 2026-06 演示会话——服务端启动时 DemoDataGenerator 会把它们重置成 WAITING「待接入」
+  const queue = await apiGet(request, '/admin/chat/sessions/open?staffId=9001', adminToken);
   const listed = await apiGet(request, '/admin/chat/sessions?page=1&size=100', adminToken);
-  for (const row of listed?.data?.list ?? []) {
-    if (Number(row.customerId) === CUSTOMER_ID && row.status !== 'CLOSED') {
+  const openRows: any[] = [...(queue?.data?.waiting ?? []), ...(queue?.data?.active ?? []), ...(listed?.data?.list ?? [])];
+  for (const row of openRows) {
+    if (row.status !== 'CLOSED') {
       await apiPost(request, `/admin/chat/sessions/${row.sessionId}/close`, { reason: 'DONE' }, adminToken);
     }
   }
   const created = await apiPost(request, '/chat/sessions', { customerId: CUSTOMER_ID, vip: false }, userToken);
   const sessionId = Number(created?.data?.sessionId);
+  // 业务口径：首条客户消息才算咨询，工作台只展示已有客户消息的会话
+  await startConsultation(request, sessionId, userToken);
   expect(sessionId, `建会话失败：${JSON.stringify(created)}`).toBeGreaterThan(0);
 
   const userCtx = await browser.newContext({ viewport: { width: 1280, height: 900 } });

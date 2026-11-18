@@ -9,7 +9,7 @@
  *   2) 瓦片「跑步装备」→ /products?keyword=跑步（缓震跑步鞋 在售）
  *   3) 瓦片「健身器材」→ /products?keyword=训练（哑铃/壶铃/弹力带等 在售）
  *   4) 瓦片「球类专场」→ /products?categoryId=1（球类运动分类）
- *   5) 领券中心「立即领取」→ 会员中心 /member
+ *   5) 领券中心「立即领取」→ 领券中心 /coupon/center（上可领券 + 下商品）
  *   6) 大促通栏「立即抢购」→ 全部商品 /products
  *   7) 轮播「立即选购」→ 带明确落点的商品列表（b1 训练装备）
  *   8) 企业采购「查看团购专区」→ 团购专区页 /group-buy（阶梯价/账期/专票 + 批量商品）
@@ -85,16 +85,30 @@ test('首页顶部各模块点击都跳到对应页面', async ({ page }) => {
   await expect.poll(() => queryOf(page, 'categoryId'), { timeout: 15_000 }).toBe('1');
   await expectGoodsLanded(page);
 
-  // 5) 领券中心「立即领取」→ 会员中心（券与权益在这里）
+  // 5) 领券中心「立即领取」→ 独立领券页（上可领券 + 下商品，2026-11-18 改造）；
+  //    金额已按用户口径改小
   await backHome(page);
+  const couponText = await page.locator('.promo-main__cupons').innerText();
+  expect(couponText).toContain('¥5');
+  expect(couponText).toContain('¥10');
+  expect(couponText).toContain('¥50');
+  expect(couponText, '领券中心不能显示旧的大额券面额').not.toContain('¥500');
   await page.locator('.promo-main__btn').first().click();
-  await expect.poll(() => pathOf(page), { timeout: 15_000 }).toBe('/member');
+  await expect.poll(() => pathOf(page), { timeout: 15_000 }).toBe('/coupon/center');
+  await expect(page.getByRole('heading', { name: '领券中心' })).toBeVisible({ timeout: 15_000 });
 
-  // 6) 大促通栏「立即抢购」→ 全部商品
+  // 6) 大促通栏只在周三/周四显示；显示时「立即抢购」→ 全部商品
   await backHome(page);
-  await page.locator('.promo-bar__btn').first().click();
-  await expect.poll(() => pathOf(page), { timeout: 15_000 }).toBe('/products');
-  await expectGoodsLanded(page);
+  const memberDay = [3, 4].includes(new Date().getDay());
+  const promoBar = page.locator('.promo-bar');
+  if (memberDay) {
+    await expect(promoBar).toBeVisible();
+    await promoBar.getByRole('button', { name: '立即抢购' }).click();
+    await expect.poll(() => pathOf(page), { timeout: 15_000 }).toBe('/products');
+    await expectGoodsLanded(page);
+  } else {
+    await expect(promoBar, '非周三/周四不应显示会员日横幅').toHaveCount(0);
+  }
 
   // 7) 轮播「立即选购」→ 带明确落点的商品列表
   await backHome(page);

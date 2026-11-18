@@ -9,6 +9,7 @@
  *      用户端排队条消失（收到 ASSIGNED）
  */
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
+import { startConsultation } from './chat-helpers';
 
 const USER_URL = process.env.E2E_USER_URL ?? 'http://127.0.0.1:5173';
 const ADMIN_URL = process.env.E2E_ADMIN_URL ?? 'http://127.0.0.1:5174/admin/';
@@ -134,11 +135,13 @@ test('并发上限 3 + 排队位置 + 关一个自动补位（多 Tab 上限 3�
     expect(created?.data?.status, `客户 ${customerId} 应被直接分配为 ACTIVE`).toBe('ACTIVE');
     expect(Number(created?.data?.staffId), `客户 ${customerId} 应分配给 9001`).toBe(STAFF_ID);
     activeIds.push(Number(created.data.sessionId));
+    await startConsultation(request, activeIds[activeIds.length - 1], userToken);
   }
 
   // 3) 第 4 位客户 → 排队
   const queued = await apiPost(request, '/chat/sessions', { customerId: QUEUED_CUSTOMER, vip: false }, userToken);
   const queuedSessionId = Number(queued?.data?.sessionId);
+  await startConsultation(request, queuedSessionId, userToken);
   expect(queued?.data?.status, '第 4 位客户应进入排队（WAITING）').toBe('WAITING');
   const queueVo = await apiGet(request, `/chat/sessions/${queuedSessionId}/queue`, userToken);
   expect(queueVo?.data?.status).toBe('WAITING');

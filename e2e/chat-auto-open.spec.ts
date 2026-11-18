@@ -1,0 +1,116 @@
+/**
+ * 客服工作台：第一个用户进线时自动弹出聊天框（TDD 红→绿）。
+ *
+ * 用户诉求（2026-11-16）：客服目前只需要一个 9001；如果是第一个用户进线，
+ * 会直接弹出与用户的聊天框，无需手动点击左侧会话。
+ *
+ * 断言口径：
+ *   1) 把 9001 设为唯一在线坐席（单坐席），客户进线建会话 → ACTIVE 分配 9001；
+ *   2) 客服打开工作台，无需点左侧会话 → 该会话的 Tab 自动打开且为当前激活；
+ *   3) 聊天框（消息输入区）自动就绪，可直接回复；
+ *   4) 全程无 console error。
+ */
+import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
+import { startConsultation } from './chat-helpers';
+
+const USER_URL = process.env.E2E_USER_URL ?? 'http://127.0.0.1:5173';
+const ADMIN_URL = process.env.E2E_ADMIN_URL ?? 'http://127.0.0.1:5174/admin/';
+const API_URL = process.env.E2E_API_URL ?? 'http://127.0.0.1:8088/api';
+const CUSTOMER_PHONE = process.env.E2E_USER_NAME ?? '13800138000';
+const CUSTOMER_PASSWORD = process.env.E2E_USER_PASSWORD ?? '123456';
+const CUSTOMER_ID = Number(process.env.E2E_CUSTOMER_ID ?? 9002);
+const ADMIN_NAME = process.env.E2E_ADMIN_NAME ?? 'admin';
+const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? '123456';
+const STAFF_IDS = [9001, 9003, 9004, 9005, 9006, 9007];
+const NOISE = /Failed to load resource|net::ERR|ERR_NAME_NOT_RESOLVED/i;
+
+const join = (base: string, suffix: string): string =>
+  `${base.replace(/\/+$/, '')}/${suffix.replace(/^\/+/, '')}`;
+
+async function api(request: APIRequestContext, method: 'GET' | 'POST', s: string, d?: unknown, t?: string): Promise<any> {
+  const res = await request.fetch(join(API_URL, s), {
+    method, data: d, headers: t ? { Authorization: `Bearer ${t}` } : {}, failOnStatusCode: false,
+  });
+  return res.json().catch(() => null);
+}
+
+async function loginAdmin(page: Page): Promise<void> {
+  await page.goto(join(ADMIN_URL, '/login'));
+  await page.getByPlaceholder('用户名').fill(ADMIN_NAME);
+  await page.getByPlaceholder('密码').fill(ADMIN_PASSWORD);
+  const resp = page.waitForResponse(
+    (r) => r.url().includes('/api/auth/login') && r.request().method() === 'POST',
+    { timeout: 20_000 },
+  );
+  await page.getByRole('button', { name: '登录' }).click();
+  const body: any = await (await resp).json().catch(() => null);
+  expect(body?.code).toBe(0);
+  await expect(page).toHaveURL(/\/admin\/dashboard/, { timeout: 20_000 });
+}
+
+test('单个用户进线：工作台自动弹出该会话聊天框，无需手动点击', async ({ browser, request }) => {
+  test.setTimeout(180_000);
+  const adminLogin = await api(request, 'POST', '/auth/login', {
+    username: ADMIN_NAME, password: ADMIN_PASSWORD, aud: 'admin', deviceId: `e2e-autoopen-admin-${Date.now()}`,
+  });
+  const adminToken = adminLogin?.data?.accessToken as string;
+  expect(adminToken).toBeTruthy();
+  const userLogin = await api(request, 'POST', '/auth/login', {
+    username: CUSTOMER_PHONE, password: CUSTOMER_PASSWORD, aud: 'user', deviceId: `e2e-autoopen-user-${Date.now()}`,
+  });
+  const userToken = userLogin?.data?.accessToken as string;
+  expect(userToken).toBeTruthy();
+
+  // 清场：全部离线，关掉该客户未结束会话
+  for (const staffId of STAFF_IDS) {
+    await api(request, 'POST', '/admin/chat/presence', { staffId, presence: 'OFFLINE' }, adminToken);
+  }
+  // 清「所有」未结束会话：排队栏（/sessions/open）不受分页影响，能捞到 id 最小、落在列表最后一页的
+  // 两条 2026-06 演示会话——服务端启动时 DemoDataGenerator 会把它们重置成 WAITING「待接入」
+  const queue = await api(request, 'GET', '/admin/chat/sessions/open?staffId=9001', undefined, adminToken);
+  const listed = await api(request, 'GET', '/admin/chat/sessions?page=1&size=100', undefined, adminToken);
+  const openRows: any[] = [...(queue?.data?.waiting ?? []), ...(queue?.data?.active ?? []), ...(listed?.data?.list ?? [])];
+  for (const row of openRows) {
+    if (row.status !== 'CLOSED') {
+      await api(request, 'POST', `/admin/chat/sessions/${row.sessionId}/close`, { reason: 'DONE' }, adminToken);
+    }
+  }
+  // 单坐席：只把 9001 设为在线，客户进线应自动分配给 9001（ACTIVE）
+  await api(request, 'POST', '/admin/chat/presence', { staffId: 9001, presence: 'ONLINE' }, adminToken);
+  const created = await api(request, 'POST', '/chat/sessions', { customerId: CUSTOMER_ID, vip: false }, userToken);
+  const sessionId = Number(created?.data?.sessionId);
+  // 业务口径：首条客户消息才算咨询，工作台只展示已有客户消息的会话
+  await startConsultation(request, sessionId, userToken);
+  expect(sessionId).toBeGreaterThan(0);
+  expect(created?.data?.status, '单坐席在线时新会话应 ACTIVE').toBe('ACTIVE');
+  expect(Number(created?.data?.staffId), '单坐席应分配给 9001').toBe(9001);
+
+  const adminCtx = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
+  const adminPage = await adminCtx.newPage();
+  const errors: string[] = [];
+  adminPage.on('console', (m) => {
+    if (m.type() === 'error' && !NOISE.test(m.text())) errors.push(m.text());
+  });
+
+  try {
+    await loginAdmin(adminPage);
+    await adminPage.goto(join(ADMIN_URL, '/chat/workbench'));
+    await expect(adminPage.locator('.el-tag', { hasText: 'WebSocket 已连接' })).toBeVisible({ timeout: 20_000 });
+
+    // 关键：不点左侧会话，Tab 应自动打开（含该会话号）
+    const tab = adminPage.locator('.el-tabs__item', { hasText: `#${sessionId}` }).first();
+    await expect(tab, '第一个用户进线应自动打开聊天 Tab，无需手动点击').toBeVisible({ timeout: 20_000 });
+    await expect(tab, '自动打开的 Tab 应为当前激活').toHaveClass(/is-active/);
+
+    // 聊天框就绪：消息输入区可见，右侧顾客历史订单侧栏也跟着该客户加载
+    await expect(adminPage.getByPlaceholder('输入消息后回车发送'), '聊天输入框应自动就绪').toBeVisible({ timeout: 15_000 });
+    await expect(adminPage.locator('.cust-orders'), '顾客历史订单侧栏应可见').toBeVisible({ timeout: 15_000 });
+
+    expect(errors, `console errors: ${errors.join(' | ')}`).toHaveLength(0);
+  } finally {
+    for (const staffId of STAFF_IDS) {
+      await api(request, 'POST', '/admin/chat/presence', { staffId, presence: 'OFFLINE' }, adminToken);
+    }
+    await adminCtx.close();
+  }
+});

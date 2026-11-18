@@ -13,12 +13,12 @@
  *   5) 结算页内新增地址 → 保存后立刻被选中，并能删除。
  */
 import { test, expect, type Page } from '@playwright/test';
+import { pickSellableSku } from './pick-product';
 
 const USER_URL = (process.env.E2E_USER_URL ?? 'http://127.0.0.1:5173').replace(/\/+$/, '');
 const API_URL = (process.env.E2E_API_URL ?? 'http://127.0.0.1:8088').replace(/\/+$/, '');
 const CUSTOMER_PHONE = process.env.E2E_USER_NAME ?? '13800138000';
 const CUSTOMER_PASSWORD = process.env.E2E_USER_PASSWORD ?? '123456';
-const PRODUCT_ID = process.env.E2E_PRODUCT_ID ?? '1001';
 
 const NOISE = /Failed to load resource|net::ERR|ERR_NAME_NOT_RESOLVED/i;
 
@@ -76,9 +76,11 @@ async function deleteAddress(page: Page, id: number): Promise<void> {
 
 /** 商品页 → 立即购买 → 结算页（并等取价完成，否则提交会弹「订单信息暂不可用」） */
 async function gotoCheckout(page: Page): Promise<void> {
-  await page.goto(`${USER_URL}/product/${PRODUCT_ID}`);
+  // 现场挑有货的规格：写死 1001 会随运行次数被买空（详情页一个可点规格都没有）
+  const picked = await pickSellableSku(page.request, 2);
+  await page.goto(`${USER_URL}/product/${picked.productId}`);
   const firstSku = page.locator('.spec-item:not(.disabled)').first();
-  await expect(firstSku, '商品页应有可售规格').toBeVisible({ timeout: 20_000 });
+  await expect(firstSku, `商品 ${picked.productId} 应有可售规格`).toBeVisible({ timeout: 20_000 });
   await firstSku.click();
   await page.locator('.buy-btn--now').click();
   await expect(page).toHaveURL(/\/checkout/, { timeout: 20_000 });

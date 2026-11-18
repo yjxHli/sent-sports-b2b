@@ -71,7 +71,8 @@ test('已完成订单：淘宝式按钮齐备，交易快照与打印都能用',
   await expect(snap).toBeVisible({ timeout: 15_000 });
   await expect(snap.locator('.od-snap__table tbody tr').first(), '快照要有商品行').toBeVisible();
   await expect(snap).toContainText('实付');
-  await snap.getByRole('button', { name: '关闭' }).click();
+  // 中文 locale 后弹窗右上角的 X 也叫「关闭此对话框」，用 exact 锁定底部「关闭」按钮
+  await snap.getByRole('button', { name: '关闭', exact: true }).click();
   await expect(snap).toBeHidden({ timeout: 10_000 });
 
   // 打印：打桩 window.print，只验证按钮真的调到了它

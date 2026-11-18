@@ -54,6 +54,7 @@ test('合同剩余天数按真实系统日期显示，不再是 --', async ({ pa
   const rowCount = await rows.count();
   expect(rowCount).toBeGreaterThan(0);
 
+  // 默认无勾选列 → 到期日第 6 列、剩余天数第 7 列
   const dueDates = await rows.locator('td:nth-child(6)').allInnerTexts();
   const remainings = await rows.locator('td:nth-child(7)').allInnerTexts();
   console.log('到期日首行:', dueDates[0], '| 剩余天数首行:', remainings[0]);
@@ -167,6 +168,7 @@ test('发票可预览真实 PDF，并真的下载成 %PDF 文件', async ({ page
   await page.waitForTimeout(1000);
 
   const firstRow = page.locator('.el-table__body tbody tr').first();
+  // 默认无勾选列 → 发票号第 2 列（第 1 列是发票 ID）
   const invoiceNo = (await firstRow.locator('td').nth(1).innerText()).trim();
   console.log('预览发票:', invoiceNo);
 

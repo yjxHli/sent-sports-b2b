@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 
 /**
  * 发票搜索 + 系统三页真数据（TDD 红→绿）。
@@ -15,6 +15,38 @@ import { test, expect, type Page } from '@playwright/test';
  * - 业务参数至少能读到种子参数，且编辑保存后回读一致。
  */
 const ADMIN_URL = process.env.E2E_ADMIN_URL ?? 'http://127.0.0.1:5174/admin/';
+const API_URL = (process.env.E2E_API_URL ?? 'http://127.0.0.1:8088/api').replace(/\/+$/, '');
+
+/**
+ * 演示库最新一批开票申请常常全是「待开票」（invoice_no 为 NULL），
+ * 用例靠首屏碰运气找发票号就会假红。这里现场把一条待开票申请真正开出来，
+ * 让「按发票号搜索」始终有数据可搜（不新增申请行，只把已有行开具）。
+ */
+async function ensureIssuedInvoice(request: APIRequestContext): Promise<void> {
+  const loginRes = await request.fetch(`${API_URL}/auth/login`, {
+    method: 'POST',
+    data: {
+      username: 'admin', password: '123456', aud: 'admin',
+      deviceId: `e2e-invoice-${Date.now()}`,
+    },
+    failOnStatusCode: false,
+  });
+  const token = (await loginRes.json().catch(() => null))?.data?.accessToken as string;
+  if (!token) return;
+  const headers = { Authorization: `Bearer ${token}` };
+  const listed = await request.fetch(`${API_URL}/admin/invoices?page=1&size=20`, {
+    headers, failOnStatusCode: false,
+  });
+  const list = (await listed.json().catch(() => null))?.data?.list ?? [];
+  const applied = list.find((r: any) => !r.invoiceNo);
+  if (!applied) return;
+  await request.fetch(`${API_URL}/admin/invoices/${applied.invoiceId}/issue`, {
+    method: 'POST',
+    headers,
+    data: { pdfUrl: '', remark: 'E2E 前置：现场开具一张发票' },
+    failOnStatusCode: false,
+  });
+}
 
 async function login(page: Page): Promise<void> {
   await page.goto(ADMIN_URL + 'login');
@@ -64,8 +96,9 @@ async function search(page: Page, placeholder: string, value: string, apiPath: s
 /* 1. 发票管理搜索                                                      */
 /* ------------------------------------------------------------------ */
 
-test('发票管理：可按发票 ID / 发票号 / 客户 ID 搜索', async ({ page }) => {
+test('发票管理：可按发票 ID / 发票号 / 客户 ID 搜索', async ({ page, request }) => {
   await login(page);
+  await ensureIssuedInvoice(request);
   await page.goto(ADMIN_URL + 'finance/invoice');
   await page.waitForSelector('.el-table__body-wrapper tbody tr');
   await page.waitForTimeout(1200);
@@ -76,7 +109,7 @@ test('发票管理：可按发票 ID / 发票号 / 客户 ID 搜索', async ({ p
   const before = await totalOf(page);
   expect(before).toBeGreaterThan(0);
 
-  // ① 发票号（第 2 列）
+  // ① 发票号（默认无勾选列 → 第 2 列）
   // 待开票（APPLIED）的行还没有发票号，表格渲染成占位符「-」；
   // 挑一个真实发票号来搜，占位符本身不能作为关键字（单个「-」会命中所有 INV-x）。
   const invoiceNos = await cellTexts(page, 2);

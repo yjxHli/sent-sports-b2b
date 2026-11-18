@@ -36,6 +36,7 @@ import {
   type Page,
 } from '@playwright/test';
 import path from 'node:path';
+import { clearOpenSessions } from './chat-helpers';
 
 const USER_URL = process.env.E2E_USER_URL ?? 'http://127.0.0.1:5173';
 const ADMIN_URL = process.env.E2E_ADMIN_URL ?? 'http://127.0.0.1:5174/admin/';
@@ -43,6 +44,7 @@ const API_URL = process.env.E2E_API_URL ?? 'http://127.0.0.1:8088/api';
 
 const CFG = {
   user: { phone: process.env.E2E_USER_NAME ?? '13800138000', password: process.env.E2E_USER_PASSWORD ?? '123456' },
+  admin: { username: process.env.E2E_ADMIN_NAME ?? 'admin', password: process.env.E2E_ADMIN_PASSWORD ?? '123456' },
   service: { username: process.env.E2E_SERVICE_NAME ?? 'service', password: process.env.E2E_SERVICE_PASSWORD ?? '123456' },
   warehouse: { username: process.env.E2E_WAREHOUSE_NAME ?? 'warehouse', password: process.env.E2E_WAREHOUSE_PASSWORD ?? '123456' },
   finance: { username: process.env.E2E_FINANCE_NAME ?? 'finance', password: process.env.E2E_FINANCE_PASSWORD ?? '123456' },
@@ -92,6 +94,36 @@ async function apiGet(request: APIRequestContext, path: string, token?: string):
     failOnStatusCode: false,
   });
   return res.json().catch(() => null);
+}
+
+/**
+ * 现场挑一个「有货且够定制起订量」的规格。
+ *
+ * <p>写死 `E2E_PRODUCT_ID=1001 / E2E_CUSTOM_SKU_ID=9102` 会随运行次数变成假红：演示库存会被
+ * 本套 E2E 自己买空（1001 的两个规格 physical/locked 已经同归于尽，可售 0），
+ * 之后每次跑都死在「库存不足」上。改成按库存现场挑，用例就不再依赖演示数据残量。</p>
+ */
+async function pickCustomSku(
+  request: APIRequestContext,
+  token: string,
+  need: number,
+): Promise<{ productId: string; skuId: string; spec: string } | null> {
+  if (process.env.E2E_PRODUCT_ID && process.env.E2E_CUSTOM_SKU_ID) {
+    const detail = await apiGet(request, `/products/${CFG.productId}`, token);
+    const fixed = (detail?.data?.skus ?? []).find((s: any) => String(s.skuId) === String(CFG.customSkuId));
+    if (fixed) return { productId: String(CFG.productId), skuId: String(fixed.skuId), spec: String(fixed.spec) };
+  }
+  const list = await apiGet(request, '/products?page=1&size=20', token);
+  for (const product of list?.data?.list ?? []) {
+    const detail = await apiGet(request, `/products/${product.productId}`, token);
+    const hit = (detail?.data?.skus ?? []).find(
+      (s: any) => s.onShelf !== false && Number(s.stockQty) >= need,
+    );
+    if (hit) {
+      return { productId: String(product.productId), skuId: String(hit.skuId), spec: String(hit.spec) };
+    }
+  }
+  return null;
 }
 
 async function apiPost(
@@ -200,6 +232,7 @@ test('全链路多角色终极验收：用户下单 → 客服实时会话 → �
   const financePage = await financeCtx.newPage();
 
   let userToken = '';
+  let adminToken = '';
   let serviceToken = '';
   let financeToken = '';
   let orderNo = '';
@@ -208,22 +241,28 @@ test('全链路多角色终极验收：用户下单 → 客服实时会话 → �
   let sessionId = 0;
   let customNo = '';
   const beforeCustomIds = new Set<string>();
+  /** 本次实际选中的规格（现场按可售库存挑，不再写死 9102；发货工作台断言要用它） */
+  let pickedSkuId = String(CFG.customSkuId);
 
   try {
     // =====================================================================
     // 0 · 前置自检：四角色 API 登录（失败时直接给出清晰原因）
     // =====================================================================
-    await test.step('前置自检：四个角色均可登录', async () => {
-      const [u, s, w, f] = await Promise.all([
+    await test.step('前置自检：五个角色均可登录', async () => {
+      const [u, a, s, w, f] = await Promise.all([
         apiLogin(request, CFG.user.phone, CFG.user.password, 'user'),
+        apiLogin(request, CFG.admin.username, CFG.admin.password, 'admin'),
         apiLogin(request, CFG.service.username, CFG.service.password, 'admin'),
         apiLogin(request, CFG.warehouse.username, CFG.warehouse.password, 'admin'),
         apiLogin(request, CFG.finance.username, CFG.finance.password, 'admin'),
       ]);
       expect(u.code, `用户端登录：${JSON.stringify(u.body)}`).toBe(0);
+      expect(a.code, `超管登录：${JSON.stringify(a.body)}`).toBe(0);
       expect(s.code, `客服登录（V13 种子）：${JSON.stringify(s.body)}`).toBe(0);
       expect(w.code, `仓管登录（V14 种子）：${JSON.stringify(w.body)}`).toBe(0);
       expect(f.code, `财务登录（V14 种子）：${JSON.stringify(f.body)}`).toBe(0);
+      adminToken = String(a.token ?? '');
+      expect(adminToken, '超管令牌用于清理历史未结束会话').toBeTruthy();
     });
 
     // =====================================================================
@@ -242,12 +281,12 @@ test('全链路多角色终极验收：用户下单 → 客服实时会话 → �
     });
 
     await test.step('用户：商品详情选择 UV 定制规格并加购', async () => {
-      const detail = await apiGet(request, `/products/${CFG.productId}`, userToken);
-      const sku = (detail?.data?.skus ?? []).find((s: any) => String(s.skuId) === String(CFG.customSkuId));
-      expect(sku, `商品 ${CFG.productId} 应包含 UV 定制 SKU ${CFG.customSkuId}`).toBeTruthy();
-
-      await userPage.goto(join(USER_URL, `/product/${CFG.productId}`));
-      await userPage.locator('.spec-item').filter({ hasText: sku.spec }).first().click();
+      // 定制 30 件起订：先找可售 ≥30 的规格，避免演示库存被买空后假红
+      const picked = await pickCustomSku(request, userToken, 30);
+      expect(picked, '演示库里应有可售 ≥30 的规格（定制 30 件起订）').toBeTruthy();
+      pickedSkuId = picked!.skuId;
+      await userPage.goto(join(USER_URL, `/product/${picked!.productId}`));
+      await userPage.locator('.spec-item').filter({ hasText: picked!.spec }).first().click();
       await userPage.getByRole('button', { name: '加入购物车' }).click();
       await expect(userPage.getByText('已加入购物车'), '加入购物车应成功').toBeVisible({ timeout: 15_000 });
     });
@@ -310,16 +349,28 @@ test('全链路多角色终极验收：用户下单 → 客服实时会话 → �
     // =====================================================================
     // 2 · 用户打开客服会话（建立 WAITING 会话 + 连接 WS）
     // =====================================================================
-    await test.step('用户：点击「联系客服」建立会话并连接 WebSocket', async () => {
-      const createResp = userPage.waitForResponse(
-        (r) => /\/api\/chat\/sessions$/.test(new URL(r.url()).pathname) && r.request().method() === 'POST',
-        { timeout: 20_000 },
-      );
+    await test.step('用户：进入客服页并发出首条消息（首条消息才建立会话）', async () => {
+      // 老口径下进页面就会 POST 建会话；现在只查 current。先清掉历史未结束会话，
+      // 保证 current 拿到的就是本次咨询，而不是上一次 E2E 留下的 ACTIVE/WAITING。
+      await clearOpenSessions(request, adminToken);
+
       await userPage.getByRole('link', { name: '在线客服' }).first().click();
-      const body: any = await (await createResp).json().catch(() => null);
-      sessionId = Number(body?.data?.sessionId ?? 0);
-      expect(sessionId, `创建客服会话失败：${JSON.stringify(body)}`).toBeGreaterThan(0);
-      // 「在线」= WS 已连接（useChatSession.start 在建会话后 connect）
+      // 进入页面只查不建：这里必须真的发一句话，客服工作台才看得到该会话
+      const box = userPage.getByPlaceholder('请输入想咨询的问题');
+      await expect(box).toBeEnabled({ timeout: 20_000 });
+      await box.fill(MSG_USER);
+      await box.press('Enter');
+
+      // 会话由首条消息触发创建，不能再等 POST /chat/sessions；改从 current 轮询读取。
+      const deadline = Date.now() + 20_000;
+      while (Date.now() < deadline) {
+        const body = await apiGet(request, `/chat/sessions/current?customerId=${CFG.customerId}`, userToken);
+        sessionId = Number(body?.data?.sessionId ?? 0);
+        if (sessionId > 0) break;
+        await new Promise((r) => setTimeout(r, 300));
+      }
+      expect(sessionId, '发出首条客户消息后，current 应能查到本次会话').toBeGreaterThan(0);
+      // 「在线」= WS 已连接（useChatSession.start 查询当前会话后 connect）
       await expect(userPage.locator('.chat-state--on'), '用户端 WS 应处于在线状态').toBeVisible({ timeout: 20_000 });
     });
 
@@ -526,7 +577,7 @@ test('全链路多角色终极验收：用户下单 → 客服实时会话 → �
       // 且该单的定制件已在上一步标记完工，默认即为勾选可发；不再手填 skuId=1 的占位数字框。
       const line = warehousePage.locator('.ship-line').first();
       await expect(line, '选中订单后应自动带出真实商品行').toBeVisible({ timeout: 20_000 });
-      await expect(line).toContainText(String(CFG.customSkuId));
+      await expect(line).toContainText(pickedSkuId);
       await expect(line.locator('.el-checkbox'), '已完工定制行应默认勾选')
         .toHaveClass(/is-checked/, { timeout: 15_000 });
 

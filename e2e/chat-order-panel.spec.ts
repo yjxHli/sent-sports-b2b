@@ -13,6 +13,7 @@
  *   6) 无 console error。
  */
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
+import { startConsultation } from './chat-helpers';
 
 const USER_URL = process.env.E2E_USER_URL ?? 'http://127.0.0.1:5173';
 const ADMIN_URL = process.env.E2E_ADMIN_URL ?? 'http://127.0.0.1:5174/admin/';
@@ -96,14 +97,20 @@ test('客服咨询可把订单发给客服，客服侧还能看到顾客历史�
   for (const staffId of STAFF_IDS) {
     await apiPost(request, '/admin/chat/presence', { staffId, presence: 'OFFLINE' }, adminToken);
   }
+  // 清「所有」未结束会话：排队栏（/sessions/open）不受分页影响，能捞到 id 最小、落在列表最后一页的
+  // 两条 2026-06 演示会话——服务端启动时 DemoDataGenerator 会把它们重置成 WAITING「待接入」
+  const queue = await apiGet(request, '/admin/chat/sessions/open?staffId=9001', adminToken);
   const listed = await apiGet(request, '/admin/chat/sessions?page=1&size=100', adminToken);
-  for (const row of listed?.data?.list ?? []) {
-    if (Number(row.customerId) === CUSTOMER_ID && row.status !== 'CLOSED') {
+  const openRows: any[] = [...(queue?.data?.waiting ?? []), ...(queue?.data?.active ?? []), ...(listed?.data?.list ?? [])];
+  for (const row of openRows) {
+    if (row.status !== 'CLOSED') {
       await apiPost(request, `/admin/chat/sessions/${row.sessionId}/close`, { reason: 'DONE' }, adminToken);
     }
   }
   const created = await apiPost(request, '/chat/sessions', { customerId: CUSTOMER_ID, vip: false }, userToken);
   const sessionId = Number(created?.data?.sessionId);
+  // 业务口径：首条客户消息才算咨询，工作台只展示已有客户消息的会话
+  await startConsultation(request, sessionId, userToken);
   expect(sessionId, `建会话失败：${JSON.stringify(created)}`).toBeGreaterThan(0);
 
   const userCtx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -163,6 +170,8 @@ test('客服咨询可把订单发给客服，客服侧还能看到顾客历史�
     ).toBeVisible({ timeout: 10_000 });
 
     // 顾客历史订单侧栏：跟着当前 Tab 的客户走
+    // 用户要求：历史订单默认收起，先点开再断言
+    await adminPage.getByTestId('orders-toggle').click();
     const custOrders = adminPage.locator('.cust-orders');
     await expect(custOrders, '聊天界面旁边应弹出顾客历史订单').toBeVisible({ timeout: 15_000 });
     await expect(

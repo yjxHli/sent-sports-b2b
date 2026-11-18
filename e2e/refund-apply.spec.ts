@@ -31,7 +31,6 @@ const CUSTOMER_PHONE = process.env.E2E_USER_NAME ?? '13800138000';
 const CUSTOMER_PASSWORD = process.env.E2E_USER_PASSWORD ?? '123456';
 const ADMIN_NAME = process.env.E2E_ADMIN_NAME ?? 'admin';
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? '123456';
-const PRODUCT_ID = process.env.E2E_PRODUCT_ID ?? '1001';
 
 /** 测试素材：e2e/fixtures 下的真实 PNG（Playwright 以 CJS 运行，__dirname 可用） */
 const PROOF_IMAGE = path.join(__dirname, 'fixtures', 'proof.png');
@@ -56,6 +55,27 @@ async function apiGet(request: APIRequestContext, suffix: string, token?: string
     failOnStatusCode: false,
   });
   return res.json().catch(() => null);
+}
+
+/**
+ * 现场挑一个「有货」的商品：退款用例要先真下一单，写死 `PRODUCT_ID=1001` 会随运行次数变成假红
+ * ——演示库存会被本套 E2E 自己买空（1001 的两个规格现在可售 0），那时连规格都点不出来。
+ */
+async function pickSellableProduct(
+  request: APIRequestContext,
+  need = 2,
+): Promise<{ productId: string; spec: string }> {
+  const override = process.env.E2E_PRODUCT_ID;
+  if (override) return { productId: override, spec: '' };
+  const list = await apiGet(request, '/products?page=1&size=20');
+  for (const product of list?.data?.list ?? []) {
+    const detail = await apiGet(request, `/products/${product.productId}`);
+    const hit = (detail?.data?.skus ?? []).find(
+      (s: any) => s.onShelf !== false && Number(s.stockQty) >= need,
+    );
+    if (hit) return { productId: String(product.productId), spec: String(hit.spec) };
+  }
+  throw new Error('演示库里没有可售规格，无法下单（先补演示库存或设 E2E_PRODUCT_ID）');
 }
 
 async function loginUser(page: Page): Promise<void> {
@@ -113,9 +133,10 @@ test('申请退款：带凭证图片提交、审核端可见、驳回后收到�
   await loginUser(page);
 
   // 1) 造一笔已支付的订单（商品页 → 立即购买 → 结算页提交并支付）
-  await page.goto(`${USER_URL.replace(/\/+$/, '')}/product/${PRODUCT_ID}`);
+  const picked = await pickSellableProduct(request);
+  await page.goto(`${USER_URL.replace(/\/+$/, '')}/product/${picked.productId}`);
   const firstSku = page.locator('.spec-item:not(.disabled)').first();
-  await expect(firstSku, '商品页应有可售规格').toBeVisible({ timeout: 20_000 });
+  await expect(firstSku, `商品 ${picked.productId} 应有可售规格`).toBeVisible({ timeout: 20_000 });
   await firstSku.click();
   await page.locator('.buy-btn--now').click();
   await expect(page).toHaveURL(/\/checkout/, { timeout: 20_000 });

@@ -29,6 +29,7 @@
 import path from 'node:path';
 import { test, expect, type APIRequestContext, type BrowserContext, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
+import { pickSellableSku } from './pick-product';
 
 const USER_URL = process.env.E2E_USER_URL ?? 'http://127.0.0.1:5173';
 const ADMIN_URL = process.env.E2E_ADMIN_URL ?? 'http://127.0.0.1:5174/admin/';
@@ -239,11 +240,36 @@ test('01 核心链路：用户登录下单支付 → 仓管发货 → 用户确�
         Object.entries(localStorage).find(([k]) => k.includes('access_token'))?.[1] ?? null);
       expect(token, '登录后本地应持有 access token').toBeTruthy();
       expect(token?.split('.').length, 'access token 必须是 3 段 JWT').toBe(3);
+
+      // 首屏会先渲染「森特会员」兜底，/api/me 回来后才替换成真昵称。
+      // 必须先等页面自己的资料请求完成，否则断言会撞上未加载态（曾导致全量 E2E 假红）。
+      const pageMeResp = userPage.waitForResponse(
+        (r) => new URL(r.url()).pathname === '/api/me' && r.request().method() === 'GET',
+        { timeout: 15_000 },
+      );
       await userPage.goto(join(USER_URL, '/mine'));
+      const pageMe: any = await (await pageMeResp).json().catch(() => null);
+      expect(pageMe?.code, `页面 GET /api/me 失败：${JSON.stringify(pageMe)}`).toBe(0);
+
+      // 昵称不能写死：改昵称功能上线后，演示账号随时会被改成别的名字。
+      // 改为「页面昵称 == /api/me 昵称」，既证明 AuthFilter 注入了 sub，又不会被改名打红。
+      const nameEl = userPage.locator('.profile-name').first();
       await expect(
-        userPage.getByText('验收客户'),
+        nameEl,
         '个人中心昵称来自 GET /api/me，证明 AuthFilter 已把 JWT sub 正确注入供 Controller 使用',
       ).toBeVisible({ timeout: 15_000 });
+      await expect(
+        nameEl,
+        '个人中心落到了「森特会员」兜底文案：说明 /api/me 没取到昵称',
+      ).not.toContainText('森特会员', { timeout: 15_000 });
+      const meRes = await request.get(join(API_URL, '/me'), {
+        headers: { Authorization: `Bearer ${String(token).replace(/^"|"$/g, '')}` },
+        failOnStatusCode: false,
+      });
+      const me: any = await meRes.json().catch(() => null);
+      const nickname = String(me?.data?.nickname ?? '').trim();
+      expect(nickname, `/api/me 应返回昵称：${JSON.stringify(me)}`).toBeTruthy();
+      await expect(nameEl, '页面昵称应与 /api/me 一致').toContainText(nickname);
       await userPage.screenshot({ path: 'screenshots/01-user-auth-me.png', fullPage: true });
     });
 
@@ -251,7 +277,10 @@ test('01 核心链路：用户登录下单支付 → 仓管发货 → 用户确�
     // 2) 浏览商品 → 立即购买 → 结算 → 点击支付
     // ------------------------------------------------------------------
     await test.step('用户端：选规格并立即购买', async () => {
-      await userPage.goto(join(USER_URL, `/product/${CFG.productId}`));
+      // 现场挑有货的规格：演示库存会被本套用例买空，写死 1001 到期就是「一个规格都点不出来」
+      const picked = await pickSellableSku(request, 1);
+      await userPage.goto(join(USER_URL, `/product/${picked.productId}`));
+      await userPage.locator('.spec-item').filter({ hasText: picked.spec }).first().click();
       const buyNow = userPage.getByRole('button', { name: '立即购买' });
       await expect(
         buyNow,
@@ -382,7 +411,9 @@ test('01 核心链路：用户登录下单支付 → 仓管发货 → 用户确�
       // 这里断言「带出的是某个真实 SKU 行」，本单归属已由上面的 orderNo 过滤保证。
       const shipLine = adminPage.locator('.ship-line').first();
       await expect(shipLine, '选中订单后应自动带出商品行').toBeVisible({ timeout: 20_000 });
-      await expect(shipLine, '发货行应带出真实 SKU 编号').toContainText(/SKU-?\d+/);
+      // 发货行文案是「SKU {skuId}」（空格分隔）；历史上部分商品名自带 "SKU-9101"，
+      // 旧断言只认连字符版本，换成不带前缀的商品就假红。
+      await expect(shipLine, '发货行应带出真实 SKU 编号').toContainText(/SKU\s*-?\s*\d+/);
       await expect(shipLine.locator('.el-checkbox'), '可发行应默认勾选')
         .toHaveClass(/is-checked/, { timeout: 15_000 });
 
@@ -476,12 +507,11 @@ test('02 定制图稿链路：UV 定制下单 → 驳回 → 重传 → 审图�
     // 2) 选 UV 定制规格 → 立即购买 → 勾选「含 UV 定制件」→ 提交订单并支付
     // ------------------------------------------------------------------
     await test.step('用户端：创建一条包含 UV 定制件的订单', async () => {
-      await userPage.goto(join(USER_URL, `/product/${CFG.productId}`));
-      // 商品详情的规格按钮文案是「SKU-9102」（旧版的 .sku-item 容器已不存在）
-      const uvSku = userPage
-        .getByRole('button', { name: new RegExp(`SKU-${CFG.customSkuId}`) })
-        .first();
-      await expect(uvSku, `[验收缺口] 商品详情未列出 UV 定制 SKU ${CFG.customSkuId}`).toBeVisible();
+      // 定制 30 件起订：现场挑可售 ≥30 的规格（写死 9102 早已被买空）
+      const picked = await pickSellableSku(request, 30, userToken);
+      await userPage.goto(join(USER_URL, `/product/${picked.productId}`));
+      const uvSku = userPage.locator('.spec-item').filter({ hasText: picked.spec }).first();
+      await expect(uvSku, `[验收缺口] 商品 ${picked.productId} 未列出规格「${picked.spec}」`).toBeVisible();
       await uvSku.click();
       await userPage.getByRole('button', { name: '立即购买' }).click();
       await expect(userPage).toHaveURL(/\/checkout/);

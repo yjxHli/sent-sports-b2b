@@ -8,12 +8,11 @@
  *   1) 顶栏「消息」指向 /messages，顶栏「在线客服」指向 /chat，两者不同；
  *   2) 消息页有列表、类型筛选（全部/订单/优惠/系统）；
  *   3) 点一条未读 → 该条变已读（列表样式与未读计数同步）；
- *   4) 「全部已读」后未读数归零；
+ *   4) 「全部已读」后未读数归零，且**刷新页面后仍是已读**（落库，不是本地状态）；
  *   5) 无 console error。
  */
-import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
 import { test, expect, type Page } from '@playwright/test';
+import { restoreInbox, snapshotInbox } from './fixtures/inbox';
 
 const USER_URL = process.env.E2E_USER_URL ?? 'http://127.0.0.1:5173';
 const CUSTOMER_PHONE = process.env.E2E_USER_NAME ?? '13800138000';
@@ -22,30 +21,14 @@ const CUSTOMER_PASSWORD = process.env.E2E_USER_PASSWORD ?? '123456';
 const NOISE = /Failed to load resource|net::ERR|ERR_NAME_NOT_RESOLVED/i;
 
 /**
- * 演示站内信（V25 灌的 6 条）只会被「已读」消耗掉：第一次跑完再看全是已读，
+ * 演示站内信只会被「已读 / 删除 / 清空」消耗掉：第一次跑完再看全是已读，
  * 「全部已读」按钮就处于禁用态（这是产品正确行为），用例会假失败。
  * 因此在开跑前把 9002 的消息重置成固定的 3 条未读，保证用例可重复执行。
- * 可用 E2E_MYSQL_BIN / E2E_DB_PASSWORD 覆盖默认值。
+ *
+ * 但 9002 就是商城演示账号本身：直接 DELETE + 重灌会让用户看到「站内信每次重启又变未读」。
+ * 所以走 `snapshotInbox` / `restoreInbox`——跑完把原收件箱（含读过的标记）原样还原。
  */
 const CUSTOMER_ID = 9002;
-/** 本机 MySQL 客户端不在 PATH 上时的默认位置（与 README 的环境一致） */
-const LOCAL_MYSQL = 'D:/MySQL/MySQL Server 8.0/bin/mysql.exe';
-
-function resolveMysqlBin(): string {
-  const fromEnv = process.env.E2E_MYSQL_BIN;
-  if (fromEnv) return fromEnv;
-  return existsSync(LOCAL_MYSQL) ? LOCAL_MYSQL : 'mysql';
-}
-
-function runSql(sql: string): void {
-  const mysql = resolveMysqlBin();
-  const password = process.env.E2E_DB_PASSWORD ?? '123456';
-  execFileSync(
-    mysql,
-    ['-h127.0.0.1', '-P3306', '-uroot', `-p${password}`, 'sent_dev', '-e', sql],
-    { stdio: 'ignore' },
-  );
-}
 
 /** 三条固定演示消息（订单/优惠/系统各一条，全未读）：删除与清空用例都要有确定的初始状态 */
 const SEED_MESSAGES = `DELETE FROM user_message WHERE customer_id = ${CUSTOMER_ID};
@@ -55,16 +38,16 @@ INSERT INTO user_message (customer_id, msg_type, title, content, biz_type, biz_n
 (${CUSTOMER_ID}, 'SYSTEM', '账号安全提醒', '检测到您在新设备登录，如非本人操作请及时修改密码', NULL, NULL, 0);`;
 
 function resetMessages(): void {
-  runSql(SEED_MESSAGES);
+  snapshotInbox(CUSTOMER_ID, SEED_MESSAGES);
 }
 
 test.beforeAll(() => {
   resetMessages();
 });
 
-/** 清空用例会真的把消息删干净：跑完重新灌回固定 3 条，下一次运行仍有数据可验 */
+/** 清空用例会真的把消息删干净：跑完把用例开始前的收件箱原样还原（不是重灌未读） */
 test.afterAll(() => {
-  resetMessages();
+  restoreInbox(CUSTOMER_ID);
 });
 
 async function loginUser(page: Page): Promise<void> {
@@ -132,7 +115,18 @@ test('消息中心是站内信，与在线客服入口分离', async ({ page }) 
     timeout: 15_000,
   });
 
-  // 5) 类型筛选：只看系统公告
+  // 5) 已读必须落库：刷新页面（等价于「重启商城端」）后仍应是已读、未读数为 0
+  //    用户实测反馈「站内信每次重启后又变未读」，这里把「刷新不变」钉成契约，
+  //    前端本地状态 / 后端 read_flag 任何一侧退回未读都会红。
+  await page.reload();
+  await expect(items.first(), '刷新后列表应仍有数据').toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('.msg-item--unread'), '刷新后不应又变回未读').toHaveCount(0, {
+    timeout: 15_000,
+  });
+  await expect(page.locator('.msg-head__unread'), '刷新后未读数应仍为 0').toContainText('0');
+  await expect(page.locator('.topbar__msg .msg-badge'), '刷新后顶栏不应再出现红点').toHaveCount(0);
+
+  // 6) 类型筛选：只看系统公告
   const systemTab = tabs.filter({ hasText: '系统' }).first();
   const systemResp = page.waitForResponse(
     (r) => r.url().includes('/api/messages') && r.url().includes('type=SYSTEM'),

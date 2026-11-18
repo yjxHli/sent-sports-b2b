@@ -27,7 +27,6 @@ const CUSTOMER_PHONE = process.env.E2E_USER_NAME ?? '13800138000';
 const CUSTOMER_PASSWORD = process.env.E2E_USER_PASSWORD ?? '123456';
 const ADMIN_NAME = process.env.E2E_ADMIN_NAME ?? 'admin';
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? '123456';
-const PRODUCT_ID = process.env.E2E_PRODUCT_ID ?? '1001';
 
 /** 定制图稿：36 件起订按页面口径填 30 */
 const CUSTOM_QTY = 30;
@@ -51,6 +50,27 @@ async function apiGet(request: APIRequestContext, suffix: string, token?: string
     failOnStatusCode: false,
   });
   return res.json().catch(() => null);
+}
+
+/**
+ * 在售商品里挑一个「有 ≥ need 件可售规格」的，返回商品号与规格文案。
+ *
+ * 演示库存会被 E2E 自己的下单消耗掉（每跑一轮 full-flow 就吃掉 30 件），
+ * 所以不能写死商品/规格，必须每次按接口现挑，否则用例会随库存耗尽而假红。
+ */
+async function pickSellableProduct(
+  request: APIRequestContext,
+  need: number,
+): Promise<{ productId: string; spec: string } | null> {
+  const list = await apiGet(request, '/products?page=1&size=20');
+  for (const product of list?.data?.list ?? []) {
+    const skus = await apiGet(request, `/products/${product.productId}/skus`);
+    const hit = (skus?.data ?? []).find(
+      (s: any) => s.onShelf !== false && Number(s.stockQty) >= need,
+    );
+    if (hit) return { productId: String(product.productId), spec: String(hit.spec) };
+  }
+  return null;
 }
 
 async function loginUser(page: Page): Promise<void> {
@@ -105,22 +125,33 @@ test('定制图稿：用户上传后管理端审图台能看到真实图片', as
 
   // 1) 商品页：选规格 → 勾选 UV 定制 → 选图（必须真的上传到文件服务）
   await loginUser(page);
-  await page.goto(join(USER_URL, `/product/${PRODUCT_ID}`));
+  // 定制 30 件起订：E2E 自己会持续下单消耗演示库存，写死商品/规格早晚被买空
+  // （2026-11-16 实测商品 1001 的两个规格只剩 0 / 13 件可售），改为按接口挑一个真有货的。
+  const target = await pickSellableProduct(request, CUSTOM_QTY);
+  expect(target, `需要任意商品有 ≥ ${CUSTOM_QTY} 件的可售规格才能下定制单`).toBeTruthy();
+  await page.goto(join(USER_URL, `/product/${target!.productId}`));
   const specs = page.locator('.spec-item:not(.disabled)');
   await expect(specs.first(), '商品页应有可售规格').toBeVisible({ timeout: 20_000 });
-  // 定制 30 件起订：要挑一个库存 ≥ 30 的规格（演示数据里有的规格已被大量下单占满）
-  const stockHint = page.locator('.buy__qty-hint');
-  let picked = false;
+
+  // 按文案精确命中接口选出的规格（hasText 会误配同前缀规格），命中失败退回第一个可售规格
+  let clicked = false;
   for (let i = 0; i < await specs.count(); i += 1) {
-    await specs.nth(i).click();
-    const text = (await stockHint.innerText()).replace(/\s+/g, ' ');
-    const stock = Number(/库存\s*(\d+)\s*件/.exec(text)?.[1] ?? 0);
-    if (stock >= CUSTOM_QTY) {
-      picked = true;
+    const text = (await specs.nth(i).innerText()).trim();
+    if (text === target!.spec.trim()) {
+      await specs.nth(i).click();
+      clicked = true;
       break;
     }
   }
-  expect(picked, `商品页需要一个库存 ≥ ${CUSTOM_QTY} 的可售规格才能下定制单`).toBe(true);
+  if (!clicked) await specs.first().click();
+
+  // 库存数从顶部「可售库存」读：数量旁的「仅剩 N 件」在超库存/定制不足时会隐藏，
+  // 不能作为稳定的取数来源。
+  const meta = (await page.locator('.buy__meta').innerText()).replace(/\s+/g, ' ');
+  const pickedStock = Number(/可售库存\s*(\d+)/.exec(meta)?.[1] ?? 0);
+  expect(pickedStock, `所选规格可售 ${pickedStock} 件，不足 ${CUSTOM_QTY} 件起订`).toBeGreaterThanOrEqual(
+    CUSTOM_QTY,
+  );
 
   await page.locator('.custom-panel__check').click();
   await expect(page.locator('.upload-drop'), '勾选定制后应出现上传区').toBeVisible({ timeout: 10_000 });

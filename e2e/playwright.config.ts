@@ -31,6 +31,8 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   retries: 0,
+  // 收尾复位客服在线状态并结束残留会话，避免污染演示环境（详见 global-teardown.ts）
+  globalTeardown: './global-teardown.ts',
   reporter: [
     ['list'],
     ['html', { outputFolder: 'playwright-report', open: 'never' }],
