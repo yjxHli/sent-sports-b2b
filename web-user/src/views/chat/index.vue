@@ -25,8 +25,34 @@
         <div ref="listRef" class="chat-body">
           <div class="chat-tip">想咨询订单、定制、发票或退换货，直接说就好～</div>
 
-          <div v-for="m in messages" :key="m.seq + (m.clientMsgId || '')">
-            <div v-if="m.senderType === 'SYSTEM'" class="chat-system">{{ m.content }}</div>
+          <div v-for="(m, i) in messages" :key="m.seq + (m.clientMsgId || '')">
+            <!-- 微信式时间提示：相邻消息间隔满 5 分钟就重新显示当前时间（首条必显） -->
+            <div
+              v-if="shouldShowTimeDivider(messages[i - 1]?.createdAtMillis, m.createdAtMillis)"
+              class="chat-time"
+              data-testid="chat-time-divider"
+            >{{ fmtChatTime(m.createdAtMillis) }}</div>
+            <!-- 服务评价卡必须排在 SYSTEM 文本分支之前：卡片 senderType 也是 SYSTEM -->
+            <div v-if="m.msgType === 'SATISFY'" class="chat-satisfy" data-testid="satisfaction-card">
+              <template v-if="satisfactionOf(m).status !== 'RATED'">
+                <b>⭐ 请评价本次服务</b>
+                <span class="chat-satisfy__hint">您的评价会直接反馈给刚刚接待您的客服</span>
+                <div class="chat-satisfy__btns">
+                  <button
+                    v-for="opt in SATISFY_OPTIONS"
+                    :key="opt.value"
+                    :data-testid="`satisfaction-${opt.value.toLowerCase()}`"
+                    :disabled="rating"
+                    @click="rateSatisfaction(opt.value, m)"
+                  >{{ opt.label }}</button>
+                </div>
+              </template>
+              <template v-else>
+                <b>已评价：{{ scoreLabel(satisfactionOf(m).score) }}</b>
+                <span class="chat-satisfy__hint">感谢您的反馈</span>
+              </template>
+            </div>
+            <div v-else-if="m.senderType === 'SYSTEM'" class="chat-system">{{ m.content }}</div>
             <div v-else class="chat-msg" :class="m.self ? 'chat-msg--self' : 'chat-msg--other'">
               <div v-if="!m.self" class="avatar avatar--staff">客服</div>
               <!-- 订单卡片：选中订单后发给客服，双方都看到同一张卡 -->
@@ -85,6 +111,12 @@
           当前咨询人数较多，正在排队中，前方还有 {{ queueAhead }} 人
         </div>
 
+        <!-- 会话结束：客服主动关闭或 10 分钟超时后推 CLOSED 帧，不自动消失，客户可主动重新咨询 -->
+        <div v-if="closed" class="closed-banner" data-testid="chat-closed-banner">
+          <span>本次会话已结束</span>
+          <button type="button" data-testid="chat-reopen" @click="reopen">重新咨询</button>
+        </div>
+
         <!-- 输入区 -->
         <footer class="chat-input">
           <div class="chat-input__tools">
@@ -105,12 +137,12 @@
           <div class="chat-input__field">
             <input
               v-model="draft"
-              :disabled="queued"
-              :placeholder="queued ? '排队中，接入后可发送消息' : '请输入想咨询的问题'"
+              :disabled="queued || closed"
+              :placeholder="closed ? '本次会话已结束，请点击重新咨询' : (queued ? '排队中，接入后可发送消息' : '请输入想咨询的问题')"
               @input="onDraftInput"
               @keyup.enter="doSend"
             />
-            <button class="send-btn" :disabled="queued || sending" @click="doSend">
+            <button class="send-btn" :disabled="queued || closed || sending" @click="doSend">
               {{ sending ? '发送中' : '发送' }}
             </button>
           </div>
@@ -183,11 +215,12 @@
 import { nextTick, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
-import { fmtCent, statusLabel } from '@sent/shared';
+import { fmtCent, fmtChatTime, shouldShowTimeDivider, statusLabel } from '@sent/shared';
 import { useChatSession } from '@/composables/useChatSession';
 import { useAuthStore } from '@/store/modules/useAuthStore';
 import { fileApi } from '@/api/file';
 import { orderApi, type OrderListItem } from '@/api/order';
+import { chatApi } from '@/api/chat';
 import { unwrap } from '@/utils/http';
 import ChatOrderCard from '@/components/ChatOrderCard.vue';
 
@@ -206,6 +239,46 @@ const online = chat ? chat.online : ref(false);
 const queued = chat ? chat.queued : ref(false);
 const queueAhead = chat ? chat.queueAhead : ref(0);
 const peerTyping = chat ? chat.peerTyping : ref(false);
+const sessionId = chat ? chat.sessionId : ref<number | null>(null);
+const closed = chat ? chat.closed : ref(false);
+
+/** 服务评价（2026-11-17）：三档打分，重复提交由后端唯一索引幂等兜底 */
+const rating = ref(false);
+const SATISFY_OPTIONS = [
+  { value: 'SATISFIED', label: '满意' },
+  { value: 'NORMAL', label: '一般' },
+  { value: 'UNSATISFIED', label: '不满意' },
+];
+
+function satisfactionOf(m: { content: string }): { status: string; score: string } {
+  try {
+    const parsed = JSON.parse(m.content || '{}');
+    return { status: String(parsed.status ?? 'PENDING'), score: String(parsed.score ?? '') };
+  } catch {
+    return { status: 'PENDING', score: '' };
+  }
+}
+
+function scoreLabel(score: string): string {
+  const labels: Record<string, string> = { SATISFIED: '满意', NORMAL: '一般', UNSATISFIED: '不满意' };
+  return labels[score] ?? score;
+}
+
+async function rateSatisfaction(score: string, m: { content: string }): Promise<void> {
+  const sid = Number(sessionId.value ?? 0);
+  if (!sid || rating.value) return;
+  rating.value = true;
+  try {
+    await chatApi.rateSatisfaction(sid, score);
+    // 原卡片就地变「已评价」，不新增消息；客服端由 WS 更新帧同步
+    m.content = JSON.stringify({ status: 'RATED', score });
+    ElMessage.success('感谢您的评价');
+  } catch (e) {
+    ElMessage.error((e as Error)?.message || '评价提交失败，请重试');
+  } finally {
+    rating.value = false;
+  }
+}
 
 const QUICK_QUESTIONS = [
   '这件商品有现货吗？多久能发货？',
@@ -240,9 +313,20 @@ function insertText(text: string): void {
   onDraftInput();
 }
 
+/** 客户主动重新咨询：重新建会话后再允许发送 */
+async function reopen(): Promise<void> {
+  if (!chat) return;
+  try {
+    await chat.reopen();
+    ElMessage.success('已重新接入客服');
+  } catch (e) {
+    ElMessage.error((e as Error).message || '重新接入失败，请稍后再试');
+  }
+}
+
 async function doSend(): Promise<void> {
   const text = draft.value.trim();
-  if (!text || !chat) return;
+  if (!text || !chat || closed.value) return;
   sending.value = true;
   try {
     await chat.send(text);
@@ -555,6 +639,26 @@ onMounted(() => {
   font-size: 12px;
   color: #8a94a6;
 }
+/* 服务评价卡（客服主动发 / 会话结束自动发） */
+.chat-satisfy {
+  margin: 8px 0 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #fff7e6;
+  border: 1px solid #ffd591;
+  color: #874d00;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.chat-satisfy__hint { font-size: 11px; color: #b37f2b; }
+.chat-satisfy__btns { display: flex; gap: 8px; margin-top: 4px; }
+.chat-satisfy__btns button {
+  flex: 1; padding: 6px 10px; border-radius: 6px; cursor: pointer;
+  border: 1px solid #ffc069; background: #fff; color: #874d00; font-size: 12px;
+}
+.chat-satisfy__btns button:hover { background: #ffe7ba; }
+.chat-satisfy__btns button:disabled { opacity: 0.6; cursor: not-allowed; }
 
 /* 正在输入：三点跳动 */
 .chat-bubble--typing {
@@ -657,6 +761,32 @@ onMounted(() => {
 @keyframes queue-blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.25; }
+}
+
+/* 会话结束：灰色提示常驻，客户主动点「重新咨询」才恢复 */
+.closed-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  background: #f4f5f7;
+  border-top: 1px solid #e6e8eb;
+  color: #8a9099;
+  font-size: 13px;
+}
+.closed-banner button {
+  border: 1px solid #c8cdd4;
+  background: #fff;
+  color: #5f6773;
+  border-radius: 6px;
+  padding: 5px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.closed-banner button:hover {
+  border-color: var(--sent-primary);
+  color: var(--sent-primary);
 }
 
 /* ---------- 输入区 ---------- */
@@ -850,6 +980,14 @@ onMounted(() => {
 .chat-order-row__send:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+/* 5 分钟时间分隔：微信式居中灰色小字 */
+.chat-time {
+  margin: 10px 0 6px;
+  text-align: center;
+  font-size: 11px;
+  color: #a0a6b2;
+  line-height: 1.4;
 }
 .chat-orders__foot {
   padding: 10px 14px;

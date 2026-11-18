@@ -23,4 +23,12 @@ public interface ChatQueryService {
      * <p>位置口径：排在它前面的 WAITING 会话数 + 1（按创建时间先来后到）。
      */
     ChatDtos.QueueVO queue(long sessionId);
+
+    /**
+     * 用户进入聊天页时查询尚未结束的会话（只查不建）。
+     * <p>发消息才算咨询：首条消息到达前不产生任何会话，客服工作台也不会看到空会话。</p>
+     *
+     * @return 没有进行中会话时返回 null
+     */
+    ChatDtos.SessionVO currentOpen(long customerId);
 }

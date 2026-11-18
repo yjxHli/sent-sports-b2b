@@ -49,9 +49,13 @@ export const MENU_ROUTES: MenuEntry[] = [
   { path: '/customer/list', title: '客户列表', group: '客户与会员', perm: 'customer:read', icon: '客' },
   { path: '/customer/detail/:id', title: '客户详情', group: '客户与会员', perm: 'customer:read', hidden: true },
   { path: '/customer/enterprise', title: '企业审核与授信', group: '客户与会员', perm: 'customer:audit', icon: '企' },
+  { path: '/customer/coupon-template', title: '优惠券创建', group: '客户与会员', perm: 'customer:grant', icon: '建' },
+  { path: '/customer/coupon', title: '优惠券管理', group: '客户与会员', perm: 'customer:grant', icon: '券' },
   { path: '/member/index', title: '会员与积分', group: '客户与会员', perm: 'member:config', icon: '会' },
 
   { path: '/chat/workbench', title: '客服工作台', group: '客服', perm: 'chat:serve', icon: '服' },
+  { path: '/chat/audit', title: '客服审查', group: '客服', perm: 'chat:audit', icon: '查' },
+  { path: '/chat/metrics', title: '客服指标', group: '客服', perm: 'chat:audit', icon: '指' },
 
   { path: '/finance/refund', title: '退款审核', group: '财务', perm: 'refund:audit', icon: '退' },
   { path: '/finance/refund/:refundNo', title: '退款审核详情', group: '财务', perm: 'refund:audit', hidden: true },
@@ -94,9 +98,13 @@ const REAL_PAGES: Record<string, RouteComponentLoader> = {
   '/customer/list': () => import('@/views/customer/list.vue'),
   '/customer/detail/:id': () => import('@/views/customer/detail.vue'),
   '/customer/enterprise': () => import('@/views/customer/enterprise.vue'),
+  '/customer/coupon-template': () => import('@/views/customer/coupon-template.vue'),
+  '/customer/coupon': () => import('@/views/customer/coupon.vue'),
   '/member/index': () => import('@/views/member/index.vue'),
 
   '/chat/workbench': () => import('@/views/chat/workbench.vue'),
+  '/chat/audit': () => import('@/views/chat/audit.vue'),
+  '/chat/metrics': () => import('@/views/chat/metrics.vue'),
 
   '/finance/refund': () => import('@/views/finance/refund.vue'),
   '/finance/refund/:refundNo': () => import('@/views/finance/refund-detail.vue'),

@@ -10,6 +10,9 @@ import { chatApi, type MessageVO } from '@/api/chat';
 import { newIdempotencyKey } from '@/utils/idempotent';
 import { useChatSocket, type IncomingAck, type IncomingMessage } from '@/composables/useChatSocket';
 
+/** 业务错误码：会话状态冲突（已结束 / 已关闭），后端 ErrorCode.STATE_CONFLICT。 */
+const STATE_CONFLICT = 40901;
+
 export interface ChatMessage {
   seq: number;
   senderType: string;
@@ -39,8 +42,10 @@ export function useChatSession(customerId: number, vip = false) {
   const sessionId = ref<number | null>(null);
   const online = ref(false);
   const realtime = ref(false);
-  /** 会话状态：WAITING 排队中 / ACTIVE 已接入 / CLOSED 已结束 */
-  const status = ref<string>('WAITING');
+  /** 会话状态：IDLE 尚未咨询 / WAITING 排队中 / ACTIVE 已接入 / CLOSED 已结束 */
+  const status = ref<string>('IDLE');
+  /** 会话是否已结束：客户需看到「本次会话已结束」，并可主动重新咨询 */
+  const closed = ref(false);
   /** 前方排队人数（position 从 1 开始，展示给用户时要减 1） */
   const queueAhead = ref(0);
   /** 客服正在输入（收到 TYPING 帧后亮 3s，期间没有新帧就自动熄灭） */
@@ -63,7 +68,24 @@ export function useChatSession(customerId: number, vip = false) {
     onDisconnected: () => { realtime.value = false; },
     onAssigned: (assignedSessionId: number) => onAssigned(assignedSessionId),
     onTyping: (typingSessionId: number) => onPeerTyping(typingSessionId),
+    onClosed: (closedSessionId: number, reason: string) => onClosed(closedSessionId, reason),
   });
+
+  /** 服务端已结束会话：客户侧立刻冻结输入并显示结束提示；重新咨询由客户主动触发。 */
+  function onClosed(closedSessionId: number, reason: string): void {
+    if (sessionId.value !== null && Number(closedSessionId) !== sessionId.value) return;
+    if (closed.value) return;
+    status.value = 'CLOSED';
+    closed.value = true;
+    queueAhead.value = 0;
+    stopQueuePoll();
+    seq += 1;
+    messages.value.push({
+      seq: -seq, senderType: 'SYSTEM', msgType: 'TEXT',
+      content: reason === 'TIMEOUT' ? '本次会话已结束（长时间未发言）' : '本次会话已结束',
+      createdAtMillis: Date.now(), self: false,
+    });
+  }
 
   /** 收到「客服正在输入」：亮提示并重置 3s 熄灭定时器 */
   function onPeerTyping(typingSessionId: number): void {
@@ -96,7 +118,9 @@ export function useChatSession(customerId: number, vip = false) {
       msgType: m.msgType || 'TEXT',
       content: m.content,
       clientMsgId: m.clientMsgId || undefined,
-      createdAtMillis: Date.now(),
+      // 用信封时间戳（服务端落库时刻），不用本地 Date.now()：离线补发的消息
+      // 若按收包时间算，会让「5 分钟重新显示时间」的分隔错位
+      createdAtMillis: Number(m.createdAt) || Date.now(),
       self: false,
     });
   }
@@ -109,17 +133,48 @@ export function useChatSession(customerId: number, vip = false) {
     if (ack.code) {
       // 服务端拒绝（会话关闭/参数错误等）：撤回乐观消息，改走 REST 发一次（REST 会给出明确错误）
       messages.value = messages.value.filter((m) => m.clientMsgId !== key);
-      void sendViaRest(queued.content, key, queued.msgType);
+      // REST 侧会自行处理「会话已结束 → 重开会话补发」，这里只需吃掉未处理的 reject
+      void sendViaRest(queued.content, key, queued.msgType).catch(() => undefined);
       return;
     }
     // ACCEPTED / DUPLICATE：以服务端历史为准，消除乐观序号与真实 seq 的偏差
     void refresh();
   }
 
+  /**
+   * 会话已被服务端结束（40901 STATE_CONFLICT）时重开一条。
+   * <p>典型场景：客户开着客服页离开 10 分钟，服务端自动结束会话（timeoutClose），
+   * 回来再发消息就撞上「已结束」。此处重建会话后把这句话补发出去，
+   * 客户看到的只是「已为你重新接入」，而不是一条发不出去的失败提示。</p>
+   */
+  async function reviveClosedSession(): Promise<boolean> {
+    try {
+      await ensureSession();
+      closed.value = false;
+      seq += 1;
+      messages.value.push({
+        seq: -seq, senderType: 'SYSTEM', msgType: 'TEXT',
+        content: '上次会话已结束，已为你重新接入客服', createdAtMillis: Date.now(), self: false,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** 客户主动点「重新咨询」：显式建新会话，复用 40901 自动补发那条链路。 */
+  async function reopen(): Promise<void> {
+    if (!closed.value && sessionId.value !== null) return;
+    messages.value = messages.value.filter((m) => m.msgType !== 'SATISFY');
+    await reviveClosedSession();
+    await refresh();
+  }
+
   async function ensureSession(): Promise<void> {
     const res = await chatApi.createSession(customerId, vip);
     // Long → String：统一转 number，后续与 WS 帧里的数字 sessionId 才能严格相等
     sessionId.value = Number(res.data.sessionId);
+    closed.value = false;
     status.value = String(res.data.status ?? 'WAITING');
     assignedNotified = status.value !== 'WAITING';
     online.value = true;
@@ -195,7 +250,12 @@ export function useChatSession(customerId: number, vip = false) {
     }
   }
 
-  async function sendViaRest(content: string, clientMsgId: string, msgType = 'TEXT'): Promise<void> {
+  async function sendViaRest(
+    content: string,
+    clientMsgId: string,
+    msgType = 'TEXT',
+    allowRevive = true,
+  ): Promise<void> {
     if (sessionId.value === null) return;
     seq += 1;
     const tmp: ChatMessage = {
@@ -208,6 +268,15 @@ export function useChatSession(customerId: number, vip = false) {
       await refresh();
       messages.value = messages.value.filter((m) => !(m.pending && m.clientMsgId === clientMsgId));
     } catch (e) {
+      const code = (e as { code?: number })?.code;
+      if (allowRevive && code === STATE_CONFLICT) {
+        // 会话已结束（10 分钟无消息自动结束 / 客服结束）：重开会话后补发一次，只重试一次防死循环
+        messages.value = messages.value.filter((m) => m.clientMsgId !== clientMsgId);
+        if (await reviveClosedSession()) {
+          await sendViaRest(content, clientMsgId, msgType, false);
+          return;
+        }
+      }
       tmp.pending = false;
       throw e;
     }
@@ -218,8 +287,11 @@ export function useChatSession(customerId: number, vip = false) {
    * @param msgType TEXT（默认）/ IMAGE —— IMAGE 时 content 必须是 fileApi.upload 返回的 fileId
    */
   async function send(content: string, msgType = 'TEXT'): Promise<void> {
-    if (sessionId.value === null) return;
+    // 进入聊天页只查不建：第一句话离开页面前不存在会话，这里才真正建立咨询。
+    if (closed.value) await reopen();
+    if (sessionId.value === null) await ensureSession();
     const sid = sessionId.value;
+    if (sid === null) return;
     const wsKey = socket.connected.value ? socket.send(sid, content, msgType) : null;
     if (wsKey) {
       pending.set(wsKey, { content, msgType });
@@ -234,8 +306,24 @@ export function useChatSession(customerId: number, vip = false) {
   }
 
   function start(): void {
-    ensureSession()
-      .then(refresh)
+    // 只查不建：仅当客户真的发出首条消息时 send() 才调 createSession。
+    chatApi.currentOpen(customerId)
+      .then((res) => {
+        const vo = res.data;
+        if (vo) {
+          sessionId.value = Number(vo.sessionId);
+          status.value = String(vo.status ?? 'WAITING');
+          online.value = true;
+          assignedNotified = status.value !== 'WAITING';
+          if (status.value === 'WAITING') startQueuePoll();
+          else stopQueuePoll();
+        } else {
+          sessionId.value = null;
+          status.value = 'IDLE';
+          online.value = true;
+        }
+        return refresh();
+      })
       .then(() => {
         socket.connect();
         // WS 未连上时才用轮询兜底；连上后轮询空转，不产生请求
@@ -259,7 +347,7 @@ export function useChatSession(customerId: number, vip = false) {
   onUnmounted(stop);
 
   return {
-    messages, sessionId, online, realtime, status, queueAhead, queued, peerTyping,
-    start, stop, send, refresh, notifyTyping,
+    messages, sessionId, online, realtime, status, closed, queueAhead, queued, peerTyping,
+    start, stop, send, refresh, notifyTyping, reopen,
   };
 }

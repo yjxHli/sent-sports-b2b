@@ -18,4 +18,7 @@ public interface ChatMessageRepository {
 
     /** 某会话的全部消息（按 seq 升序由实现保证），用于接收方查看历史。 */
     List<ChatMessage> findBySessionId(long sessionId);
+
+    /** 评价卡被打分后就地更新 content（不新增消息、不推进 seq）。 */
+    void updateContent(String messageId, String content);
 }

@@ -58,6 +58,11 @@ public class ChatMessageRepositoryImpl implements ChatMessageRepository {
         return list;
     }
 
+    @Override
+    public void updateContent(String messageId, String content) {
+        chatMessageMapper.updateContent(messageId, content);
+    }
+
     private ChatMessage toDomain(ChatMessagePO po) {
         return new ChatMessage(po.getMessageNo(), po.getSessionId(),
                 SenderType.valueOf(po.getSenderType()), po.getContent(), po.getClientMsgId(),

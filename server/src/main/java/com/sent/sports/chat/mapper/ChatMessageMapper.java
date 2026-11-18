@@ -5,6 +5,7 @@ import com.sent.sports.chat.mapper.po.ChatMessagePO;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 
 import java.util.List;
 
@@ -29,4 +30,8 @@ public interface ChatMessageMapper extends BaseMapper<ChatMessagePO> {
     List<ChatMessagePO> selectSince(@Param("sessionId") long sessionId,
                                     @Param("afterSeq") long afterSeq,
                                     @Param("limit") int limit);
+
+    /** 评价卡被打分后就地改 content（status PENDING → RATED），不新增消息、不打断 seq。 */
+    @Update("UPDATE chat_message SET content = #{content} WHERE message_no = #{messageId}")
+    int updateContent(@Param("messageId") String messageId, @Param("content") String content);
 }

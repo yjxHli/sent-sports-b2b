@@ -32,6 +32,9 @@ export interface MessageVO {
 }
 
 export const chatApi = {
+  /** 进入聊天页只查当前未结束会话；没有就返回 null，绝不建空会话给客服看 */
+  currentOpen: (customerId: number) =>
+    http.get<SessionVO | null>('/chat/sessions/current', { customerId }),
   createSession: (customerId: number, vip: boolean) =>
     http.post<SessionVO>('/chat/sessions', { customerId, vip }),
   sendMessage: (
@@ -45,4 +48,8 @@ export const chatApi = {
   /** 排队位置（WAITING 时轮询）：前方人数 +1，已接入返回 position=0 */
   queue: (sessionId: number) =>
     http.get<QueueVO>(`/chat/sessions/${sessionId}/queue`),
+  /** 给刚刚服务的客服打分：SATISFIED / NORMAL / UNSATISFIED；重复提交幂等 */
+  rateSatisfaction: (sessionId: number, score: string) =>
+    http.post<{ sessionId: number; score: string; messageId: string }>(
+      `/chat/sessions/${sessionId}/satisfaction`, { score }),
 };

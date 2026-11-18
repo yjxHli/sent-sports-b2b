@@ -50,4 +50,14 @@ public final class AdminChatDtos {
     /** 关闭会话响应：关闭的会话号、状态、被自动补位的排队会话号（无则 null）。 */
     public record CloseVO(long sessionId, String status, Long promotedSessionId) {
     }
+
+    /** 填写会话小结：问题概述 + 分类 + 信息状态 + 处理结果 + 解决办法，全部必填。 */
+    public record SaveNoteCmd(
+            @NotNull(message = "客服不能为空") Long staffId,
+            @NotBlank(message = "问题概述不能为空") String summary,
+            @NotBlank(message = "问题分类不能为空") String category,
+            @NotBlank(message = "用户问题信息不能为空") String info,
+            @NotBlank(message = "处理结果不能为空") String result,
+            @NotBlank(message = "解决办法不能为空") String solution) {
+    }
 }

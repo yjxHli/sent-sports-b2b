@@ -1,15 +1,18 @@
 package com.sent.sports.chat.controller.admin;
 
 import com.sent.sports.chat.dto.admin.AdminChatDtos;
+import com.sent.sports.chat.service.SaveSessionNoteUseCase;
 import com.sent.sports.chat.service.AssignSessionUseCase;
 import com.sent.sports.chat.service.ChatAdminQueryService;
 import com.sent.sports.chat.service.CloseSessionUseCase;
 import com.sent.sports.chat.service.PresenceUseCase;
+import com.sent.sports.chat.service.SendSatisfactionCardUseCase;
 import com.sent.sports.chat.service.dto.AssignCmd;
 import com.sent.sports.chat.service.dto.AssignSessionResult;
 import com.sent.sports.chat.service.dto.CloseCmd;
 import com.sent.sports.chat.service.dto.CloseSessionResult;
 import com.sent.sports.chat.service.dto.OpenSessionsResult;
+import com.sent.sports.chat.service.dto.SaveNoteCmd;
 import com.sent.sports.chat.service.dto.SetPresenceCmd;
 import com.sent.sports.chat.service.dto.PresenceResult;
 import com.sent.sports.chat.service.dto.TodayStatsResult;
@@ -23,6 +26,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -42,6 +46,8 @@ public class AdminChatController {
     private final CloseSessionUseCase closeSessionUseCase;
     private final PresenceUseCase presenceUseCase;
     private final ChatAdminQueryService chatAdminQueryService;
+    private final SendSatisfactionCardUseCase satisfactionCardUseCase;
+    private final SaveSessionNoteUseCase saveSessionNoteUseCase;
 
     /** P5 绑定当前用户：阶段占位操作人 ID。 */
     private static final long OPERATOR_PLACEHOLDER = 0L;
@@ -49,11 +55,15 @@ public class AdminChatController {
     public AdminChatController(AssignSessionUseCase assignSessionUseCase,
                                CloseSessionUseCase closeSessionUseCase,
                                PresenceUseCase presenceUseCase,
-                               ChatAdminQueryService chatAdminQueryService) {
+                               ChatAdminQueryService chatAdminQueryService,
+                               SendSatisfactionCardUseCase satisfactionCardUseCase,
+                               SaveSessionNoteUseCase saveSessionNoteUseCase) {
         this.assignSessionUseCase = assignSessionUseCase;
         this.closeSessionUseCase = closeSessionUseCase;
         this.presenceUseCase = presenceUseCase;
         this.chatAdminQueryService = chatAdminQueryService;
+        this.satisfactionCardUseCase = satisfactionCardUseCase;
+        this.saveSessionNoteUseCase = saveSessionNoteUseCase;
     }
 
     @GetMapping("/sessions")
@@ -116,5 +126,98 @@ public class AdminChatController {
                                           @Valid @RequestBody AdminChatDtos.CloseCmd cmd) {
         CloseSessionResult r = closeSessionUseCase.close(new CloseCmd(id, cmd.reason(), OPERATOR_PLACEHOLDER));
         return R.ok(new AdminChatDtos.CloseVO(r.sessionId(), r.status().name(), r.promotedSessionId()));
+    }
+
+    /** 客服主动发送「请评价本次服务」卡片（图片按钮上方入口）；同会话重复点幂等。 */
+    @PostMapping("/sessions/{id}/satisfaction")
+    @RequirePerm("chat:send")
+    public R<java.util.Map<String, String>> sendSatisfactionCard(@PathVariable long id) {
+        String messageId = satisfactionCardUseCase.send(id);
+        return R.ok(java.util.Map.of("messageId", messageId));
+    }
+
+    /** 单会话状态：工作台轮询据此把已结束 Tab 置灰，而不是直接移除。 */
+    @GetMapping("/sessions/{id}")
+    @RequirePerm("chat:serve")
+    public R<?> sessionDetail(@PathVariable long id) {
+        return R.ok(chatAdminQueryService.sessionDetail(id));
+    }
+
+    /** 会话回放：历史服务弹窗与客服审查详情共用。 */
+    @GetMapping("/sessions/{id}/transcript")
+    @RequirePerm("chat:serve")
+    public R<?> transcript(@PathVariable long id) {
+        return R.ok(chatAdminQueryService.transcript(id));
+    }
+
+    /** 当前客服查看同一客户最近的服务记录（服务端硬上限 10）。 */
+    @GetMapping("/customers/{customerId}/sessions")
+    @RequirePerm("chat:serve")
+    public R<?> customerHistory(@PathVariable long customerId,
+                                @RequestParam(defaultValue = "10") int limit,
+                                @RequestParam(defaultValue = "0") long excludeSessionId) {
+        return R.ok(chatAdminQueryService.customerHistory(customerId, excludeSessionId, limit));
+    }
+
+    /** 会话小结：客服填写后可按同一会话重复提交（幂等更新）。 */
+    @GetMapping("/sessions/{id}/note")
+    @RequirePerm("chat:serve")
+    public R<?> note(@PathVariable long id) {
+        return R.ok(chatAdminQueryService.transcript(id).note());
+    }
+
+    @PutMapping("/sessions/{id}/note")
+    @RequirePerm("chat:note")
+    public R<?> saveNote(@PathVariable long id, @Valid @RequestBody AdminChatDtos.SaveNoteCmd cmd) {
+        return R.ok(saveSessionNoteUseCase.save(new SaveNoteCmd(id, cmd.staffId(), cmd.summary(),
+                cmd.category(), cmd.info(), cmd.result(), cmd.solution())));
+    }
+
+    /** 客服审查：仅超管与客服经理（exact=true，不吃 '*' 通配）。 */
+    @GetMapping("/audit/sessions")
+    @RequirePerm(value = "chat:audit", exact = true)
+    public R<?> auditSessions(@ModelAttribute PageQuery page,
+                              @RequestParam(required = false) Long staffId,
+                              @RequestParam(required = false) String from,
+                              @RequestParam(required = false) String to,
+                              @RequestParam(required = false) String result,
+                              @RequestParam(required = false) String keyword) {
+        return R.ok(chatAdminQueryService.audit(page, staffId, parseDate(from, false),
+                parseDate(to, true), result, keyword));
+    }
+
+    @GetMapping("/audit/staff")
+    @RequirePerm(value = "chat:audit", exact = true)
+    public R<?> auditStaff() {
+        return R.ok(chatAdminQueryService.auditStaff());
+    }
+
+    /**
+     * 客服指标（2026-11-18 用户要求）：今天 / 近 7 天 / 近 30 天 / 自定义时间。
+     * 复用审查权限：只让超管与客服经理看全员绩效，普通客服看不到别人的数据。
+     */
+    @GetMapping("/metrics")
+    @RequirePerm(value = "chat:audit", exact = true)
+    public R<?> metrics(@RequestParam(required = false) Long staffId,
+                        @RequestParam(required = false) String from,
+                        @RequestParam(required = false) String to) {
+        // 半开区间 [from, to+1天)：端点取次日 00:00，才能含住 to 当天的全部数据；
+        // 服务层回显的 to = safeTo 减一天，正好是用户选的那一天（不能传当天 23:59:59 再减）。
+        java.time.LocalDateTime toExclusive = parseDate(to, false);
+        return R.ok(chatAdminQueryService.metrics(parseDate(from, false),
+                toExclusive == null ? null : toExclusive.plusDays(1), staffId));
+    }
+
+    /** 支持 yyyy-MM-dd 与完整 ISO 时间；to 取当天 23:59:59.999 由服务层半开区间处理。 */
+    private static java.time.LocalDateTime parseDate(String value, boolean endOfDay) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String text = value.trim();
+        if (text.length() == 10) {
+            return java.time.LocalDate.parse(text).atTime(endOfDay
+                    ? java.time.LocalTime.MAX : java.time.LocalTime.MIN);
+        }
+        return java.time.LocalDateTime.parse(text);
     }
 }

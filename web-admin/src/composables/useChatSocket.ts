@@ -16,7 +16,7 @@ import { onUnmounted, ref, type Ref } from 'vue';
 import { getAccessToken } from '@/utils/auth';
 import { newIdempotencyKey } from '@/utils/idempotent';
 
-export type WsType = 'MSG' | 'ACK' | 'READ' | 'QUEUE' | 'ASSIGNED' | 'TYPING';
+export type WsType = 'MSG' | 'ACK' | 'READ' | 'QUEUE' | 'ASSIGNED' | 'TYPING' | 'CLOSED';
 
 export interface WsEnvelope {
   type: WsType;
@@ -34,6 +34,8 @@ export interface IncomingMessage {
   senderType: string;
   /** TEXT / IMAGE；IMAGE 时 content 是 fileId，页面拼 fileApi.url() 渲染 */
   msgType?: string;
+  /** 信封 timestamp（毫秒）：聊天气泡 5 分钟时间分隔用 */
+  createdAt?: number;
   self?: boolean;
 }
 
@@ -52,6 +54,8 @@ export interface ChatSocketOptions {
   onConnected?: (onlineCount: number) => void;
   /** 对方（客户）正在输入：page 侧起 3s 定时器自行淡出 */
   onTyping?: (sessionId: number) => void;
+  /** 会话已结束：Tab 置灰为「已结束」但保留，由客服主动关闭 */
+  onClosed?: (sessionId: number, reason: string) => void;
 }
 
 export interface ChatSocket {
@@ -103,6 +107,7 @@ export function useChatSocket(options: ChatSocketOptions): ChatSocket {
         content: String(body.content ?? envelope.payload ?? ''),
         senderType: String(body.senderType ?? 'STAFF'),
         msgType: String(body.msgType ?? 'TEXT'),
+        createdAt: Number(envelope.timestamp) || Date.now(),
       });
       return;
     }
@@ -123,11 +128,17 @@ export function useChatSocket(options: ChatSocketOptions): ChatSocket {
         content: String(body.content ?? envelope.payload ?? ''),
         senderType: String(body.senderType ?? 'CUSTOMER'),
         msgType: String(body.msgType ?? 'TEXT'),
+        createdAt: Number(envelope.timestamp) || Date.now(),
       });
       return;
     }
     if (envelope.type === 'TYPING') {
       options.onTyping?.(Number(envelope.sessionId));
+      return;
+    }
+    if (envelope.type === 'CLOSED') {
+      options.onClosed?.(Number(envelope.sessionId || body.sessionId || 0),
+        String(body.reason ?? ''));
       return;
     }
     if (envelope.type === 'ACK') {

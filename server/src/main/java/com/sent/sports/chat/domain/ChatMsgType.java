@@ -18,7 +18,13 @@ public enum ChatMsgType {
     IMAGE,
 
     /** 订单卡片：content = 订单摘要 JSON（含 orderNo，点开跳订单详情）。 */
-    ORDER;
+    ORDER,
+
+    /**
+     * 服务评价卡片：content = JSON（status=PENDING/RATED、score、messageId）。
+     * 客服可主动发；会话结束由用例自动补发。客户点评分后原卡片就地变为已评价。
+     */
+    SATISFY;
 
     /** 容错解析：脏数据 / 旧数据一律按 TEXT 处理，不让一条坏记录把整个历史接口打挂。 */
     public static ChatMsgType of(String value) {

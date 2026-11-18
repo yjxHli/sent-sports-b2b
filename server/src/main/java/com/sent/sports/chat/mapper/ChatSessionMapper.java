@@ -50,6 +50,21 @@ public interface ChatSessionMapper extends BaseMapper<ChatSessionPO> {
     @Select("SELECT * FROM chat_session WHERE staff_id = #{staffId} AND status = 'ACTIVE' ORDER BY id")
     List<ChatSessionPO> selectActiveByStaff(@Param("staffId") long staffId);
 
+    /**
+     * 工作台「进行中」：只展示客户已发过消息的会话。
+     * 客户进入聊天页不再建会话，首条消息才建；这条过滤兜住历史空会话，避免客服看到「幽灵进线」。
+     */
+    @Select("SELECT s.* FROM chat_session s WHERE s.staff_id = #{staffId} AND s.status = 'ACTIVE' "
+            + "AND EXISTS (SELECT 1 FROM chat_message m WHERE m.session_id = s.id "
+            + "AND m.sender_type = 'CUSTOMER') ORDER BY s.id")
+    List<ChatSessionPO> selectVisibleActiveByStaff(@Param("staffId") long staffId);
+
+    /** 工作台「排队中」：同样只展示客户已发过消息的会话。 */
+    @Select("SELECT s.* FROM chat_session s WHERE s.status = 'WAITING' "
+            + "AND EXISTS (SELECT 1 FROM chat_message m WHERE m.session_id = s.id "
+            + "AND m.sender_type = 'CUSTOMER') ORDER BY s.created_at ASC, s.id ASC LIMIT #{limit}")
+    List<ChatSessionPO> selectVisibleWaitingFifo(@Param("limit") int limit);
+
     /** 全站进行中会话数（并发上限）。 */
     @Select("SELECT COUNT(*) FROM chat_session WHERE status = 'ACTIVE'")
     int countActive();

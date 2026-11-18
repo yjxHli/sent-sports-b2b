@@ -4,6 +4,8 @@ import com.sent.sports.chat.domain.SenderType;
 import com.sent.sports.chat.dto.ChatDtos;
 import com.sent.sports.chat.service.ChatQueryService;
 import com.sent.sports.chat.service.CreateSessionUseCase;
+import com.sent.sports.chat.dto.SatisfactionDtos;
+import com.sent.sports.chat.service.RateSatisfactionUseCase;
 import com.sent.sports.chat.service.SendMessageUseCase;
 import com.sent.sports.chat.service.dto.CreateSessionCmd;
 import com.sent.sports.chat.service.dto.CreateSessionResult;
@@ -38,12 +40,24 @@ public class ChatController {
     private final CreateSessionUseCase createSessionUseCase;
     private final SendMessageUseCase sendMessageUseCase;
     private final ChatQueryService chatQueryService;
+    private final RateSatisfactionUseCase rateSatisfactionUseCase;
 
     public ChatController(CreateSessionUseCase createSessionUseCase, SendMessageUseCase sendMessageUseCase,
-                          ChatQueryService chatQueryService) {
+                          ChatQueryService chatQueryService,
+                          RateSatisfactionUseCase rateSatisfactionUseCase) {
         this.createSessionUseCase = createSessionUseCase;
         this.sendMessageUseCase = sendMessageUseCase;
         this.chatQueryService = chatQueryService;
+        this.rateSatisfactionUseCase = rateSatisfactionUseCase;
+    }
+
+    /**
+     * 进入聊天页时只查当前未结束会话，不创建会话。
+     * 客户必须发出首条消息才算咨询；工作台只展示已有客户消息的会话。
+     */
+    @GetMapping("/sessions/current")
+    public R<ChatDtos.SessionVO> currentOpen(@RequestParam long customerId) {
+        return R.ok(chatQueryService.currentOpen(customerId));
     }
 
     @PostMapping("/sessions")
@@ -82,5 +96,16 @@ public class ChatController {
                               @Valid @RequestBody ChatDtos.ReportReadCmd cmd) {
         chatQueryService.reportRead(sessionId, cmd.seq());
         return R.ok();
+    }
+
+    /**
+     * 客户给本次服务打分（满意 / 一般 / 不满意）。会话已结束也允许——评价卡正是结束时发出来的。
+     * 重复提交由 uk_satisfaction_session 幂等返回原档位。
+     */
+    @PostMapping("/sessions/{sessionId}/satisfaction")
+    @RequirePerm("chat:send")
+    public R<SatisfactionDtos.RateResult> rate(@PathVariable long sessionId,
+                                               @Valid @RequestBody SatisfactionDtos.RateCmd cmd) {
+        return R.ok(rateSatisfactionUseCase.rate(sessionId, cmd.score()));
     }
 }

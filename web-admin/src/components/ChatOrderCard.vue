@@ -21,11 +21,11 @@
 /**
  * 客服工作台里的「订单卡片」气泡。
  *
- * 与用户端同名组件是两份实现：跳转落点不同（管理端 `/order/detail/:orderNo`）。
- * 解析口径一致：content 是订单摘要 JSON，只用于识别是哪一单，金额状态以详情页为准。
+ * 与用户端同名组件是两份实现：用户端点卡片跳订单详情，客服工作台不跳页——
+ * 改为 emit('open-detail', orderNo)，由工作台在当前页弹订单详情弹窗（客服接待时不能离开对话）。
+ * 解析口径一致：content 是订单摘要 JSON，只用于识别是哪一单，金额状态以弹窗详情为准。
  */
 import { computed } from 'vue';
-import { useRouter } from 'vue-router';
 import { fmtCent, statusLabel } from '@sent/shared';
 
 interface ChatOrderPayload {
@@ -37,7 +37,7 @@ interface ChatOrderPayload {
 }
 
 const props = withDefaults(defineProps<{ content: string; mine?: boolean }>(), { mine: false });
-const router = useRouter();
+const emit = defineEmits<{ (e: 'open-detail', orderNo: string): void }>();
 
 const card = computed<ChatOrderPayload | null>(() => {
   try {
@@ -48,10 +48,11 @@ const card = computed<ChatOrderPayload | null>(() => {
   }
 });
 
+/** 不跳页：交给工作台在同一页面弹订单详情，客服接待过程不中断 */
 function openOrder(): void {
   const no = card.value?.orderNo;
   if (!no) return;
-  router.push(`/order/detail/${no}`);
+  emit('open-detail', no);
 }
 </script>
 

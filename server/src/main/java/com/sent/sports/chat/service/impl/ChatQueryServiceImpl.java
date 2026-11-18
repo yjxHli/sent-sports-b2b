@@ -55,6 +55,15 @@ public class ChatQueryServiceImpl implements ChatQueryService {
     }
 
     @Override
+    public ChatDtos.SessionVO currentOpen(long customerId) {
+        return chatSessionRepository.findByCustomerId(customerId).stream()
+                .filter(s -> s.getStatus() != com.sent.sports.chat.domain.ChatSessionStatus.CLOSED)
+                .findFirst()
+                .map(s -> new ChatDtos.SessionVO(s.getId(), s.getStatus().name(), s.getStaffId(), true))
+                .orElse(null);
+    }
+
+    @Override
     public ChatDtos.QueueVO queue(long sessionId) {
         ChatSession session = chatSessionRepository.findById(sessionId)
                 .orElseThrow(() -> new BizException(ErrorCode.NOT_FOUND));

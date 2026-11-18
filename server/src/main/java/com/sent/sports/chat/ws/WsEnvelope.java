@@ -26,8 +26,10 @@ public record WsEnvelope(String type, long sessionId, long seq, String payload, 
     public static final String ASSIGNED = "ASSIGNED";
     /** 「正在输入」：只在两端之间转发，不落库、不进消息列表。 */
     public static final String TYPING = "TYPING";
+    /** 会话已结束：服务端推给客户与接待客服，工作台 Tab 变灰、客户侧显示「本次会话已结束」。 */
+    public static final String CLOSED = "CLOSED";
 
-    private static final Set<String> VALID_TYPES = Set.of(MSG, ACK, READ, QUEUE, ASSIGNED, TYPING);
+    private static final Set<String> VALID_TYPES = Set.of(MSG, ACK, READ, QUEUE, ASSIGNED, TYPING, CLOSED);
 
     private static final ObjectMapper MAPPER = new ObjectMapper()
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
@@ -74,6 +76,11 @@ public record WsEnvelope(String type, long sessionId, long seq, String payload, 
     /** 会话被接入通知（服务端 → 客户）。 */
     public static WsEnvelope assigned(long sessionId, String payload) {
         return of(ASSIGNED, sessionId, 0L, payload);
+    }
+
+    /** 会话结束通知（服务端 → 客户 + 接待客服）。 */
+    public static WsEnvelope closed(long sessionId, String payload) {
+        return of(CLOSED, sessionId, 0L, payload);
     }
 
     /** 「正在输入」提示（双向：客户打字 → 客服端；客服打字 → 用户端）。 */

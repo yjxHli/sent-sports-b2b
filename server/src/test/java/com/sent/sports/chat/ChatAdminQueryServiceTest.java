@@ -1,7 +1,14 @@
 package com.sent.sports.chat;
 
+import com.sent.sports.chat.mapper.ChatAuditMapper;
+import com.sent.sports.chat.mapper.ChatMetricsMapper;
+import com.sent.sports.chat.mapper.ChatSatisfactionMapper;
 import com.sent.sports.chat.mapper.ChatSessionMapper;
+import com.sent.sports.chat.mapper.ChatSessionNoteMapper;
+import com.sent.sports.chat.mapper.po.ChatHistoryRowPO;
 import com.sent.sports.chat.repository.AgentPresenceRepository;
+import com.sent.sports.chat.service.ChatQueryService;
+import com.sent.sports.chat.service.dto.ChatAuditDtos;
 import com.sent.sports.chat.service.dto.TodayStatsResult;
 import com.sent.sports.chat.service.impl.ChatAdminQueryServiceImpl;
 import com.sent.sports.support.BaseUnitTest;
@@ -18,6 +25,8 @@ import java.time.ZoneId;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -39,7 +48,17 @@ class ChatAdminQueryServiceTest extends BaseUnitTest {
     @Mock
     private AgentPresenceRepository presenceRepository;
     @Mock
+    private ChatSatisfactionMapper satisfactionMapper;
+    @Mock
     private Clock clock;
+    @Mock
+    private ChatAuditMapper auditMapper;
+    @Mock
+    private ChatSessionNoteMapper noteMapper;
+    @Mock
+    private ChatQueryService chatQueryService;
+    @Mock
+    private ChatMetricsMapper metricsMapper;
 
     @InjectMocks
     private ChatAdminQueryServiceImpl queryService;
@@ -49,12 +68,17 @@ class ChatAdminQueryServiceTest extends BaseUnitTest {
         when(clock.instant()).thenReturn(NOW_CLOCK.instant());
         when(clock.getZone()).thenReturn(NOW_CLOCK.getZone());
         when(chatSessionMapper.countClosedByStaffBetween(eq(9001L), any(), any())).thenReturn(4);
+        when(satisfactionMapper.countRatedBetween(eq(9001L), any(), any())).thenReturn(4);
+        when(satisfactionMapper.countSatisfiedBetween(eq(9001L), any(), any())).thenReturn(3);
 
         TodayStatsResult result = queryService.todayStats(9001L);
 
         assertEquals(9001L, result.staffId());
         assertEquals(4, result.closedCount());
         assertEquals("2026-11-13", result.date());
+        assertEquals(4, result.ratedCount(), "一般/不满意也算有效评价");
+        assertEquals(3, result.satisfiedCount());
+        assertEquals(75, result.ratePercent(), "满意率 = 满意 3 / 有效 4 x 100 = 75%");
 
         ArgumentCaptor<LocalDateTime> from = ArgumentCaptor.forClass(LocalDateTime.class);
         ArgumentCaptor<LocalDateTime> to = ArgumentCaptor.forClass(LocalDateTime.class);
@@ -77,5 +101,81 @@ class ChatAdminQueryServiceTest extends BaseUnitTest {
         ArgumentCaptor<LocalDateTime> from = ArgumentCaptor.forClass(LocalDateTime.class);
         verify(chatSessionMapper).countClosedByStaffBetween(eq(9001L), from.capture(), any());
         assertEquals(LocalDate.of(2026, 11, 14).atStartOfDay(), from.getValue());
+    }
+
+    @Test
+    void todayStatsWithoutRatingShowsDashInsteadOfZero() {
+        when(clock.instant()).thenReturn(NOW_CLOCK.instant());
+        when(clock.getZone()).thenReturn(NOW_CLOCK.getZone());
+
+        TodayStatsResult result = queryService.todayStats(9001L);
+
+        assertEquals(-1, result.ratePercent(), "无有效评价时前端显示 --，不能误显示 0%");
+    }
+
+    /**
+     * 用户要求「最多可看 10 次客服聊天记录」：limit 是服务端硬上限，
+     * 前端传 100 也只允许 10，防止一次把客户全部历史拉走（越权 + 性能）。
+     */
+    @Test
+    void customerHistoryIsCappedAtTenOnServerSide() {
+        when(auditMapper.selectHistory(anyLong(), anyLong(), anyInt())).thenReturn(java.util.List.of());
+
+        queryService.customerHistory(9002L, 0L, 100);
+
+        verify(auditMapper).selectHistory(9002L, 0L, 10);
+    }
+
+    @Test
+    void customerHistoryKeepsSmallerLimitAndExcludesCurrentSession() {
+        when(auditMapper.selectHistory(anyLong(), anyLong(), anyInt())).thenReturn(java.util.List.of(
+                historyRow(88L), historyRow(87L)));
+
+        java.util.List<ChatAuditDtos.HistoryRow> rows = queryService.customerHistory(9002L, 99L, 2);
+
+        verify(auditMapper).selectHistory(9002L, 99L, 2);
+        assertEquals(2, rows.size());
+        assertEquals(88L, rows.get(0).sessionId());
+    }
+
+    /** 小结是否存在要看「问题概述」，不能看处理结果：未解决也是填过小结的。 */
+    @Test
+    void auditMarksNoteFilledWhenResultIsUnresolved() {
+        com.sent.sports.chat.mapper.po.ChatAuditRowPO po =
+                new com.sent.sports.chat.mapper.po.ChatAuditRowPO();
+        po.setSessionId(7L);
+        po.setCustomerId(9002L);
+        po.setStaffId(9001L);
+        po.setSummary("客户咨询加急");
+        po.setResult("UNRESOLVED");
+        when(auditMapper.selectAuditPage(any(), any(), any(), any(), any(), any())).thenReturn(pageOf(po));
+        when(auditMapper.countAudit(any(), any(), any(), any(), any())).thenReturn(1L);
+
+        var result = queryService.audit(new com.sent.sports.common.web.PageQuery(), null,
+                null, null, null, null);
+
+        assertEquals(1, result.getTotal());
+        assertEquals("已填写", result.getList().get(0).noteStatus());
+        assertEquals("UNRESOLVED", result.getList().get(0).result());
+    }
+
+    private static <T> com.baomidou.mybatisplus.extension.plugins.pagination.Page<T> pageOf(T row) {
+        com.baomidou.mybatisplus.extension.plugins.pagination.Page<T> page =
+                new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(1, 10);
+        page.setRecords(java.util.List.of(row));
+        page.setTotal(1);
+        return page;
+    }
+
+    private static ChatHistoryRowPO historyRow(long sessionId) {
+        ChatHistoryRowPO row = new ChatHistoryRowPO();
+        row.setSessionId(sessionId);
+        row.setStaffId(9001L);
+        row.setStaffName("客服甲");
+        row.setResult("DONE");
+        row.setMessageCount(4);
+        row.setStartedAt(LocalDateTime.of(2026, 11, 1, 10, 0));
+        row.setEndedAt(LocalDateTime.of(2026, 11, 1, 10, 5));
+        return row;
     }
 }

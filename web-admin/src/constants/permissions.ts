@@ -24,7 +24,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
   ] },
   { label: '客服', codes: [
     'chat:serve', 'chat:presence', 'chat:assign', 'chat:transfer', 'chat:close',
-    'chat:create', 'chat:send',
+    'chat:create', 'chat:send', 'chat:note', 'chat:audit',
   ] },
   { label: '财务', codes: [
     'finance:read', 'finance:payment', 'finance:record', 'finance:writeoff', 'finance:reverse',

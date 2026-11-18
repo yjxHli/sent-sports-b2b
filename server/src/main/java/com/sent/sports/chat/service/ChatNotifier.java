@@ -25,4 +25,11 @@ public interface ChatNotifier {
      */
     void messagePublished(com.sent.sports.chat.domain.ChatSession session,
                           com.sent.sports.chat.domain.ChatMessage message);
+
+    /**
+     * 会话已结束（人工关闭 / 超时自动结束）：推给客户与接待客服。
+     * <p>客户据此显示「本次会话已结束」并禁用输入；客服端把对应 Tab 置为灰色「已结束」，
+     * 但保留 Tab 由客服主动关闭。重复关闭不重复推送由用例层保证。</p>
+     */
+    void sessionClosed(long customerId, long sessionId, Long staffId, String reason);
 }

@@ -20,6 +20,8 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -100,5 +102,42 @@ class ChatQueryServiceTest extends BaseUseCaseTest {
         when(sessionRepository.findById(404L)).thenReturn(Optional.empty());
 
         assertThrows(BizException.class, () -> queryService.queue(404L));
+    }
+
+    /**
+     * 用户要求：客户进入聊天页不能算「咨询客服」，只有发出首条消息才建会话。
+     * <p>因此「当前会话」接口只能查，绝不能顺手 create/save；否则工作台会冒出一条没有任何客户消息的幽灵进线。</p>
+     */
+    @Test
+    void currentOpenOnlyReadsAndNeverCreatesSession() {
+        when(sessionRepository.findByCustomerId(9002L)).thenReturn(java.util.List.of());
+
+        ChatDtos.SessionVO vo = queryService.currentOpen(9002L);
+
+        assertEquals(null, vo, "没有会话时返回 null，由前端在首次发消息时才调创建接口");
+        verify(sessionRepository, never()).save(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void currentOpenReturnsExistingUnclosedSession() {
+        ChatSession waiting = new ChatSession(7L, 9002L, false, ChatSessionStatus.WAITING, null, 1L, 1L, 0);
+        when(sessionRepository.findByCustomerId(9002L)).thenReturn(java.util.List.of(waiting));
+
+        ChatDtos.SessionVO vo = queryService.currentOpen(9002L);
+
+        assertEquals(7L, vo.sessionId());
+        assertEquals("WAITING", vo.status());
+        verify(sessionRepository, never()).save(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void currentOpenIgnoresClosedSessions() {
+        ChatSession closed = new ChatSession(7L, 9002L, false, ChatSessionStatus.CLOSED, 9001L, 1L, 1L, 0);
+        ChatSession active = new ChatSession(8L, 9002L, ChatSessionStatus.ACTIVE, 9001L);
+        when(sessionRepository.findByCustomerId(9002L)).thenReturn(java.util.List.of(closed, active));
+
+        ChatDtos.SessionVO vo = queryService.currentOpen(9002L);
+
+        assertEquals(8L, vo.sessionId(), "已结束会话不能被当成当前会话复用，否则客户发消息会被 STATE_CONFLICT 拒绝");
     }
 }

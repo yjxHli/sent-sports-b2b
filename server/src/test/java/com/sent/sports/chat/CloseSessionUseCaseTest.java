@@ -8,6 +8,7 @@ import com.sent.sports.chat.repository.AgentPresenceRepository;
 import com.sent.sports.chat.repository.ChatSessionRepository;
 import com.sent.sports.chat.service.ChatNotifier;
 import com.sent.sports.chat.service.CloseSessionUseCase;
+import com.sent.sports.chat.service.SendSatisfactionCardUseCase;
 import com.sent.sports.chat.service.dto.CloseCmd;
 import com.sent.sports.chat.service.dto.CloseExpiredResult;
 import com.sent.sports.chat.service.dto.CloseSessionResult;
@@ -24,7 +25,9 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.never;
@@ -33,12 +36,12 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 结束会话用例测试（P3-56/57，TDD 红）：主动关闭(原因枚举)、超时自动关闭(30min)、释放名额。
+ * 结束会话用例测试（P3-56/57，TDD 红）：主动关闭(原因枚举)、超时自动关闭(10min)、释放名额。
  */
 class CloseSessionUseCaseTest extends BaseUseCaseTest {
 
     private static final long NOW = 1_000_000_000L;
-    private static final long TIMEOUT = 30L * 60 * 1000; // 30 min
+    private static final long TIMEOUT = 10L * 60 * 1000; // 10 min
 
     @Mock
     private ChatSessionRepository sessionRepository;
@@ -46,6 +49,8 @@ class CloseSessionUseCaseTest extends BaseUseCaseTest {
     private AgentPresenceRepository presenceRepository;
     @Mock
     private ChatNotifier notifier;
+    @Mock
+    private SendSatisfactionCardUseCase satisfactionCardUseCase;
     @InjectMocks
     private CloseSessionUseCase useCase;
     @Captor
@@ -162,5 +167,112 @@ class CloseSessionUseCaseTest extends BaseUseCaseTest {
         verify(sessionRepository, times(2)).save(sessionCaptor.capture());
         assertEquals(2, r.closedCount());
         assertEquals(List.of(1L, 3L), r.closedSessionIds());
+    }
+
+    /**
+     * 定时任务 10 分钟自动结束的落库出口（2026-11-16 用户要求）。
+     * <p>必须同时释放坐席名额并补位：只把行改成 CLOSED 的话，负载会一直挂着，
+     * 跑几轮之后 9001 就被「幽灵会话」判满，新客户只能排队、工作台看起来像客服掉线。</p>
+     */
+    @Test
+    void timeoutCloseReleasesSeatAndPromotesWaiting() {
+        ChatSession active = new ChatSession(1L, 100L, false, ChatSessionStatus.ACTIVE, 9001L, NOW, NOW, 0);
+        ChatSession waiting = new ChatSession(2L, 200L, false, ChatSessionStatus.WAITING, null, NOW, NOW, 0);
+        when(sessionRepository.findById(1L)).thenReturn(Optional.of(active));
+        when(sessionRepository.findWaiting()).thenReturn(List.of(waiting));
+        AgentPresence presence = new AgentPresence(9001L, PresenceStatus.ONLINE, 1, 3, 0L);
+        when(presenceRepository.findByStaffId(9001L)).thenReturn(Optional.of(presence));
+
+        assertTrue(useCase.timeoutClose(1L));
+
+        assertEquals(ChatSessionStatus.CLOSED, active.getStatus());
+        assertEquals("TIMEOUT", active.getCloseReason());
+        assertEquals(ChatSessionStatus.ACTIVE, waiting.getStatus());
+        assertEquals(1, presence.getActiveSessions()); // 关闭 -1 后补位 +1，名额没有凭空多出来
+        verify(notifier).sessionAssigned(200L, 2L, 9001L);
+    }
+
+    /** 排队中的会话被超时结束：不占名额，也无需补位。 */
+    @Test
+    void timeoutCloseWaitingDoesNotTouchPresence() {
+        ChatSession waiting = new ChatSession(3L, 300L, false, ChatSessionStatus.WAITING, null, NOW, NOW, 0);
+        when(sessionRepository.findById(3L)).thenReturn(Optional.of(waiting));
+
+        assertTrue(useCase.timeoutClose(3L));
+
+        assertEquals(ChatSessionStatus.CLOSED, waiting.getStatus());
+        verify(presenceRepository, never()).findByStaffId(anyLong());
+        verify(sessionRepository, never()).findWaiting();
+    }
+
+    /** 已被人工结束的会话：返回 false，不重复关闭、不重复扣名额。 */
+    @Test
+    void timeoutCloseAlreadyClosedReturnsFalse() {
+        ChatSession closed = new ChatSession(4L, 400L, false, ChatSessionStatus.CLOSED, 9001L, NOW, NOW, 0);
+        when(sessionRepository.findById(4L)).thenReturn(Optional.of(closed));
+
+        assertFalse(useCase.timeoutClose(4L));
+
+        verify(sessionRepository, never()).save(any());
+        verify(presenceRepository, never()).findByStaffId(anyLong());
+    }
+
+    @Test
+    void timeoutCloseMissingSessionReturnsFalse() {
+        when(sessionRepository.findById(9L)).thenReturn(Optional.empty());
+
+        assertFalse(useCase.timeoutClose(9L));
+        verify(sessionRepository, never()).save(any());
+    }
+
+    /**
+     * 用户要求：客服点结束后客户必须立刻看到「本次会话已结束」，不能等下次轮询。
+     * 帧只推一次：重复推送会让前端弹出两次结束提示 / 覆盖后一条消息。
+     */
+    @Test
+    void closePushesClosedFrameExactlyOnce() {
+        ChatSession active = new ChatSession(1L, 100L, ChatSessionStatus.ACTIVE, 9001L);
+        when(sessionRepository.findById(1L)).thenReturn(Optional.of(active));
+
+        useCase.close(new CloseCmd(1L, "DONE", 9001L));
+
+        verify(notifier, times(1)).sessionClosed(100L, 1L, 9001L, "DONE");
+    }
+
+    /** 已结束会话重复关闭直接拒绝，不得再次推帧（幂等）。 */
+    @Test
+    void repeatedCloseDoesNotPushFrameTwice() {
+        ChatSession closed = new ChatSession(1L, 100L, ChatSessionStatus.CLOSED, 9001L);
+        when(sessionRepository.findById(1L)).thenReturn(Optional.of(closed));
+
+        assertThrows(BizException.class, () -> useCase.close(new CloseCmd(1L, "DONE", 9001L)));
+
+        verify(notifier, never()).sessionClosed(anyLong(), anyLong(), any(), any());
+    }
+
+    /** 超时结束同样要推帧；重复扫描到已结束会话时跳过，不能反复打扰客户。 */
+    @Test
+    void timeoutClosePushesFrameOnceAndSkipsSecondScan() {
+        ChatSession active = new ChatSession(1L, 100L, ChatSessionStatus.ACTIVE, 9001L);
+        when(sessionRepository.findById(1L)).thenReturn(Optional.of(active));
+
+        assertTrue(useCase.timeoutClose(1L));
+        assertFalse(useCase.timeoutClose(1L));
+
+        verify(notifier, times(1)).sessionClosed(100L, 1L, 9001L, "TIMEOUT");
+    }
+
+    /** 通知失败只记日志，不能阻断关单与队列补位。 */
+    @Test
+    void notificationFailureDoesNotBlockClose() {
+        ChatSession active = new ChatSession(1L, 100L, ChatSessionStatus.ACTIVE, 9001L);
+        when(sessionRepository.findById(1L)).thenReturn(Optional.of(active));
+        org.mockito.Mockito.doThrow(new RuntimeException("ws down"))
+                .when(notifier).sessionClosed(anyLong(), anyLong(), any(), any());
+
+        CloseSessionResult r = useCase.close(new CloseCmd(1L, "DONE", 9001L));
+
+        assertEquals(ChatSessionStatus.CLOSED, r.status());
+        verify(sessionRepository).save(active);
     }
 }
