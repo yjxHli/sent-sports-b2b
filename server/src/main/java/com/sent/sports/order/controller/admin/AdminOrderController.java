@@ -46,8 +46,9 @@ public class AdminOrderController {
     @GetMapping("/orders")
     public R<PageResult<AdminOrderDtos.AdminOrderVO>> list(
             @ModelAttribute PageQuery page,
-            @RequestParam(required = false) String status) {
-        return R.ok(orderAdminService.list(page, status));
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String keyword) {
+        return R.ok(orderAdminService.list(page, status, keyword));
     }
 
     @GetMapping("/orders/{id}")

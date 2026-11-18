@@ -40,6 +40,10 @@ public final class CatalogDtos {
         }
     }
 
+    /** 搜索联想命中项：点击后跳 /products?categoryId=X&keyword=标题。 */
+    public record SuggestVO(String productId, String name, Long categoryId, String categoryName) {
+    }
+
     /** 商品视图：description 来自 product.detail_html，供管理端编辑页回显。 */
     public record ProductVO(
             String productId,

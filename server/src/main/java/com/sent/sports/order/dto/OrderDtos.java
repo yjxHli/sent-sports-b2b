@@ -31,7 +31,8 @@ public final class OrderDtos {
             int availablePoints,
             int freightFreeThresholdCent,
             int freightFeeCent,
-            @NotNull(message = "商品行不能为空") List<OrderItemCmd> items) {
+            @NotNull(message = "商品行不能为空") List<OrderItemCmd> items,
+            Long couponId) {
     }
 
     /** 下单单行：携带取价所需中立参数（对齐 order.service.dto.OrderLineCmd）。 */
@@ -89,7 +90,13 @@ public final class OrderDtos {
                            * <p>淘宝式右栏「订单信息」要写明「支付方式 / 交易号」，这三个字段由
                            * payment 模块的只读门面补齐；未发起支付时全为 null，前端按「未支付」渲染。</p>
                            */
-                          String payChannel, String payTxnNo, String tradeNo) {
+                           String payChannel, String payTxnNo, String tradeNo,
+                          /**
+                           * 支付截止时间（毫秒）：待付款单下 5 分钟倒计时用；已付款 / 历史单为 null。
+                           * <p>口径与 {@code OrderTimeoutJob} 完全一致（同一个 {@code orders.expire_at}），
+                           * 前端倒计时归零后刷新即可看到「已取消」，不会出现「倒计时结束但单子还在」。</p>
+                           */
+                          Long expireAtMillis) {
 
         /** 兼容下单 / 确认收货等「只回状态不回商品行」的入口。 */
         public OrderVO(String orderNo, String status, String payStatus, String shipStatus, String refundStatus,
@@ -101,7 +108,7 @@ public final class OrderDtos {
                     goodsAmountCent, goodsAmountYuan, freightCent, freightYuan,
                     pointDeductCent, pointDeductYuan, List.of(),
                     null, null, null, null, null, null, null, null, null,
-                    null, null, null);
+                    null, null, null, null);
         }
 
         /** 兼容「带回商品行但不需要时间/物流」的调用（详情接口已改走全参构造）。 */
@@ -115,7 +122,7 @@ public final class OrderDtos {
                     goodsAmountCent, goodsAmountYuan, freightCent, freightYuan,
                     pointDeductCent, pointDeductYuan, items,
                     null, null, null, null, null, null, null, null, null,
-                    null, null, null);
+                    null, null, null, null);
         }
     }
 
@@ -123,10 +130,12 @@ public final class OrderDtos {
      * 我的订单列表项。
      * <p>带上 {@code createdAt}（毫秒）与 {@code items}：淘宝式订单卡片要显示「下单时间/店铺名/商品行」，
      * 商品行随列表一次返回，前端不必逐单再查详情（N+1）。</p>
+     * <p>{@code expireAtMillis} 让「待付款」卡片就地显示 5 分钟倒计时，同样不需要再查详情。</p>
      */
     public record OrderListItem(String orderNo, String status, String payStatus, String refundStatus,
                                 Long payableCent, String payableYuan,
-                                Long createdAt, List<OrderItemLine> items) {
+                                Long createdAt, List<OrderItemLine> items,
+                                Long expireAtMillis) {
     }
 
     /**

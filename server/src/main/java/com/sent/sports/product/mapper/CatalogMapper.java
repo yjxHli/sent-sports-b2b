@@ -42,6 +42,16 @@ public interface CatalogMapper {
     long countProducts(@Param("categoryId") Long categoryId, @Param("keyword") String keyword);
 
     /**
+     * 首页搜索联想：只返回上架商品的「标题 + 分类」，按销量优先。
+     * 关键字为空白时由服务层直接返回空列表，不让 '%' 扫全表。
+     */
+    @Select("SELECT p.id, p.title, p.category_id, p.sales_count FROM product p "
+            + "WHERE p.deleted = 0 AND p.status = 'ON_SHELF' "
+            + "AND p.title LIKE CONCAT('%', #{keyword}, '%') "
+            + "ORDER BY p.sales_count DESC, p.id DESC LIMIT #{limit}")
+    List<ProductRow> selectSuggestions(@Param("keyword") String keyword, @Param("limit") int limit);
+
+    /**
      * 管理端商品分页：**不**按上下架硬过滤，草稿与已下架商品必须留在列表里，
      * 否则运营下架后商品直接消失、无法再上架（前台只能看 ON_SHELF，不能复用本方法）。
      * {@code status} 为空表示全部状态，由列表页的「上架状态」筛选决定是否收窄。
@@ -111,6 +121,26 @@ public interface CatalogMapper {
         public void setSalesCount(Long salesCount) { this.salesCount = salesCount; }
         public String getDetailHtml() { return detailHtml; }
         public void setDetailHtml(String detailHtml) { this.detailHtml = detailHtml; }
+    }
+
+    /**
+     * 批量把 SKU 映射到所属 SPU：品类券按 SPU 限定时，券模块需要知道每个订单行属于哪个商品。
+     * 只在有 SKU 时调用（空集合会生成非法 IN ()）。
+     */
+    @Select("<script>SELECT id AS skuId, spu_id AS spuId FROM sku WHERE id IN "
+            + "<foreach collection='skuIds' item='id' open='(' separator=',' close=')'>#{id}</foreach>"
+            + "</script>")
+    List<SkuSpuRow> selectSkuSpuIds(@Param("skuIds") List<Long> skuIds);
+
+    /** SKU → SPU 行。 */
+    class SkuSpuRow {
+        private Long skuId;
+        private Long spuId;
+
+        public Long getSkuId() { return skuId; }
+        public void setSkuId(Long skuId) { this.skuId = skuId; }
+        public Long getSpuId() { return spuId; }
+        public void setSpuId(Long spuId) { this.spuId = spuId; }
     }
 
     /** SKU + 可售库存行。 */

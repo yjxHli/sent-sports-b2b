@@ -9,6 +9,7 @@ import com.sent.sports.cart.service.dto.QuoteItemCmd;
 import com.sent.sports.cart.service.dto.QuoteLine;
 import com.sent.sports.common.anno.RequirePerm;
 import com.sent.sports.common.util.MoneyUtil;
+import com.sent.sports.common.web.CurrentUser;
 import com.sent.sports.common.web.R;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -65,23 +67,28 @@ public class CartController {
     }
 
     @PostMapping("/checkout-preview")
-    public R<CartDtos.QuoteVO> checkoutPreview(@Valid @RequestBody CartDtos.CheckoutPreviewCmd cmd) {
+    public R<CartDtos.QuoteVO> checkoutPreview(@Valid @RequestBody CartDtos.CheckoutPreviewCmd cmd,
+            @RequestAttribute(value = CurrentUser.ATTR, required = false) CurrentUser user) {
+        long customerId = user == null || user.isAdmin() ? 0L : user.userId();
         CartQuoteCmd quoteCmd = new CartQuoteCmd(cmd.availablePoints(), cmd.freightFreeThresholdCent(),
-                cmd.freightFeeCent(), toQuoteItems(cmd.items()));
+                cmd.freightFeeCent(), toQuoteItems(cmd.items()), cmd.couponId(), customerId);
         return R.ok(toQuoteVo(cartQuoteUseCase.quote(quoteCmd)));
     }
 
     private List<QuoteItemCmd> toQuoteItems(List<CartDtos.PreviewItemCmd> items) {
         return items.stream().map(i -> new QuoteItemCmd(i.skuId(), i.qty(), i.customerTypeCode(),
-                i.memberDiscountRate(), i.agreementDiscountRate(), i.allowStacking(), i.ladderTiers())).toList();
+                i.memberDiscountRate(), i.agreementDiscountRate(), i.allowStacking(), i.ladderTiers(),
+                Boolean.TRUE.equals(i.customFlag()))).toList();
     }
 
     private CartDtos.QuoteVO toQuoteVo(CartQuoteResult r) {
         List<CartDtos.QuoteLineVO> lines = r.lines().stream().map(this::toLineVo).toList();
         return new CartDtos.QuoteVO(lines,
                 r.goodsAmountCent(), MoneyUtil.toYuan(r.goodsAmountCent()),
+                r.customFeeCent(), MoneyUtil.toYuan(r.customFeeCent()),
                 r.freightCent(), MoneyUtil.toYuan(r.freightCent()),
                 r.pointDeductCent(), MoneyUtil.toYuan(r.pointDeductCent()),
+                r.couponDiscountCent(), MoneyUtil.toYuan(r.couponDiscountCent()),
                 r.payableCent(), MoneyUtil.toYuan(r.payableCent()));
     }
 

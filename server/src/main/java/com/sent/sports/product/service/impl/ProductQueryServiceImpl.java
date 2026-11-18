@@ -39,6 +39,17 @@ public class ProductQueryServiceImpl implements ProductQueryService {
     }
 
     @Override
+    public java.util.List<CatalogDtos.SuggestVO> suggest(String keyword, int limit) {
+        String kw = keyword == null ? "" : keyword.trim();
+        if (kw.isEmpty()) return java.util.List.of();
+        int size = Math.max(1, Math.min(limit, 20));
+        return catalogMapper.selectSuggestions(kw, size).stream()
+                .map(row -> new CatalogDtos.SuggestVO(String.valueOf(row.getId()), row.getTitle(),
+                        row.getCategoryId(), row.getCategoryName()))
+                .toList();
+    }
+
+    @Override
     public CatalogDtos.ProductVO detail(String productId) {
         CatalogMapper.ProductRow row = catalogMapper.selectProductById(parseId(productId));
         if (row == null) {
@@ -63,6 +74,18 @@ public class ProductQueryServiceImpl implements ProductQueryService {
                         String.valueOf(c.getId()), c.getName(),
                         c.getParentId() == null ? null : String.valueOf(c.getParentId()), List.of()))
                 .toList();
+    }
+
+    @Override
+    public java.util.Map<Long, Long> spuIdsOfSkus(java.util.List<Long> skuIds) {
+        if (skuIds == null || skuIds.isEmpty()) {
+            return java.util.Map.of();
+        }
+        return catalogMapper.selectSkuSpuIds(skuIds).stream()
+                .filter(row -> row.getSkuId() != null && row.getSpuId() != null)
+                .collect(java.util.stream.Collectors.toMap(
+                        CatalogMapper.SkuSpuRow::getSkuId, CatalogMapper.SkuSpuRow::getSpuId,
+                        (a, b) -> a));
     }
 
     private CatalogDtos.ProductVO toProductVo(CatalogMapper.ProductRow row) {

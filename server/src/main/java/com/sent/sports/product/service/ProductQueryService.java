@@ -18,9 +18,15 @@ public interface ProductQueryService {
     /** 详情：含 SKU 与按身份得出的价格。 */
     CatalogDtos.ProductVO detail(String productId);
 
+    /** 首页搜索联想：按标题模糊匹配，最多 limit 条；空白关键字返回空列表。 */
+    java.util.List<CatalogDtos.SuggestVO> suggest(String keyword, int limit);
+
     /** 指定商品的 SKU 与可售库存。 */
     java.util.List<CatalogDtos.SkuVO> skus(String productId);
 
     /** 分类树。 */
     java.util.List<CatalogDtos.CategoryVO> categories();
+
+    /** 批量把 SKU 映射到所属 SPU（品类券按 SPU 限定时使用）；空集合返回空 Map。 */
+    java.util.Map<Long, Long> spuIdsOfSkus(java.util.List<Long> skuIds);
 }

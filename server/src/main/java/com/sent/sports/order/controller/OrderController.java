@@ -70,10 +70,11 @@ public class OrderController {
     public R<PageResult<OrderDtos.OrderListItem>> list(
             @ModelAttribute PageQuery page,
             @RequestParam(required = false) String status,
+            @RequestParam(required = false) String keyword,
             @RequestAttribute(value = CurrentUser.ATTR, required = false) CurrentUser user) {
         // 主体取自 AuthFilter 解析的 JWT sub，不再由前端请求体指定，避免越权查看他人订单
         Long customerId = user == null || user.isAdmin() ? null : user.userId();
-        return R.ok(orderQueryService.listMyOrders(customerId, status, page));
+        return R.ok(orderQueryService.listMyOrders(customerId, status, keyword, page));
     }
 
     @GetMapping("/{orderNo}")
@@ -117,7 +118,7 @@ public class OrderController {
                 i.agreementDiscountRate(), i.allowStacking(), i.ladderTiers(),
                 Boolean.TRUE.equals(i.customFlag()))).toList();
         return new CreateOrderCmd(cmd.customerId(), cmd.addressId(), cmd.idemKey(), cmd.availablePoints(),
-                cmd.freightFreeThresholdCent(), cmd.freightFeeCent(), lines);
+                cmd.freightFreeThresholdCent(), cmd.freightFeeCent(), lines, cmd.couponId());
     }
 
     private OrderDtos.OrderVO toVo(CreateOrderResult r) {

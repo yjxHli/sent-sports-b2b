@@ -15,5 +15,13 @@ public record CreateOrderCmd(
         int availablePoints,
         int freightFreeThresholdCent,
         int freightFeeCent,
-        List<OrderLineCmd> items) {
+        List<OrderLineCmd> items,
+        Long couponId) {
+
+    /** 兼容既有七参调用（不使用优惠券）。 */
+    public CreateOrderCmd(long customerId, Long addressId, String idemKey, int availablePoints,
+                          int freightFreeThresholdCent, int freightFeeCent, List<OrderLineCmd> items) {
+        this(customerId, addressId, idemKey, availablePoints, freightFreeThresholdCent,
+                freightFeeCent, items, null);
+    }
 }

@@ -101,7 +101,7 @@ public interface StockMapper extends BaseMapper<SkuStockPO> {
             + "FROM sku_stock st "
             + "LEFT JOIN sku s ON s.id = st.sku_id "
             + "LEFT JOIN product p ON p.id = s.spu_id "
-            + "WHERE 1 = 1 "
+            + "WHERE (s.deleted IS NULL OR s.deleted = 0) "
             + "<if test=\"skuId != null\"> AND st.sku_id = #{skuId}</if> "
             + "<if test=\"warningOnly != null and warningOnly\"> "
             + "AND GREATEST(st.physical_qty - st.locked_qty - st.pending_qty - st.frozen_qty, 0) "
@@ -112,6 +112,15 @@ public interface StockMapper extends BaseMapper<SkuStockPO> {
             + "</script>")
     IPage<StockLedgerRow> selectStockPage(Page<StockLedgerRow> page, @Param("skuId") Long skuId,
                                           @Param("warningOnly") Boolean warningOnly);
+
+    /**
+     * 管理端批量软删（V34）：SKU 打删除标记并下架（sku.status = 'OFF'）。
+     * sku_stock 台账的实物 / 锁定 / 在途 / 冻结数量一概不动，保证账实可对。
+     */
+    @Update("<script>UPDATE sku SET deleted = 1, status = 'OFF' WHERE deleted = 0 AND id IN "
+            + "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach>"
+            + "</script>")
+    int batchMarkDeleted(@Param("ids") List<Long> ids);
 
     /**
      * 最紧急的一条库存预警（缺口最大者），供管理端「预警摘要」与工作台指标卡使用。

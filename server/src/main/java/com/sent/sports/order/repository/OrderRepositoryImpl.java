@@ -109,6 +109,11 @@ public class OrderRepositoryImpl implements OrderRepository {
         if (order.getPaidAtMillis() > 0) {
             po.setPaidAt(toLocalDateTime(order.getPaidAtMillis()));
         }
+        // 支付截止时间：只在插入时写入；updateHeader 的 SQL 不写这一列，
+        // 后续发货/收货/退款刷新订单头时不会把截止时间冲掉。
+        if (order.getExpireAtMillis() > 0) {
+            po.setExpireAt(toLocalDateTime(order.getExpireAtMillis()));
+        }
         // 收货地址快照：只在插入时带值；updateHeader 的 SQL 不写这一列，历史订单不会被后续编辑覆盖
         po.setAddressSnapshotJson(order.getAddressSnapshotJson());
         po.setVersion((long) order.getVersion());
@@ -123,10 +128,11 @@ public class OrderRepositoryImpl implements OrderRepository {
         po.setUnitPriceCent(item.getUnitPriceCent());
         po.setPriceSource(item.getSourceCode());
         po.setAmountCent(item.getLineTotalCent());
-        po.setDiscountAllocCent(0L);
+        // 券抵扣按行分摊后落库：退款行实付 = amount_cent − discount_alloc_cent
+        po.setDiscountAllocCent(item.getDiscountAllocCent());
         po.setShippedQty(item.getShippedQty());
         po.setCustomFlag(item.isCustomFlag() ? 1 : 0);
-        po.setCustomFeeCent(0L);
+        po.setCustomFeeCent(item.getCustomFeeCent());
         return po;
     }
 
@@ -134,6 +140,8 @@ public class OrderRepositoryImpl implements OrderRepository {
         OrderItem item = new OrderItem(po.getSkuId(), po.getQty(), po.getUnitPriceCent(),
                 po.getPriceSource() == null ? "" : po.getPriceSource(), po.getAmountCent(),
                 po.getCustomFlag() != null && po.getCustomFlag() == 1);
+        // 回读时必须带出分摊值：后续发货/收货刷新订单行，不能把券抵扣分摊冲成 0
+        item.setDiscountAllocCent(po.getDiscountAllocCent() == null ? 0L : po.getDiscountAllocCent());
         if (po.getShippedQty() != null && po.getShippedQty() > 0) {
             item.ship(po.getShippedQty());
         }
@@ -151,6 +159,7 @@ public class OrderRepositoryImpl implements OrderRepository {
         order.setStatus(OrderStatus.valueOf(po.getStatus()));
         order.setPayStatus(PayStatus.valueOf(po.getPayStatus()));
         order.setAddressSnapshotJson(po.getAddressSnapshotJson());
+        order.setExpireAtMillis(toMillis(po.getExpireAt()));
         return order;
     }
 

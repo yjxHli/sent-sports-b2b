@@ -72,7 +72,7 @@ public interface RefundOrderMapper extends BaseMapper<RefundOrderPO> {
             + "COALESCE(r.audit_remark, r.remark, r.reason_code) AS reason, "
             + "r.images_json AS imagesJson, r.created_at AS createdAt "
             + "FROM refund_order r LEFT JOIN orders o ON o.id = r.order_id "
-            + "WHERE (#{status} IS NULL OR #{status} = '' OR r.status = #{status}) "
+            + "WHERE r.deleted = 0 AND (#{status} IS NULL OR #{status} = '' OR r.status = #{status}) "
             + "AND (#{keyword} IS NULL OR #{keyword} = '' "
             + "     OR r.refund_no LIKE CONCAT('%', #{keyword}, '%') "
             + "     OR o.order_no LIKE CONCAT('%', #{keyword}, '%')) "
@@ -84,11 +84,20 @@ public interface RefundOrderMapper extends BaseMapper<RefundOrderPO> {
     /** 管理端退款审核列表总数（与 selectAuditPage 同一过滤条件，含关键字联查）。 */
     @Select("SELECT COUNT(*) FROM refund_order r "
             + "LEFT JOIN orders o ON o.id = r.order_id "
-            + "WHERE (#{status} IS NULL OR #{status} = '' OR r.status = #{status}) "
+            + "WHERE r.deleted = 0 AND (#{status} IS NULL OR #{status} = '' OR r.status = #{status}) "
             + "AND (#{keyword} IS NULL OR #{keyword} = '' "
             + "     OR r.refund_no LIKE CONCAT('%', #{keyword}, '%') "
             + "     OR o.order_no LIKE CONCAT('%', #{keyword}, '%'))")
     long countAudit(@Param("status") String status, @Param("keyword") String keyword);
+
+    /**
+     * 管理端批量软删（V34）：只写 deleted 标记，退款金额 / 支付流水 / 应收一律不碰。
+     * 已删行重复删除返回 0，按幂等成功处理。
+     */
+    @Update("<script>UPDATE refund_order SET deleted = 1 WHERE deleted = 0 AND refund_no IN "
+            + "<foreach collection='nos' item='no' open='(' separator=',' close=')'>#{no}</foreach>"
+            + "</script>")
+    int batchMarkDeleted(@Param("nos") List<String> nos);
 
     /** 条件迁移：返回 0 行表示状态已被并发推进。 */
     @Update("UPDATE refund_order SET status = #{to} WHERE refund_no = #{refundNo} AND status = #{from}")

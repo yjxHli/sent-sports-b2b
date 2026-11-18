@@ -19,6 +19,8 @@ public class Order {
     private final long pointDeductCent;
     private final long payableCent;
     private final long createdAtMillis;
+    /** 支付截止时间（毫秒）：下单时 = 创建时间 + 5 分钟，超时任务据此取消未付款订单。 */
+    private long expireAtMillis;
     private long paidCent;
     private long receivedCent;
     private long paidAtMillis;
@@ -90,6 +92,14 @@ public class Order {
 
     public long getCreatedAtMillis() {
         return createdAtMillis;
+    }
+
+    public long getExpireAtMillis() {
+        return expireAtMillis;
+    }
+
+    public void setExpireAtMillis(long expireAtMillis) {
+        this.expireAtMillis = expireAtMillis;
     }
 
     public long getPaidCent() {

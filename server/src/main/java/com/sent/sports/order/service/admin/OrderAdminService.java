@@ -31,7 +31,7 @@ public interface OrderAdminService {
      * 列表：status 为空时全量分页；发货工作台传 WAIT_SHIP / PART_SHIPPED 只取可发货单。
      * <p>此前接口只接 PageQuery，前端传的 status 被静默丢弃，导致选到已完成订单后发货 409。</p>
      */
-    PageResult<AdminOrderDtos.AdminOrderVO> list(PageQuery page, String status);
+    PageResult<AdminOrderDtos.AdminOrderVO> list(PageQuery page, String status, String keyword);
 
     /** 详情：订单头 + 金额 + 订单行（真实查询；订单号不存在抛 NOT_FOUND）。 */
     AdminOrderDtos.AdminOrderDetailVO detail(String orderNo);

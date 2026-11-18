@@ -14,8 +14,13 @@ import java.util.Optional;
 public interface OrderQueryService {
     Optional<OrderPaymentStatusDto> getPaymentStatus(String orderNo);
 
-    /** 我的订单：按当前用户 + 分页（P4 桩，P5 接入仓储后替换）。 */
-    PageResult<OrderDtos.OrderListItem> listMyOrders(Long customerId, String status, PageQuery pageQuery);
+    /**
+     * 我的订单：按当前用户 + 状态 + 关键字 + 分页。
+     * <p>{@code keyword} 同时匹配订单号与商品名（用户可能只记得其中一种），
+     * 过滤下推到 SQL，保证分页 total 与每页条数一致。</p>
+     */
+    PageResult<OrderDtos.OrderListItem> listMyOrders(Long customerId, String status, String keyword,
+                                                     PageQuery pageQuery);
 
     /** 订单详情：四维度状态 + 金额（P4 桩，P5 接入仓储后替换）。 */
     OrderDtos.OrderVO getDetail(String orderNo);

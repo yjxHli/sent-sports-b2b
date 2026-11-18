@@ -13,7 +13,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 发货后自动确认收货（P5-40）：扫描发货超过 15 天仍为 WAIT_RECEIVE 的订单，条件迁移到 COMPLETED。
+ * 已送达后自动确认收货（P5-40 / 2026-11-17 用户要求收紧到 7 天）：
+ * 扫描最后更新（发货/送达回写）超过 7 天仍为 WAIT_RECEIVE 的订单，条件迁移到 COMPLETED。
  * <ul>
  *   <li><b>幂等</b>：{@code transitStatus} 是「WHERE status = 期望旧值」的条件更新，返回 0 行即表示
  *       并发下已被他人确认/售后推进，按冲突跳过；重复执行不会二次迁移，无需分布式锁；</li>
@@ -26,7 +27,8 @@ public class AutoConfirmJob {
 
     private static final Logger log = LoggerFactory.getLogger(AutoConfirmJob.class);
     private static final int BATCH_SIZE = 200;
-    private static final int AUTO_CONFIRM_DAYS = 15;
+    /** 已送达/发货后未确认收货的自动确认阈值（用户要求：超过 7 天自动收货）。 */
+    public static final int AUTO_CONFIRM_DAYS = 7;
     private static final String FROM = "WAIT_RECEIVE";
     private static final String TO = "COMPLETED";
 

@@ -39,8 +39,11 @@ public interface OrderMapper extends BaseMapper<OrderPO> {
 
     /**
      * 我的订单真实分页（任务 2：替换 P4 空桩）。
-     * <p>状态筛选必须下推到 SQL：淘宝式订单页有「待付款/待发货/待收货」多个 Tab，
-     * 若取出全量再由前端过滤，分页 total 与每页条数都会错。</p>
+     * <p>状态筛选与关键字都必须下推到 SQL：淘宝式订单页有「待付款/待发货/待收货」多个 Tab
+     * 加搜索框，若取出全量再由前端过滤，分页 total 与每页条数都会错。</p>
+     * <p>关键字同时匹配订单号与商品名。商品名用 {@code EXISTS} 子查询而不是 JOIN：
+     * 一单多行会让外层结果重复，MyBatis-Plus 自动生成的 count 也跟着虚高；
+     * 子查询走 {@code order_item(order_id)} 索引，历史空快照用 COALESCE 回退当前商品名。</p>
      * <p>已软删（{@code customer_deleted_at} 非空）的订单不再出现在客户列表里，
      * 但数据仍在库中，财务/客服/售后读面不受影响。</p>
      */
@@ -48,10 +51,19 @@ public interface OrderMapper extends BaseMapper<OrderPO> {
             "SELECT * FROM orders WHERE customer_id = #{customerId}",
             "AND customer_deleted_at IS NULL",
             "<if test='status != null and status != \"\"'> AND status = #{status}</if>",
+            "<if test='keyword != null and keyword != \"\"'>",
+            " AND (order_no LIKE CONCAT('%', #{keyword}, '%')",
+            " OR EXISTS (SELECT 1 FROM order_item oi",
+            " LEFT JOIN sku sk ON sk.id = oi.sku_id",
+            " LEFT JOIN product p ON p.id = sk.spu_id",
+            " WHERE oi.order_id = orders.id",
+            " AND COALESCE(oi.spu_title_snap, p.title) LIKE CONCAT('%', #{keyword}, '%'))",
+            ")",
+            "</if>",
             "ORDER BY id DESC",
             "</script>"})
     IPage<OrderPO> selectMyPage(Page<OrderPO> page, @Param("customerId") long customerId,
-                                @Param("status") String status);
+                                @Param("status") String status, @Param("keyword") String keyword);
 
     /**
      * 客户侧删除订单（软删）：只写时间戳，不动业务数据。
@@ -89,10 +101,27 @@ public interface OrderMapper extends BaseMapper<OrderPO> {
      * <p>发货工作台只应看到 WAIT_SHIP / PART_SHIPPED：此前固定全表查询把 1416 笔
      * COMPLETED 混进第一页，选中后发货必然命中 ShipOrderUseCase 的 409。</p>
      */
+    /**
+     * 管理端订单分页：status 为空不过滤；keyword 按订单号模糊匹配。
+     * <p>关键字必须走 SQL 而不是前端过滤——订单表 2000+ 行且分页只回 10 条，
+     * 前端过滤的结果是「明明有这单，但当前页里没有」。</p>
+     */
     @Select("SELECT * FROM orders "
-            + "WHERE (#{status} IS NULL OR #{status} = '' OR status = #{status}) "
+            + "WHERE admin_deleted_at IS NULL AND (#{status} IS NULL OR #{status} = '' OR status = #{status}) "
+            + "AND (#{keyword} IS NULL OR order_no LIKE CONCAT('%', #{keyword}, '%')) "
             + "ORDER BY id DESC")
-    IPage<OrderPO> selectAllPage(Page<OrderPO> page, @Param("status") String status);
+    IPage<OrderPO> selectAllPage(Page<OrderPO> page, @Param("status") String status,
+                                 @Param("keyword") String keyword);
+
+    /**
+     * 管理端批量软删（V34）：只写管理端删除时间，客户侧 customer_deleted_at 与金额/支付状态都不碰。
+     * 分页自动 count 复用 selectAllPage 的 WHERE，已隐藏行不再计入总数。
+     */
+    @Update("<script>UPDATE orders SET admin_deleted_at = #{at} "
+            + "WHERE admin_deleted_at IS NULL AND order_no IN "
+            + "<foreach collection='nos' item='no' open='(' separator=',' close=')'>#{no}</foreach>"
+            + "</script>")
+    int batchMarkAdminDeleted(@Param("nos") List<String> nos, @Param("at") LocalDateTime at);
 
     /** 按订单号读取（业务唯一键，前台入口）。 */
     @Select("SELECT * FROM orders WHERE order_no = #{orderNo}")

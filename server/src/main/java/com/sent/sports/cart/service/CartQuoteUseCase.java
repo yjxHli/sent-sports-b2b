@@ -1,6 +1,8 @@
 package com.sent.sports.cart.service;
 
 import com.sent.sports.common.util.FreightCalculator;
+import com.sent.sports.coupon.service.CouponDeduction;
+import com.sent.sports.coupon.service.dto.CouponLine;
 import com.sent.sports.cart.service.dto.CartQuoteCmd;
 import com.sent.sports.cart.service.dto.CartQuoteResult;
 import com.sent.sports.cart.service.dto.QuoteItemCmd;
@@ -26,26 +28,43 @@ public class CartQuoteUseCase {
 
     private final PricingServiceFacade pricingFacade;
     private final PointFacade pointFacade;
+    private final CouponDeduction couponDeduction;
 
-    public CartQuoteUseCase(PricingServiceFacade pricingFacade, PointFacade pointFacade) {
+    public CartQuoteUseCase(PricingServiceFacade pricingFacade, PointFacade pointFacade,
+                            CouponDeduction couponDeduction) {
         this.pricingFacade = pricingFacade;
         this.pointFacade = pointFacade;
+        this.couponDeduction = couponDeduction;
     }
 
     @UseCase
     public CartQuoteResult quote(CartQuoteCmd cmd) {
         long goodsAmount = 0L;
+        long customFee = 0L;
         List<QuoteLine> lines = new ArrayList<>();
+        List<CouponLine> couponLines = new ArrayList<>();
         for (QuoteItemCmd item : cmd.items()) {
             LinePrice lp = pricingFacade.price(toRequest(item));
             long lineTotal = lp.unitPriceCent() * item.qty();
             goodsAmount += lineTotal;
+            long lineCustomFee = 0L;
+            if (item.customFlag()) {
+                // 与 CreateOrderUseCase 同一口径：UV 定制件 10 元/件
+                lineCustomFee = 1000L * item.qty();
+                customFee += lineCustomFee;
+            }
             lines.add(new QuoteLine(item.skuId(), lp.unitPriceCent(), lp.sourceCode(), lp.belowCost(), lineTotal));
+            couponLines.add(new CouponLine(item.skuId(), lineTotal + lineCustomFee));
         }
         long freight = FreightCalculator.calcFreight(goodsAmount, cmd.freightFreeThresholdCent(), cmd.freightFeeCent());
         long pointDeduct = pointFacade.maxDeductibleCent(cmd.availablePoints(), goodsAmount);
-        long payable = goodsAmount + freight - pointDeduct;
-        return new CartQuoteResult(lines, goodsAmount, freight, pointDeduct, payable);
+        // 券在积分之后抵扣，门槛口径 = 商品额 + 定制费（不含运费），与下单链路一致；
+        // 传明细而非总额，品类券才能只对命中 SPU/SKU 的行金额生效
+        long couponDiscount = couponDeduction.discountFor(cmd.couponId() == null ? 0L : cmd.couponId(),
+                cmd.customerId(), couponLines);
+        long payable = Math.max(0L, goodsAmount + customFee + freight - pointDeduct - couponDiscount);
+        return new CartQuoteResult(lines, goodsAmount, freight, pointDeduct, payable,
+                customFee, couponDiscount);
     }
 
     private PriceRequest toRequest(QuoteItemCmd item) {

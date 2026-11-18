@@ -18,6 +18,14 @@ public class OrderItem {
     private final long lineTotalCent;
     /** UV 定制件标记：落库写 order_item.custom_flag，供定制单生成与审图链路识别。 */
     private final boolean customFlag;
+    /** 定制费（分）：定制件按 10 元/件计入，下单时固化进订单行快照。 */
+    private final long customFeeCent;
+    /**
+     * 分摊到本行的优惠（分，下单时由券抵扣按行金额比例计算）。
+     * 落 {@code order_item.discount_alloc_cent}，退款读侧据此算行实付
+     * （{@code amount_cent − discount_alloc_cent}），不分摊会让退款额虚高。
+     */
+    private long discountAllocCent;
 
     public OrderItem(long skuId, int qty) {
         this(skuId, qty, 0L, "", 0L, false);
@@ -29,6 +37,11 @@ public class OrderItem {
 
     public OrderItem(long skuId, int qty, long unitPriceCent, String sourceCode,
                      long lineTotalCent, boolean customFlag) {
+        this(skuId, qty, unitPriceCent, sourceCode, lineTotalCent, customFlag, 0L);
+    }
+
+    public OrderItem(long skuId, int qty, long unitPriceCent, String sourceCode,
+                     long lineTotalCent, boolean customFlag, long customFeeCent) {
         if (qty <= 0) {
             throw new BizException(ErrorCode.PARAM_INVALID, "订单行数量必须为正");
         }
@@ -40,6 +53,20 @@ public class OrderItem {
         this.sourceCode = sourceCode;
         this.lineTotalCent = lineTotalCent;
         this.customFlag = customFlag;
+        this.customFeeCent = customFeeCent;
+    }
+
+    public long getCustomFeeCent() {
+        return customFeeCent;
+    }
+
+    public long getDiscountAllocCent() {
+        return discountAllocCent;
+    }
+
+    /** 只在下单聚合阶段调用；订单落库后优惠分摊是历史事实，不允许再改。 */
+    public void setDiscountAllocCent(long discountAllocCent) {
+        this.discountAllocCent = Math.max(0L, discountAllocCent);
     }
 
     public boolean isCustomFlag() {

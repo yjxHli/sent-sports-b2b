@@ -152,7 +152,7 @@ public interface CustomOrderMapper extends BaseMapper<CustomOrderPO> {
      * 要求全等会逼他们先去复制完整单号。</p>
      */
     @Select("<script>"
-            + "SELECT * FROM custom_order WHERE 1 = 1 "
+            + "SELECT * FROM custom_order WHERE deleted = 0 "
             + "<if test=\"customNo != null and customNo != ''\">"
             + " AND custom_no LIKE CONCAT('%', #{customNo}, '%')"
             + "</if> "
@@ -160,6 +160,14 @@ public interface CustomOrderMapper extends BaseMapper<CustomOrderPO> {
             + "</script>")
     IPage<CustomOrderPO> selectAdminPage(Page<CustomOrderPO> page,
                                          @Param("customNo") String customNo);
+
+    /**
+     * 管理端批量软删（V34）：按定制单号打 deleted 标记；图稿与审图日志保留可追溯。
+     */
+    @Update("<script>UPDATE custom_order SET deleted = 1 WHERE deleted = 0 AND custom_no IN "
+            + "<foreach collection='nos' item='no' open='(' separator=',' close=')'>#{no}</foreach>"
+            + "</script>")
+    int batchMarkDeleted(@Param("nos") List<String> nos);
 
     @Select("SELECT COUNT(*) FROM custom_draft WHERE custom_order_id = #{customOrderId}")
     long countDrafts(@Param("customOrderId") long customOrderId);

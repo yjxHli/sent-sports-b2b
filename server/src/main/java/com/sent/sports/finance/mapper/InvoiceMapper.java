@@ -40,7 +40,7 @@ public interface InvoiceMapper extends BaseMapper<InvoiceRequestPO> {
             + "ir.invoice_url AS pdfUrl, ir.created_at AS createdAt "
             + "FROM invoice_request ir "
             + "LEFT JOIN orders o ON o.id = ir.order_id "
-            + "WHERE (#{status} IS NULL OR #{status} = '' OR ir.status = #{status}) "
+            + "WHERE ir.deleted = 0 AND (#{status} IS NULL OR #{status} = '' OR ir.status = #{status}) "
             + INVOICE_KEYWORD_WHERE
             + " ORDER BY ir.created_at DESC, ir.id DESC")
     IPage<InvoiceListItemPO> selectInvoicePage(Page<InvoiceListItemPO> page,
@@ -48,9 +48,20 @@ public interface InvoiceMapper extends BaseMapper<InvoiceRequestPO> {
                                                @Param("keyword") String keyword);
 
     @Select("SELECT COUNT(*) FROM invoice_request ir "
-            + "WHERE (#{status} IS NULL OR #{status} = '' OR ir.status = #{status}) "
+            + "WHERE ir.deleted = 0 AND (#{status} IS NULL OR #{status} = '' OR ir.status = #{status}) "
             + INVOICE_KEYWORD_WHERE)
     long countInvoice(@Param("status") String status, @Param("keyword") String keyword);
+
+    /**
+     * 管理端批量软删（V34）：按发票号打 deleted 标记；票面金额、订单应付与收款记录都不改。
+     */
+    @Update("<script>UPDATE invoice_request SET deleted = 1 WHERE deleted = 0 AND "
+            + "(invoice_no IN "
+            + "<foreach collection='nos' item='no' open='(' separator=',' close=')'>#{no}</foreach>"
+            + " OR CAST(id AS CHAR) IN "
+            + "<foreach collection='nos' item='no' open='(' separator=',' close=')'>#{no}</foreach>)"
+            + "</script>")
+    int batchMarkDeleted(@Param("nos") List<String> nos);
 
     /**
      * 按订单号创建开票申请：{@code INSERT ... SELECT} 直接取 orders 的主键与客户，

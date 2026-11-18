@@ -61,13 +61,15 @@ public class OrderQueryServiceImpl implements OrderQueryService {
     }
 
     @Override
-    public PageResult<OrderDtos.OrderListItem> listMyOrders(Long customerId, String status,
+    public PageResult<OrderDtos.OrderListItem> listMyOrders(Long customerId, String status, String keyword,
                                                             PageQuery pageQuery) {
         if (customerId == null) {
             return PageResult.of(List.of(), 0L, pageQuery.getPage(), pageQuery.getSize());
         }
+        // 空白关键字归一为 null：前端清空搜索框时会传 ''，不能让它变成「只匹配空订单号」
+        String normalizedKeyword = keyword == null || keyword.isBlank() ? null : keyword.trim();
         Page<OrderPO> page = new Page<>(pageQuery.getPage(), pageQuery.getSize());
-        IPage<OrderPO> rows = orderMapper.selectMyPage(page, customerId, status);
+        IPage<OrderPO> rows = orderMapper.selectMyPage(page, customerId, status, normalizedKeyword);
 
         // 商品行一次性批量取回，按 orderId 归组，避免逐单查询
         List<OrderPO> records = rows.getRecords();
@@ -84,7 +86,8 @@ public class OrderQueryServiceImpl implements OrderQueryService {
                         toMillis(o.getCreatedAt()),
                         itemsByOrder.getOrDefault(o.getId(), List.of()).stream()
                                 .map(OrderQueryServiceImpl::toItemLine)
-                                .toList()))
+                                .toList(),
+                        toMillis(o.getExpireAt())))
                 .toList();
         return PageResult.of(list, rows.getTotal(), pageQuery.getPage(), pageQuery.getSize());
     }
@@ -140,7 +143,9 @@ public class OrderQueryServiceImpl implements OrderQueryService {
                 shipment == null ? null : toMillis(shipment.getShippedAt()),
                 payment == null ? null : payment.channel(),
                 payment == null ? null : payment.txnNo(),
-                payment == null ? null : payment.tradeNo());
+                payment == null ? null : payment.tradeNo(),
+                // 商城端 5 分钟倒计时的唯一时间源（与 OrderTimeoutJob 同一个 expire_at）
+                toMillis(o.getExpireAt()));
     }
 
     private long nonNull(Long value) {

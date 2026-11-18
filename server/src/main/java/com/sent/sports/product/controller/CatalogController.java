@@ -39,6 +39,16 @@ public class CatalogController {
         return R.ok(productQueryService.search(filter, page));
     }
 
+    /**
+     * 首页搜索联想：必须声明在 {@code /products/{productId}} 之前，
+     * 否则 "suggest" 会被路径变量吞掉，被当成商品 id 查库报 NOT_FOUND。
+     */
+    @GetMapping("/products/suggest")
+    public R<List<CatalogDtos.SuggestVO>> suggest(@RequestParam String keyword,
+                                                  @RequestParam(defaultValue = "10") int limit) {
+        return R.ok(productQueryService.suggest(keyword, limit));
+    }
+
     @GetMapping("/products/{productId}")
     public R<CatalogDtos.ProductVO> detail(@PathVariable String productId) {
         return R.ok(productQueryService.detail(productId));

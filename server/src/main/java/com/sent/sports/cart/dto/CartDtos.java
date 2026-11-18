@@ -36,7 +36,8 @@ public final class CartDtos {
             int memberDiscountRate,
             int agreementDiscountRate,
             boolean allowStacking,
-            List<TierDto> ladderTiers) {
+            List<TierDto> ladderTiers,
+            Boolean customFlag) {
     }
 
     /** 结算试算请求：整单级参数 + 商品行。 */
@@ -44,7 +45,14 @@ public final class CartDtos {
             int availablePoints,
             int freightFreeThresholdCent,
             int freightFeeCent,
-            @NotNull(message = "商品行不能为空") List<PreviewItemCmd> items) {
+            @NotNull(message = "商品行不能为空") List<PreviewItemCmd> items,
+            Long couponId) {
+
+        /** 兼容既有四参请求（不使用优惠券）。 */
+        public CheckoutPreviewCmd(int availablePoints, int freightFreeThresholdCent, int freightFeeCent,
+                                  List<PreviewItemCmd> items) {
+            this(availablePoints, freightFreeThresholdCent, freightFeeCent, items, null);
+        }
     }
 
     /** 购物车项视图。 */
@@ -57,11 +65,13 @@ public final class CartDtos {
                               long lineTotalCent, String lineTotalYuan) {
     }
 
-    /** 结算试算视图：逐行 + 商品额 + 运费 + 积分抵扣 + 应付（分 + 元）。 */
+    /** 结算试算视图：逐行 + 商品额 + 定制费 + 运费 + 积分抵扣 + 应付（分 + 元）。 */
     public record QuoteVO(List<QuoteLineVO> lines,
                           long goodsAmountCent, String goodsAmountYuan,
+                          long customFeeCent, String customFeeYuan,
                           long freightCent, String freightYuan,
                           long pointDeductCent, String pointDeductYuan,
+                          long couponDiscountCent, String couponDiscountYuan,
                           long payableCent, String payableYuan) {
     }
 }

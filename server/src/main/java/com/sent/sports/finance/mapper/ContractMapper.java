@@ -8,6 +8,9 @@ import com.sent.sports.finance.mapper.po.ContractPO;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
+
+import java.util.List;
 
 /**
  * 合同 Mapper（收口阶段）：金额与状态取自 V10 补列，列表分页由 MyBatis-Plus {@link Page} 驱动。
@@ -42,7 +45,7 @@ public interface ContractMapper extends BaseMapper<ContractPO> {
     @Select("SELECT c.id AS contractId, c.contract_no AS contractNo, c.customer_id AS customerId, "
             + "c.amount_cent AS amountCent, c.status AS status, c.expire_date AS validTo "
             + "FROM contract c "
-            + "WHERE (#{status} IS NULL OR #{status} = '' OR c.status = #{status})"
+            + "WHERE c.deleted = 0 AND (#{status} IS NULL OR #{status} = '' OR c.status = #{status})"
             + DUE_STATE_WHERE
             + KEYWORD_WHERE
             + " ORDER BY c.expire_date IS NULL, c.expire_date ASC, c.id DESC")
@@ -52,9 +55,20 @@ public interface ContractMapper extends BaseMapper<ContractPO> {
                                                  @Param("keyword") String keyword);
 
     @Select("SELECT COUNT(*) FROM contract c "
-            + "WHERE (#{status} IS NULL OR #{status} = '' OR c.status = #{status})"
+            + "WHERE c.deleted = 0 AND (#{status} IS NULL OR #{status} = '' OR c.status = #{status})"
             + DUE_STATE_WHERE
             + KEYWORD_WHERE)
     long countContract(@Param("status") String status, @Param("dueState") String dueState,
                        @Param("keyword") String keyword);
+
+    /**
+     * 管理端批量软删（V34）：按合同号打 deleted 标记；合同金额与到期日不改写。
+     */
+    @Update("<script>UPDATE contract SET deleted = 1 WHERE deleted = 0 AND "
+            + "(contract_no IN "
+            + "<foreach collection='nos' item='no' open='(' separator=',' close=')'>#{no}</foreach>"
+            + " OR CAST(id AS CHAR) IN "
+            + "<foreach collection='nos' item='no' open='(' separator=',' close=')'>#{no}</foreach>)"
+            + "</script>")
+    int batchMarkDeleted(@Param("nos") List<String> nos);
 }

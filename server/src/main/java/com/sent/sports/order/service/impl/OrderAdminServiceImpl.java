@@ -88,9 +88,9 @@ public class OrderAdminServiceImpl implements OrderAdminService {
     }
 
     @Override
-    public PageResult<AdminOrderDtos.AdminOrderVO> list(PageQuery page, String status) {
+    public PageResult<AdminOrderDtos.AdminOrderVO> list(PageQuery page, String status, String keyword) {
         Page<OrderPO> query = new Page<>(page.getPage(), page.getSize());
-        IPage<OrderPO> rows = orderMapper.selectAllPage(query, normalizeStatus(status));
+        IPage<OrderPO> rows = orderMapper.selectAllPage(query, normalizeStatus(status), normalizeKeyword(keyword));
         List<AdminOrderDtos.AdminOrderVO> list = rows.getRecords().stream().map(o -> {
             long cent = o.getPayableCent() == null ? 0L : o.getPayableCent();
             return new AdminOrderDtos.AdminOrderVO(
@@ -102,6 +102,11 @@ public class OrderAdminServiceImpl implements OrderAdminService {
     /** 空 / 全空白的 status 视为「不过滤」，避免 clearable 下拉把空串传进 SQL。 */
     private String normalizeStatus(String status) {
         return (status == null || status.isBlank()) ? null : status.trim();
+    }
+
+    /** 关键字同理归一：空白 → null，否则 trim 后按订单号模糊匹配。 */
+    private String normalizeKeyword(String keyword) {
+        return (keyword == null || keyword.isBlank()) ? null : keyword.trim();
     }
 
     /** 客服侧栏默认取最近 10 笔：再多也看不过来，需要全量时进订单详情页。 */
