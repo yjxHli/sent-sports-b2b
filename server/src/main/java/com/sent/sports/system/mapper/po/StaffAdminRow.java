@@ -10,6 +10,9 @@ public class StaffAdminRow {
 
     private String staffNo;
 
+    /** 登录名（V38，与工号分离）。 */
+    private String username;
+
     private String name;
 
     private String phone;
@@ -32,6 +35,14 @@ public class StaffAdminRow {
 
     public void setStaffNo(String staffNo) {
         this.staffNo = staffNo;
+    }
+
+    public String getUsername() {
+        return username;
+    }
+
+    public void setUsername(String username) {
+        this.username = username;
     }
 
     public String getName() {

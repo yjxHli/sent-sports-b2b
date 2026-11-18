@@ -55,7 +55,10 @@ public class PermissionInterceptor implements HandlerInterceptor {
             throw new BizException(ErrorCode.FORBIDDEN);
         }
         for (String permission : required.value()) {
-            if (!permissionChecker.has(currentUser.userId(), permission)) {
+            boolean allowed = required.exact()
+                    ? permissionChecker.hasExplicit(currentUser.userId(), permission)
+                    : permissionChecker.has(currentUser.userId(), permission);
+            if (!allowed) {
                 throw new BizException(ErrorCode.FORBIDDEN);
             }
         }

@@ -1,9 +1,7 @@
 # 测试环境（CI 集成测试使用，一般由 Testcontainers 注入真实连接）
 app:
   env: test
-  # 集成测试上下文同样需要种子账号（FullBusinessFlowIT 的登录链路）
-  seed-accounts:
-    enabled: true
+  # 账号全部来自数据库（测试自行插行），不再使用进程内种子仓储
   # 测试上下文严禁触发演示数据生成器（避免污染 IT 隔离 / 拖慢启动）
   demo-data:
     enabled: false

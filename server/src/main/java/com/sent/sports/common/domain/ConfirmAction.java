@@ -11,7 +11,9 @@ public enum ConfirmAction {
     ENTERPRISE_CREDIT("确认授信"),
     STOCK_CHECK_APPROVE("确认调整"),
     REFUND_APPROVE("确认退款"),
-    STAFF_LOGOUT_ALL("确认下线");
+    STAFF_LOGOUT_ALL("确认下线"),
+    /** 管理端六列表批量删除：用户必须精确输入「删除」二字。 */
+    BATCH_DELETE("删除");
 
     private final String phrase;
 

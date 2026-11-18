@@ -53,6 +53,15 @@ public class PermissionServiceImpl implements PermissionService {
     }
 
     @Override
+    public boolean hasExplicit(long staffId, String permission) {
+        if (permission == null || permission.isBlank()) {
+            return false;
+        }
+        // 与 has() 的唯一差别：'*' 不再兜底，必须显式授予该权限点
+        return permissionsOf(staffId).contains(permission);
+    }
+
+    @Override
     public void evictStaff(long staffId) {
         cache.remove(staffId);
     }

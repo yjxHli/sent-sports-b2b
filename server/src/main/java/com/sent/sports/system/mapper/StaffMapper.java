@@ -33,6 +33,10 @@ public interface StaffMapper extends BaseMapper<SysStaffPO> {
     @Select("SELECT * FROM sys_staff WHERE staff_no = #{staffNo} AND deleted = 0")
     SysStaffPO selectByStaffNo(@Param("staffNo") String staffNo);
 
+    /** 登录用：按登录名读取未删除员工（V38 起登录名独立于工号）。 */
+    @Select("SELECT * FROM sys_staff WHERE username = #{username} AND deleted = 0")
+    SysStaffPO selectByUsername(@Param("username") String username);
+
     /** 读取员工所属角色（权限点缓存与数据范围的来源）。 */
     @Select("SELECT r.* FROM sys_role r JOIN sys_staff s ON s.role_id = r.id "
             + "WHERE s.id = #{staffId} AND s.deleted = 0")
@@ -75,7 +79,8 @@ public interface StaffMapper extends BaseMapper<SysStaffPO> {
     // ------------------------------------------------------------------
 
     /** 员工分页：左联 {@code sys_role} 取角色编码，只读未删除行，固定按 id 升序。 */
-    @Select("SELECT s.id AS staffId, s.staff_no AS staffNo, s.name AS name, s.phone AS phone, "
+    @Select("SELECT s.id AS staffId, s.staff_no AS staffNo, s.username AS username, "
+            + "s.name AS name, s.phone AS phone, "
             + "r.code AS roleCode, s.status AS status "
             + "FROM sys_staff s LEFT JOIN sys_role r ON r.id = s.role_id "
             + "WHERE s.deleted = 0 ORDER BY s.id")

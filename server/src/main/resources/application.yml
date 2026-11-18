@@ -76,6 +76,10 @@ app:
   pay:
     # 模拟支付回调签名密钥，同样不落固定值；prod 需注入 PAY_MOCK_SECRET
     mock-secret: ${PAY_MOCK_SECRET:${random.uuid}}
+  chat:
+    # 【业务口径】客户超过 N 分钟没发消息，定时任务把进行中的会话自动结束（TIMEOUT）。
+    # 这是聊天超时阈值的**唯一真源**（V31 已把 sys_config.chat.session.idle.minutes 下架）。
+    idle-minutes: ${CHAT_IDLE_MINUTES:10}
   job:
     # 单线程调度器串行执行；下列间隔统一 60s，可用环境变量单独覆盖
     order-timeout-ms: ${JOB_ORDER_TIMEOUT_MS:60000}

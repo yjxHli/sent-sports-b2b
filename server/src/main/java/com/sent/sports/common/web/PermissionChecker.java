@@ -10,4 +10,9 @@ public interface PermissionChecker {
 
     /** 员工是否拥有该权限点（权限点形如 {@code order:ship}）。 */
     boolean has(long staffId, String permission);
+
+    /** 精确匹配：不吃 '*' 通配，只认显式授权（客服审查用）。 */
+    default boolean hasExplicit(long staffId, String permission) {
+        return has(staffId, permission);
+    }
 }

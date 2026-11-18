@@ -1,9 +1,7 @@
 # 开发环境
 app:
   env: dev
-  # 验收种子账号（管理端 admin/123456、用户端手机号 13800138000/123456）同步进进程内账号仓储
-  seed-accounts:
-    enabled: true
+  # 账号全部来自数据库（sys_staff.username / customer.phone），不再向进程内仓储灌种子
   # 演示数据生成器：仅非生产 + 该开关为 true 时，在应用启动时灌入半年量级演示数据
   demo-data:
     enabled: true

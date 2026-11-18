@@ -14,6 +14,8 @@ import java.time.LocalDateTime;
 public class SysStaffPO extends BasePO {
 
     private String staffNo;
+    /** 登录名（V38），与工号 staff_no 完全独立。 */
+    private String username;
     private String name;
     private String phone;
     private String email;
@@ -35,6 +37,14 @@ public class SysStaffPO extends BasePO {
 
     public void setStaffNo(String staffNo) {
         this.staffNo = staffNo;
+    }
+
+    public String getUsername() {
+        return username;
+    }
+
+    public void setUsername(String username) {
+        this.username = username;
     }
 
     public String getName() {

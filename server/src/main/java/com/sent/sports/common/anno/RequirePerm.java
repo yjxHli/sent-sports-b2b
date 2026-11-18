@@ -17,4 +17,10 @@ import java.lang.annotation.Target;
 public @interface RequirePerm {
     /** 权限码，如 "order:ship"、"stock:inbound" */
     String[] value();
+
+    /**
+     * 精确匹配：为 true 时只认角色显式持有的权限码，不认通配 '*'。
+     * <p>用于客服审查这类必须严格隔离的菜单（V14 演示角色持有 '*'，不能让它顺带拿到审查权限）。</p>
+     */
+    boolean exact() default false;
 }

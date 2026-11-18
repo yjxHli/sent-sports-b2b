@@ -97,7 +97,7 @@ public class SystemServiceImpl implements SystemService {
         if (phone == null) {
             throw new BizException(ErrorCode.PARAM_INVALID, "手机号不能为空");
         }
-        if (staffMapper.selectByStaffNo(staffNo) != null) {
+        if (staffMapper.selectByStaffNo(staffNo) != null || staffMapper.selectByUsername(staffNo) != null) {
             throw new BizException(ErrorCode.PARAM_INVALID, "登录名「" + staffNo + "」已存在");
         }
         if (staffMapper.selectByPhone(phone) != null) {
@@ -107,6 +107,7 @@ public class SystemServiceImpl implements SystemService {
 
         SysStaffPO po = new SysStaffPO();
         po.setStaffNo(staffNo);
+        po.setUsername(staffNo);
         po.setName(trim(form.name()));
         po.setPhone(phone);
         po.setPasswordHash(DEFAULT_PASSWORD_HASH);
@@ -135,16 +136,25 @@ public class SystemServiceImpl implements SystemService {
         }
         SysRolePO role = resolveRole(form.roleCode());
 
-        // updateById 默认跳过 null 字段，因此这里只覆盖本次提交的列（登录名不允许改）
+        String loginName = trim(form.username());
+        if (loginName != null && !loginName.equals(existing.getUsername())) {
+            SysStaffPO byUsername = staffMapper.selectByUsername(loginName);
+            if (byUsername != null && !byUsername.getId().equals(id)) {
+                throw new BizException(ErrorCode.PARAM_INVALID, "登录名「" + loginName + "」已存在");
+            }
+        }
+        // updateById 默认跳过 null 字段；表单 username 同时写 username 与 staff_no（UI 口径不变）
         SysStaffPO patch = new SysStaffPO();
         patch.setId(id);
+        patch.setUsername(loginName);
+        patch.setStaffNo(loginName);
         patch.setName(trim(form.name()));
         patch.setPhone(phone);
         patch.setRoleId(role.getId());
         staffMapper.updateById(patch);
 
-        return new AdminSystemDtos.StaffVO(id, existing.getStaffNo(), trim(form.name()), role.getCode(),
-                phone == null ? existing.getPhone() : phone, true);
+        return new AdminSystemDtos.StaffVO(id, loginName == null ? existing.getStaffNo() : loginName,
+                trim(form.name()), role.getCode(), phone == null ? existing.getPhone() : phone, true);
     }
 
     @Override
