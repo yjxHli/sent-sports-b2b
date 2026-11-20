@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.sent.sports.common.anno.UseCase;
 import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
+import com.sent.sports.common.util.SensitiveWordFilter;
 import com.sent.sports.common.web.PageQuery;
 import com.sent.sports.common.web.PageResult;
 import com.sent.sports.report.dto.DashboardReportDtos;
@@ -61,6 +62,8 @@ public class SystemServiceImpl implements SystemService {
     private final StockQueryService stockQueryService;
     /** 销售汇总 / 排行走 report 模块的 service 门面，同样不直连对方 mapper。 */
     private final DashboardReportService dashboardReportService;
+    /** 客服昵称 / 登录名风控（2026-11-19）：员工账号是对客展示面，脏名字会直接出现在聊天窗口。 */
+    private final SensitiveWordFilter sensitiveWordFilter;
 
     public SystemServiceImpl(OperationLogMapper operationLogMapper,
                              StaffMapper staffMapper,
@@ -69,7 +72,8 @@ public class SystemServiceImpl implements SystemService {
                              SysConfigMapper configMapper,
                              PermissionService permissionService,
                              StockQueryService stockQueryService,
-                             DashboardReportService dashboardReportService) {
+                             DashboardReportService dashboardReportService,
+                             SensitiveWordFilter sensitiveWordFilter) {
         this.operationLogMapper = operationLogMapper;
         this.staffMapper = staffMapper;
         this.roleMapper = roleMapper;
@@ -78,6 +82,7 @@ public class SystemServiceImpl implements SystemService {
         this.permissionService = permissionService;
         this.stockQueryService = stockQueryService;
         this.dashboardReportService = dashboardReportService;
+        this.sensitiveWordFilter = sensitiveWordFilter;
     }
 
     @Override
@@ -90,10 +95,22 @@ public class SystemServiceImpl implements SystemService {
     /* 员工                                                                */
     /* ------------------------------------------------------------------ */
 
+    /**
+     * 员工登录名 / 姓名（客服在聊天窗口对客展示的昵称）敏感词风控。
+     * <p>登录名会出现在审计日志与工作台，姓名会出现在客户侧聊天头像位，
+     * 一旦放过脏词，等于让违规内容借系统身份对外展示。命中直接拒绝写库。</p>
+     */
+    private void rejectSensitiveStaffNaming(String username, String name) {
+        if (sensitiveWordFilter.contains(username) || sensitiveWordFilter.contains(name)) {
+            throw new BizException(ErrorCode.SENSITIVE_NICKNAME);
+        }
+    }
+
     @Override
     public AdminSystemDtos.StaffVO createStaff(AdminSystemDtos.StaffForm form) {
         String staffNo = trim(form.username());
         String phone = trim(form.phone());
+        rejectSensitiveStaffNaming(staffNo, form.name());
         if (phone == null) {
             throw new BizException(ErrorCode.PARAM_INVALID, "手机号不能为空");
         }
@@ -137,6 +154,7 @@ public class SystemServiceImpl implements SystemService {
         SysRolePO role = resolveRole(form.roleCode());
 
         String loginName = trim(form.username());
+        rejectSensitiveStaffNaming(loginName, form.name());
         if (loginName != null && !loginName.equals(existing.getUsername())) {
             SysStaffPO byUsername = staffMapper.selectByUsername(loginName);
             if (byUsername != null && !byUsername.getId().equals(id)) {

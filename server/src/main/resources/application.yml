@@ -44,6 +44,10 @@ server:
 # 应用自定义参数
 app:
   env: ${APP_ENV:dev}
+  # 敏感词风控（2026-11-19）：classpath 词库文件，一行一个词、# 开头为注释。
+  # 词库缺失会让应用启动失败（风控静默失效比启动失败更危险），换正式词库时用该键覆盖。
+  sensitive:
+    words-file: ${APP_SENSITIVE_WORDS_FILE:sensitive_words.txt}
   upload:
     # 相对路径落在工程目录下，Windows / Linux 都能直接跑；部署时用 UPLOAD_BASE_DIR 指到持久盘
     base-dir: ${UPLOAD_BASE_DIR:./data/upload}
@@ -76,6 +80,11 @@ app:
   pay:
     # 模拟支付回调签名密钥，同样不落固定值；prod 需注入 PAY_MOCK_SECRET
     mock-secret: ${PAY_MOCK_SECRET:${random.uuid}}
+  custom-fee:
+    # 【业务口径】UV 定制服务费单价（分/件，单面）。调价只改这里，购物车试算与下单共用同一引擎。
+    # 面数（单面/双面/全包）与数量阶梯折扣由 customize 领域的 CustomFeeCalculator 计算，
+    # 当前订单行尚未携带面数字段，故一律按单面计价（接入 faceSide 后本键即单面基础价）。
+    single-cent: ${CUSTOM_FEE_SINGLE_CENT:1000}
   chat:
     # 【业务口径】客户超过 N 分钟没发消息，定时任务把进行中的会话自动结束（TIMEOUT）。
     # 这是聊天超时阈值的**唯一真源**（V31 已把 sys_config.chat.session.idle.minutes 下架）。

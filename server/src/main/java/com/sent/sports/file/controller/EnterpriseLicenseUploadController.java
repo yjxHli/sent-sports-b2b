@@ -2,7 +2,8 @@ package com.sent.sports.file.controller;
 
 import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
-import com.sent.sports.common.storage.LocalFileStorage;
+import com.sent.sports.common.storage.Storage;
+import com.sent.sports.common.util.LicenseImageValidator;
 import com.sent.sports.common.web.R;
 import com.sent.sports.file.dto.FileDtos;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -33,9 +34,9 @@ public class EnterpriseLicenseUploadController {
     private static final String CONTENT_TYPE_JPEG = "image/jpeg";
     private static final String CONTENT_TYPE_PNG = "image/png";
 
-    private final LocalFileStorage storage;
+    private final Storage storage;
 
-    public EnterpriseLicenseUploadController(LocalFileStorage storage) {
+    public EnterpriseLicenseUploadController(Storage storage) {
         this.storage = storage;
     }
 
@@ -52,6 +53,7 @@ public class EnterpriseLicenseUploadController {
             throw new BizException(ErrorCode.PARAM_INVALID, "营业执照仅支持 JPG / PNG 图片");
         }
         byte[] bytes = file.getBytes();
+        LicenseImageValidator.validate(bytes);
         String fileId = storage.store(bytes, originalName);
         return R.ok(new FileDtos.FileVO(fileId, "/api/files/" + fileId,
                 originalName == null ? "" : originalName, (long) bytes.length));

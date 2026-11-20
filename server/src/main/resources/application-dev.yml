@@ -5,6 +5,10 @@ app:
   # 演示数据生成器：仅非生产 + 该开关为 true 时，在应用启动时灌入半年量级演示数据
   demo-data:
     enabled: true
+  sms:
+    # 演示开关：true 时把验证码回显到 /auth/sms-code 响应，供前端在浏览器控制台打印。
+    # 仅 dev 开启；prod 不设此值（默认 false），验证码绝不回显，避免泄露。
+    expose-demo-code: true
 
 spring:
   flyway:

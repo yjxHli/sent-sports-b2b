@@ -5,6 +5,10 @@ app:
   # 测试上下文严禁触发演示数据生成器（避免污染 IT 隔离 / 拖慢启动）
   demo-data:
     enabled: false
+  pay:
+    # 集成测试要用固定密钥自签一份「渠道通知」再打回接口——随机密钥会让验签永远失败。
+    # 仅测试 profile 固定；dev/prod 仍走 PAY_MOCK_SECRET（prod 未注入则启动失败）。
+    mock-secret: ${PAY_MOCK_SECRET:test-only-fixture-secret}
 
 spring:
   datasource:

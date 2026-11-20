@@ -74,21 +74,28 @@ public class LoginUseCase {
             userAccountRepository.save(account); // 落库失败计数/锁定状态
             throw e;
         }
-        // 双令牌：AT 必须是 TokenService 签发的真实 JWT（sub=userId, aud=user|admin），
-        // 否则 AuthFilter 的 verify 会拒绝、前端也无法从 JWT 解析出 customerId。
+        return issueTokens(account, cmd.normalizedAud(), cmd.normalizedDeviceId());
+    }
+
+    /**
+     * 双令牌签发：密码登录与验证码登录共用，保证 RT 轮换、按设备隔离、审计留痕与 JWT 口径一致。
+     * AT 必须是 TokenService 签发的真实 JWT（sub=userId, aud=user|admin），
+     * 否则 AuthFilter 的 verify 会拒绝、前端也无法从 JWT 解析出 customerId。
+     */
+    public TokenPair issueTokens(UserAccount account, String aud, String deviceId) {
+        long now = clock.instant().toEpochMilli();
         String refreshToken = idGen.next("RT");
         account.rotateToken(refreshToken);
         userAccountRepository.save(account);
-        refreshTokenStore.save(cmd.normalizedAud(), account.getUserId(), cmd.normalizedDeviceId(),
-                refreshToken, now + refreshTtlMillis);
+        refreshTokenStore.save(aud, account.getUserId(), deviceId, refreshToken, now + refreshTtlMillis);
         eventPublisher.publish(new LoginAuditEvent(account.getUserId(), true, now));
-        TokenService.Issued issued = tokenService.issueAccess(new TokenService.Claims(
-                cmd.normalizedAud(), account.getUserId(), JWT_TOKEN_VERSION, null));
+        TokenService.Issued issued = tokenService.issueAccess(
+                new TokenService.Claims(aud, account.getUserId(), JWT_TOKEN_VERSION, null));
         return new TokenPair(issued.accessToken(), refreshToken);
     }
 
     /** 企业账号必须等管理端审核通过才能签令牌；个人客户与员工不受影响。 */
-    private static void ensureEnterpriseApproved(UserAccount account) {
+    public static void ensureEnterpriseApproved(UserAccount account) {
         if (!UserAccount.AUD_USER.equals(account.getAud())
                 || !"ENTERPRISE".equals(account.getCustomerType())) {
             return;
@@ -110,16 +117,14 @@ public class LoginUseCase {
     }
 
     /**
-     * 解析登录主体：输入形如大陆手机号时优先按 {@code phone} 查客户账号，
-     * 否则按 {@code username} 查员工/客服账号；手机号查不到时回退到 username
-     * （兼容历史以手机号作为用户名的账号）。
+     * 解析登录主体：输入形如大陆手机号时按 {@code phone} 查客户账号；查不到直接抛
+     * {@link ErrorCode#PHONE_NOT_REGISTERED}，让前端能识别「未注册」并引导去注册页。
+     * 非手机号输入按 {@code username} 查员工/客服账号，找不到仍是 NOT_FOUND。
      */
     private UserAccount resolveAccount(String login) {
         if (login != null && PHONE_PATTERN.matcher(login).matches()) {
-            UserAccount byPhone = userAccountRepository.findByPhone(login).orElse(null);
-            if (byPhone != null) {
-                return byPhone;
-            }
+            return userAccountRepository.findByPhone(login)
+                    .orElseThrow(() -> new BizException(ErrorCode.PHONE_NOT_REGISTERED));
         }
         return userAccountRepository.findByUsername(login)
                 .orElseThrow(() -> new BizException(ErrorCode.NOT_FOUND));

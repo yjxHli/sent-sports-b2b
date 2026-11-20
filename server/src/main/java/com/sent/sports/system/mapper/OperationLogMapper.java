@@ -7,6 +7,9 @@ import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
+
+import java.util.List;
 
 /**
  * 操作日志 Mapper：sys_operation_log 只增不改（审计表）。
@@ -41,7 +44,8 @@ public interface OperationLogMapper {
             + "l.target_id AS targetId, l.reason AS reason, l.ip AS ip, l.trace_id AS traceId, "
             + "l.before_json AS beforeJson, l.after_json AS afterJson, l.created_at AS createdAt "
             + "FROM sys_operation_log l LEFT JOIN sys_staff s ON s.id = l.staff_id "
-            + "WHERE (#{module} IS NULL OR l.module = #{module}) "
+            + "WHERE l.deleted = 0 "
+            + "AND (#{module} IS NULL OR l.module = #{module}) "
             + "AND (#{action} IS NULL OR l.action = #{action}) "
             + "AND (#{staffId} IS NULL OR l.staff_id = #{staffId}) "
             + "AND (#{targetType} IS NULL OR l.target_type = #{targetType}) "
@@ -61,7 +65,8 @@ public interface OperationLogMapper {
 
     /** 与 selectLogPage 同一过滤条件的独立总数（MyBatis-Plus 分页插件不代跑 count）。 */
     @Select("SELECT COUNT(*) FROM sys_operation_log l LEFT JOIN sys_staff s ON s.id = l.staff_id "
-            + "WHERE (#{module} IS NULL OR l.module = #{module}) "
+            + "WHERE l.deleted = 0 "
+            + "AND (#{module} IS NULL OR l.module = #{module}) "
             + "AND (#{action} IS NULL OR l.action = #{action}) "
             + "AND (#{staffId} IS NULL OR l.staff_id = #{staffId}) "
             + "AND (#{targetType} IS NULL OR l.target_type = #{targetType}) "
@@ -76,4 +81,10 @@ public interface OperationLogMapper {
                    @Param("targetType") String targetType,
                    @Param("targetId") String targetId,
                    @Param("keyword") String keyword);
+
+    /** 管理端批量软删操作日志：只打标记，JSON 原文保留。 */
+    @Update({"<script>", "UPDATE sys_operation_log SET deleted = 1 WHERE deleted = 0 AND id IN ",
+            "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach>",
+            "</script>"})
+    int batchMarkDeleted(@Param("ids") List<Long> ids);
 }

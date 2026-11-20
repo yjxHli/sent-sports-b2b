@@ -24,9 +24,10 @@ import java.util.Locale;
  *       杜绝 {@code ../../etc/passwd} 这类穿越读取。</li>
  *   <li><b>时间来源可注入</b>：{@link Clock} 注入使「按年月分目录」可被单测固定，不依赖真实时钟。</li>
  * </ul>
- * 说明：本期只做单机磁盘；将来切对象存储只需替换本类，调用方拿到的相对路径语义不变。
+ * 说明：本期只做单机磁盘；将来切对象存储只需另写 {@link Storage} 实现并替换 Bean，
+ * 调用方只依赖接口，拿到的相对路径语义不变（R8）。
  */
-public class LocalFileStorage {
+public class LocalFileStorage implements Storage {
 
     private static final int DIGEST_PREFIX_LEN = 2;
     private static final int MAX_EXT_LEN = 10;
@@ -43,6 +44,7 @@ public class LocalFileStorage {
      * 写入文件并返回相对路径（形如 {@code 2026/11/ab/abcdef...png}）。
      * 同内容重复写入是幂等操作：已存在则直接返回同一路径。
      */
+    @Override
     public String store(byte[] content, String originalName) {
         if (content == null || content.length == 0) {
             throw new IllegalArgumentException("文件内容为空");
@@ -73,8 +75,9 @@ public class LocalFileStorage {
         return target;
     }
 
-    /** 读取文件内容（不存在返回 empty）。 */
-    public byte[] read(String relativePath) {
+    /** 读取文件内容（不存在返回 null）。 */
+    @Override
+    public byte[] load(String relativePath) {
         Path target = resolve(relativePath);
         try {
             return Files.exists(target) ? Files.readAllBytes(target) : null;
@@ -84,6 +87,7 @@ public class LocalFileStorage {
     }
 
     /** 删除文件（不存在视为成功，便于重试）。 */
+    @Override
     public boolean delete(String relativePath) {
         Path target = resolve(relativePath);
         try {

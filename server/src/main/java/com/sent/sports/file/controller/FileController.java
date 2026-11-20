@@ -2,7 +2,7 @@ package com.sent.sports.file.controller;
 
 import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
-import com.sent.sports.common.storage.LocalFileStorage;
+import com.sent.sports.common.storage.Storage;
 import com.sent.sports.common.web.CurrentUser;
 import com.sent.sports.common.web.R;
 import com.sent.sports.file.dto.FileDtos;
@@ -28,7 +28,7 @@ import java.util.concurrent.TimeUnit;
  * 文件服务（P6 收口）：真实落盘的上传 / 读取端点。
  *
  * <p>此前定制图稿、退款凭证都只传「前端随手生成的 fileId」，磁盘上没有文件，
- * 管理端自然看不到图；客服也无法发图。这里用 {@link LocalFileStorage} 做内容寻址落盘，
+ * 管理端自然看不到图；客服也无法发图。这里只依赖 {@link Storage} 端口做内容寻址落盘，
  * 业务侧只需保存返回的相对路径（fileId），读取走 {@code GET /api/files/{fileId}}，
  * 前端可直接放进 {@code <img src>}。</p>
  *
@@ -39,9 +39,9 @@ import java.util.concurrent.TimeUnit;
 @RequestMapping("/api/files")
 public class FileController {
 
-    private final LocalFileStorage storage;
+    private final Storage storage;
 
-    public FileController(LocalFileStorage storage) {
+    public FileController(Storage storage) {
         this.storage = storage;
     }
 
@@ -69,7 +69,7 @@ public class FileController {
         String relative = fileId.startsWith("/") ? fileId.substring(1) : fileId;
         byte[] bytes;
         try {
-            bytes = storage.read(relative);
+            bytes = storage.load(relative);
         } catch (IllegalArgumentException e) {
             throw new BizException(ErrorCode.PARAM_INVALID, "文件路径不合法");
         }

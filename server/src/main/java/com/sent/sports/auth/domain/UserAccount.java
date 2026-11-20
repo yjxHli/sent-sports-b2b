@@ -90,6 +90,12 @@ public class UserAccount {
         this.currentRefreshToken = null;
     }
 
+    /** 找回密码：保留账号其余状态，仅替换密码（纯领域方法，落库由仓储负责）。 */
+    public UserAccount withPassword(String rawPassword) {
+        return rehydrate(userId, aud, username, staffNo, phone, rawPassword, status,
+                failedAttempts, lockUntilMillis, tokenVersion, customerType, enterpriseStatus);
+    }
+
     /** 校验密码：锁定或错误均抛 BIZ_REJECT；成功则清空失败计数。失败计数由调用方落库。 */
     public void authenticate(String rawPassword, long nowMillis) {
         if (isLocked(nowMillis)) {
