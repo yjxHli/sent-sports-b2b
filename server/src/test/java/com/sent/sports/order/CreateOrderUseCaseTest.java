@@ -22,7 +22,7 @@ import com.sent.sports.order.service.dto.CreateOrderResult;
 import com.sent.sports.order.service.dto.OrderLineCmd;
 import com.sent.sports.product.service.PricingServiceFacade;
 import com.sent.sports.product.service.dto.LinePrice;
-import com.sent.sports.stock.repository.StockRepository;
+import com.sent.sports.stock.service.StockService;
 import com.sent.sports.support.BaseUseCaseTest;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -59,7 +59,7 @@ class CreateOrderUseCaseTest extends BaseUseCaseTest {
     @Mock
     private PointFacade pointFacade;
     @Mock
-    private StockRepository stockRepository;
+    private StockService stockService;
     @Mock
     private OrderRepository orderRepository;
     @Mock
@@ -74,6 +74,8 @@ class CreateOrderUseCaseTest extends BaseUseCaseTest {
     private AddressService addressService;
     @Mock
     private com.sent.sports.coupon.service.CouponDeduction couponDeduction;
+    @Mock
+    private com.sent.sports.customize.service.CustomFeeFacade customFeeFacade;
     @Mock
     private java.time.Clock clock;
 
@@ -143,7 +145,7 @@ class CreateOrderUseCaseTest extends BaseUseCaseTest {
         assertEquals(100L, evt.customerId());
         assertEquals(18000L + 1200L - 5000L, evt.payableCent());
 
-        verify(stockRepository).lock(1L, 2);
+        verify(stockService).lock(1L, 2);
         verify(idGen).nextOrderNo();
     }
 
@@ -166,13 +168,15 @@ class CreateOrderUseCaseTest extends BaseUseCaseTest {
     }
 
     @Test
-    @org.junit.jupiter.api.DisplayName("UV 定制件每件加收 10 元，并计入应付与订单行快照")
+    @org.junit.jupiter.api.DisplayName("UV 定制件按计费引擎计费，并计入应付与订单行快照")
     void customLineAddsTenYuanPerUnit() {
         when(clock.instant()).thenReturn(FIXED);
         stubAddress();
         when(pricingFacade.price(any())).thenReturn(new LinePrice(1000L, "RETAIL", false));
         when(pointFacade.maxDeductibleCent(anyInt(), anyLong())).thenReturn(0L);
         when(idGen.nextOrderNo()).thenReturn("SO20240101000004");
+        // 计费引擎口径：10 元/件 × 3 件 = 30 元（不再是写死的 1000L * qty）
+        when(customFeeFacade.feeCent(3)).thenReturn(3000L);
 
         // 3 件定制 + 2 件普通：商品 50 元 + 定制费 30 元 = 80 元，再加运费 12 元
         OrderLineCmd custom = new OrderLineCmd(1L, 3, "PERSON", 100, 100, false, List.of(), true);
@@ -237,12 +241,42 @@ class CreateOrderUseCaseTest extends BaseUseCaseTest {
     }
 
     @Test
+    @org.junit.jupiter.api.DisplayName("券+积分叠加：落库抵扣是实际生效金额，不超过券后应付基数")
+    void pointDeductPersistedNeverExceedsRemainingAfterCoupon() {
+        when(clock.instant()).thenReturn(FIXED);
+        stubAddress();
+        when(pricingFacade.price(any())).thenReturn(new LinePrice(10000L, "RETAIL", false));
+        // 30% 上限 3000 分，但券已抵 8000 分且包邮 → 应付基数只剩 2000 分
+        when(pointFacade.maxDeductibleCent(100000, 10000L)).thenReturn(3000L);
+        when(couponDeduction.discountFor(anyLong(), anyLong(), anyList())).thenReturn(8000L);
+        when(idGen.nextOrderNo()).thenReturn("SO-POINT-CLAMP");
+
+        OrderLineCmd item = new OrderLineCmd(50L, 1, "PERSON", 100, 100, false, List.of());
+        CreateOrderCmd cmd = new CreateOrderCmd(100L, ADDRESS_ID, "idem-point-clamp", 100000,
+                10000, 1200, List.of(item), 3000L);
+
+        CreateOrderResult result = useCase.create(cmd);
+
+        assertEquals(0L, result.payableCent());
+        assertEquals(2000L, result.pointDeductCent());
+
+        verify(orderRepository).save(orderCaptor.capture());
+        Order saved = orderCaptor.getValue();
+        assertEquals(2000L, saved.getPointDeductCent(),
+                "orders.point_deduct_cent 必须是实际抵扣额，不是被 Math.max(0,…) 截断前的虚高值");
+        assertEquals(0L, saved.getPayableCent());
+        assertEquals(0L, saved.getGoodsAmountCent() - saved.getDiscountCent()
+                - saved.getPointDeductCent() - saved.getFreightCent(),
+                "券 + 积分抵扣之和不得超过商品额 + 运费，不能靠 payable 截断掩盖超抵");
+    }
+
+    @Test
     void missingIdemKeyRejected() {
         CreateOrderCmd cmd = new CreateOrderCmd(100L, ADDRESS_ID, null, 0, 19900, 1200, List.of());
         BizException ex = assertThrows(BizException.class, () -> useCase.create(cmd));
         assertEquals(ErrorCode.PARAM_INVALID, ex.getErrorCode());
         verify(orderRepository, never()).save(any());
-        verify(stockRepository, never()).lock(anyLong(), anyInt());
+        verify(stockService, never()).lock(anyLong(), anyInt());
     }
 
     @Test
@@ -250,9 +284,9 @@ class CreateOrderUseCaseTest extends BaseUseCaseTest {
         stubAddress();
         when(pricingFacade.price(any())).thenReturn(new LinePrice(10000L, "RETAIL", false));
         // 默认预占无操作；仅第二行预占失败
-        doNothing().when(stockRepository).lock(anyLong(), anyInt());
+        doNothing().when(stockService).lock(anyLong(), anyInt());
         doThrow(new BizException(ErrorCode.STOCK_NOT_ENOUGH))
-                .when(stockRepository).lock(2L, 1);
+                .when(stockService).lock(2L, 1);
 
         OrderLineCmd line1 = new OrderLineCmd(1L, 2, "PERSON", 100, 100, false, List.of());
         OrderLineCmd line2 = new OrderLineCmd(2L, 1, "PERSON", 100, 100, false, List.of());
@@ -262,9 +296,9 @@ class CreateOrderUseCaseTest extends BaseUseCaseTest {
         assertEquals(ErrorCode.STOCK_NOT_ENOUGH, ex.getErrorCode());
 
         // 已锁的第一行必须释放，订单不得落库
-        verify(stockRepository).lock(1L, 2);
-        verify(stockRepository).lock(2L, 1);
-        verify(stockRepository).release(1L, 2);
+        verify(stockService).lock(1L, 2);
+        verify(stockService).lock(2L, 1);
+        verify(stockService).release(1L, 2);
         verify(orderRepository, never()).save(any());
     }
 
@@ -280,7 +314,7 @@ class CreateOrderUseCaseTest extends BaseUseCaseTest {
 
         BizException ex = assertThrows(BizException.class, () -> useCase.create(cmd));
         assertEquals(ErrorCode.PRODUCT_OFF_SHELF, ex.getErrorCode());
-        verify(stockRepository, never()).lock(anyLong(), anyInt());
+        verify(stockService, never()).lock(anyLong(), anyInt());
         verify(orderRepository, never()).save(any());
     }
 
@@ -299,8 +333,8 @@ class CreateOrderUseCaseTest extends BaseUseCaseTest {
         BizException ex = assertThrows(BizException.class, () -> useCase.create(cmd));
         assertEquals(ErrorCode.CREDIT_NOT_ENOUGH, ex.getErrorCode());
         // 已预占的库存必须释放，订单不得落库
-        verify(stockRepository).lock(1L, 2);
-        verify(stockRepository).release(1L, 2);
+        verify(stockService).lock(1L, 2);
+        verify(stockService).release(1L, 2);
         verify(orderRepository, never()).save(any());
     }
 
@@ -319,7 +353,7 @@ class CreateOrderUseCaseTest extends BaseUseCaseTest {
         org.junit.jupiter.api.Assertions.assertTrue(
                 ex.resolvedMessage().contains("收货地址"), "错误文案要点明缺的是收货地址");
         // 校验必须发生在取价/预占之前：没有地址时一点库存都不许占
-        verify(stockRepository, never()).lock(anyLong(), anyInt());
+        verify(stockService, never()).lock(anyLong(), anyInt());
         verify(orderRepository, never()).save(any());
     }
 
@@ -334,7 +368,7 @@ class CreateOrderUseCaseTest extends BaseUseCaseTest {
         BizException ex = assertThrows(BizException.class, () -> useCase.create(cmd));
 
         assertEquals(ErrorCode.NOT_FOUND, ex.getErrorCode());
-        verify(stockRepository, never()).lock(anyLong(), anyInt());
+        verify(stockService, never()).lock(anyLong(), anyInt());
         verify(orderRepository, never()).save(any());
     }
 

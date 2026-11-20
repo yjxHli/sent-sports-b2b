@@ -38,6 +38,7 @@ class ApplicationContextIT {
         assertThat(context.getBean(com.sent.sports.common.ratelimit.RateLimiter.class)).isNotNull();
         assertThat(context.getBean(com.sent.sports.payment.gateway.PayGateway.class)).isNotNull();
         assertThat(context.getBean(com.sent.sports.common.storage.LocalFileStorage.class)).isNotNull();
+        assertThat(context.getBean(com.sent.sports.common.storage.Storage.class)).isNotNull();
     }
 
     @Test

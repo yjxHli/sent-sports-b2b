@@ -14,15 +14,18 @@ import com.sent.sports.chat.service.dto.SendMessageResult;
 import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
 import com.sent.sports.common.util.IdGen;
+import com.sent.sports.common.util.SensitiveWordFilter;
 import com.sent.sports.support.BaseUseCaseTest;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -53,6 +56,10 @@ class SendMessageUseCaseTest extends BaseUseCaseTest {
     private Clock clock;
     @Mock
     private ChatNotifier notifier;
+    /** 真跑 DFA：用假词库 mock 掉等于没用，这里要验证「命中 → 拒绝」整条链路。 */
+    @Spy
+    private SensitiveWordFilter sensitiveWordFilter = new SensitiveWordFilter(
+            List.of("测试违禁词", "傻X", "加V"));
     @InjectMocks
     private SendMessageUseCase useCase;
     @Captor
@@ -140,6 +147,42 @@ class SendMessageUseCaseTest extends BaseUseCaseTest {
                 () -> useCase.send(new SendMessageCmd(1L, SenderType.CUSTOMER, "hi", "c1", 1L)));
         assertEquals(ErrorCode.NOT_FOUND, e.getErrorCode());
         verify(messageRepository, never()).save(any());
+    }
+
+    /**
+     * 敏感词风控（2026-11-19）：命中即拒，全链路不留痕。
+     * <p>三条断言缺一不可——不落库、不推送、不消耗会话序号。只断言异常的话，
+     * 一旦有人把校验挪到 save 之后，消息其实已经入库了也不会被发现。</p>
+     */
+    @Test
+    void sensitiveContentRejectedWithoutPersistOrPush() {
+        ChatSession session = new ChatSession(1L, 100L, ChatSessionStatus.ACTIVE, 5L);
+        when(sessionRepository.findById(1L)).thenReturn(Optional.of(session));
+        when(messageRepository.findBySessionAndClientMsgId(anyLong(), anyString())).thenReturn(Optional.empty());
+
+        BizException e = assertThrows(BizException.class,
+                () -> useCase.send(new SendMessageCmd(1L, SenderType.CUSTOMER, "加V详聊，还有测试违禁词", "c-bad", 1L)));
+
+        assertEquals(ErrorCode.SENSITIVE_MESSAGE, e.getErrorCode());
+        assertEquals(40003, e.getErrorCode().getCode(), "前端按 40003 保留输入框内容并提示");
+        assertEquals("发送失败：消息包含违禁词，请文明发言", e.resolvedMessage());
+        verify(messageRepository, never()).save(any());
+        verify(notifier, never()).messagePublished(any(), any());
+        assertEquals(0, session.getSeq(), "被拦的消息不能消耗会话序号");
+    }
+
+    /** 图片/订单卡片的 content 是 fileId 与摘要 JSON，不能当文本做敏感词匹配（否则正常业务消息被误杀）。 */
+    @Test
+    void nonTextMessagePayloadIsNotFilteredAsText() {
+        ChatSession session = new ChatSession(1L, 100L, ChatSessionStatus.ACTIVE, 5L);
+        when(sessionRepository.findById(1L)).thenReturn(Optional.of(session));
+        when(messageRepository.findBySessionAndClientMsgId(anyLong(), anyString())).thenReturn(Optional.empty());
+        when(idGen.next("CM")).thenReturn("CM-IMG");
+        when(clock.instant()).thenReturn(NOW);
+
+        useCase.send(new SendMessageCmd(1L, SenderType.CUSTOMER, "加V", "c-img", 1L, "IMAGE"));
+
+        verify(messageRepository).save(any());
     }
 
     @Test

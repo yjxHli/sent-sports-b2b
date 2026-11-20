@@ -3,6 +3,7 @@ package com.sent.sports.refund;
 import com.sent.sports.common.util.IdGen;
 import com.sent.sports.order.service.OrderRefundViewService;
 import com.sent.sports.order.service.dto.OrderRefundView;
+import com.sent.sports.order.service.dto.RefundLineView;
 import com.sent.sports.payment.service.PaymentRefundGateway;
 import com.sent.sports.refund.domain.RefundStatus;
 import com.sent.sports.refund.mapper.RefundOrderMapper;
@@ -41,6 +42,8 @@ class RefundServiceImplTest {
     private PaymentRefundGateway paymentRefundGateway;
     @Mock
     private OrderRefundViewService orderRefundViewService;
+    @Mock
+    private com.sent.sports.member.service.MemberRefundGateway memberRefundGateway;
 
     private IdGen idGen;
     private RefundServiceImpl service;
@@ -50,7 +53,7 @@ class RefundServiceImplTest {
         idGen = new IdGen(); // 无 JdbcTemplate，退化为进程内自增，单测无需数据库
         service = new RefundServiceImpl(refundRepository, idGen,
                 Clock.fixed(Instant.parse("2026-11-08T06:00:00Z"), ZoneOffset.UTC),
-                refundOrderMapper, paymentRefundGateway, orderRefundViewService);
+                refundOrderMapper, paymentRefundGateway, orderRefundViewService, memberRefundGateway);
     }
 
     @Test
@@ -59,7 +62,8 @@ class RefundServiceImplTest {
         String refundNo = service.createCloseRefund("SO-1", 11L, 20000L, "客户取消");
 
         verify(paymentRefundGateway).refund("SO-1", 20000L);
-        verify(refundOrderMapper).insertCloseRefund(refundNo, 11L, 20000L, "客户取消");
+        // 该单没用积分（订单视图取不到 → 退回积分为 0）
+        verify(refundOrderMapper).insertCloseRefund(refundNo, 11L, 20000L, "客户取消", 0L);
         org.junit.jupiter.api.Assertions.assertTrue(refundNo.startsWith("RF"));
         verify(refundRepository, never()).save(any());
     }
@@ -78,6 +82,20 @@ class RefundServiceImplTest {
         assertEquals(RefundStatus.REFUNDING, captor.getValue().getStatus());
         assertEquals(11L, captor.getValue().getOrderId());
         verify(refundOrderMapper, never()).insertCloseRefund(any(), anyLong(),
-                anyLong(), any());
+                anyLong(), any(), anyLong());
+    }
+
+    @Test
+    @DisplayName("关单全额退款：订单用过积分时一并退回，并落 refund_order.point_refund")
+    void createCloseRefundReturnsDeductedPoints() {
+        when(orderRefundViewService.getView("SO-3")).thenReturn(Optional.of(new OrderRefundView(
+                "SO-3", 7L, 11L, List.of(new RefundLineView(9L, 10000L, 0L)), 0L, false, 7000L)));
+        when(memberRefundGateway.deductedPointsOf(7L, "SO-3")).thenReturn(3000L);
+
+        String refundNo = service.createCloseRefund("SO-3", 11L, 7000L, "客户取消");
+
+        // 关单是按实付退的（7000 < 商品额 10000），仍属整单，抵扣的 3000 必须全额退回
+        verify(memberRefundGateway).returnDeductedPoints(7L, refundNo, 3000L);
+        verify(refundOrderMapper).insertCloseRefund(refundNo, 11L, 7000L, "客户取消", 3000L);
     }
 }

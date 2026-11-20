@@ -145,6 +145,20 @@ class LoginUseCaseTest extends BaseUseCaseTest {
     }
 
     @Test
+    void unregisteredPhoneIsRejectedWithDedicatedCode() {
+        // 未注册手机号登录：必须给前端可识别的专用码，而不是笼统的 NOT_FOUND，
+        // 这样登录页才能弹「该手机号尚未注册」并跳注册页回填手机号。
+        when(userAccountRepository.findByPhone("13900000001")).thenReturn(Optional.empty());
+
+        BizException e = assertThrows(BizException.class,
+                () -> useCase.login(new LoginCmd("13900000001", "any", "user", "d")));
+
+        assertEquals(ErrorCode.PHONE_NOT_REGISTERED, e.getErrorCode());
+        assertTrue(e.resolvedMessage().contains("尚未注册"));
+        verify(userAccountRepository, never()).findByUsername("13900000001");
+    }
+
+    @Test
     void unknownUserNotFound() {
         when(userAccountRepository.findByUsername("ghost")).thenReturn(Optional.empty());
 

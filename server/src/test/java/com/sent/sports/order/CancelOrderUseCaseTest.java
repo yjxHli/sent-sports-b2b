@@ -3,13 +3,14 @@ package com.sent.sports.order;
 import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
 import com.sent.sports.order.domain.Order;
+import com.sent.sports.order.domain.OrderAction;
 import com.sent.sports.order.domain.OrderItem;
 import com.sent.sports.order.domain.OrderStatus;
 import com.sent.sports.order.repository.OrderRepository;
 import com.sent.sports.order.service.CancelOrderUseCase;
 import com.sent.sports.order.service.dto.CancelOrderCmd;
 import com.sent.sports.order.service.dto.CancelOrderResult;
-import com.sent.sports.stock.repository.StockRepository;
+import com.sent.sports.stock.service.StockService;
 import com.sent.sports.support.BaseUseCaseTest;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -39,7 +40,7 @@ class CancelOrderUseCaseTest extends BaseUseCaseTest {
     @Mock
     private OrderRepository orderRepository;
     @Mock
-    private StockRepository stockRepository;
+    private StockService stockService;
 
     @InjectMocks
     private CancelOrderUseCase useCase;
@@ -52,8 +53,7 @@ class CancelOrderUseCaseTest extends BaseUseCaseTest {
                 List.of(new OrderItem(1L, 2, 9000L, "MEMBER", 18000L),
                         new OrderItem(2L, 1, 10000L, "RETAIL", 10000L)),
                 28000L, 0L, 0L, 1200L, 5000L, 24200L, 1704067200000L);
-        order.setStatus(OrderStatus.WAIT_PAY);
-        return order;
+        return order; // 构造器初始即 WAIT_PAY
     }
 
     @Test
@@ -64,8 +64,8 @@ class CancelOrderUseCaseTest extends BaseUseCaseTest {
         CancelOrderResult result = useCase.cancel(new CancelOrderCmd("SO20240101000099"));
 
         assertEquals("CANCELLED", result.status());
-        verify(stockRepository).release(1L, 2);
-        verify(stockRepository).release(2L, 1);
+        verify(stockService).release(1L, 2);
+        verify(stockService).release(2L, 1);
         verify(orderRepository).save(orderCaptor.capture());
         assertEquals(OrderStatus.CANCELLED, orderCaptor.getValue().getStatus());
     }
@@ -73,26 +73,26 @@ class CancelOrderUseCaseTest extends BaseUseCaseTest {
     @Test
     void cancelPaidOrderRejected() {
         Order order = waitPayOrder();
-        order.setStatus(OrderStatus.WAIT_SHIP); // 已支付待发货
+        order.transit(OrderAction.PAY); // 已支付待发货
         when(orderRepository.findByOrderNo("SO20240101000099")).thenReturn(Optional.of(order));
 
         BizException ex = assertThrows(BizException.class,
                 () -> useCase.cancel(new CancelOrderCmd("SO20240101000099")));
         assertEquals(ErrorCode.STATE_CONFLICT, ex.getErrorCode());
-        verify(stockRepository, never()).release(anyLong(), anyInt());
+        verify(stockService, never()).release(anyLong(), anyInt());
         verify(orderRepository, never()).save(any());
     }
 
     @Test
     void cancelAlreadyCancelledRejected() {
         Order order = waitPayOrder();
-        order.setStatus(OrderStatus.CANCELLED);
+        order.transit(OrderAction.USER_CANCEL);
         when(orderRepository.findByOrderNo("SO20240101000099")).thenReturn(Optional.of(order));
 
         BizException ex = assertThrows(BizException.class,
                 () -> useCase.cancel(new CancelOrderCmd("SO20240101000099")));
         assertEquals(ErrorCode.STATE_CONFLICT, ex.getErrorCode());
-        verify(stockRepository, never()).release(anyLong(), anyInt());
+        verify(stockService, never()).release(anyLong(), anyInt());
     }
 
     @Test

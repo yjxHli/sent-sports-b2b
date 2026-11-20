@@ -3,6 +3,8 @@ package com.sent.sports.support;
 import com.sent.sports.SentSportsApplication;
 import com.sent.sports.order.service.dto.CreateOrderCmd;
 import com.sent.sports.order.service.dto.OrderLineCmd;
+import com.sent.sports.payment.gateway.MockPayGateway;
+import com.sent.sports.payment.service.dto.PayCallbackCmd;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -11,7 +13,9 @@ import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
+import java.time.Clock;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 全链路集成测试基类（P5-48~50）：<b>完整</b> Spring 上下文 + 真实 MySQL。
@@ -65,6 +69,9 @@ public abstract class FullStackIntegrationTest {
     /** 集成用例里的收货地址主键（每次 truncate 后重新播种，值固定便于断言）。 */
     protected static final long ADDRESS_ID = 90001L;
 
+    /** 与 application-test.yml 的 app.pay.mock-secret 保持一致，供用例自签渠道通知。 */
+    protected static final String TEST_PAY_SECRET = "test-only-fixture-secret";
+
     /**
      * 播一条收货地址（下单必填）。
      * <p>{@code orderCmd()} 内部会自动调用，用例不必显式播；用 {@code INSERT IGNORE} 保证
@@ -81,6 +88,18 @@ public abstract class FullStackIntegrationTest {
     protected CreateOrderCmd orderCmd(String idemKey, long skuId, int qty) {
         return new CreateOrderCmd(1L, seedAddress(1L), idemKey, 0, Integer.MAX_VALUE, 0,
                 List.of(line(skuId, qty)));
+    }
+
+    /**
+     * 构造一条「渠道已签名」的支付通知（与 P0 后的接口契约一致：回调必须带签名）。
+     *
+     * <p>密钥固定为 {@code application-test.yml} 里的 {@code app.pay.mock-secret}，
+     * 因此自签的通知能被应用内的 {@code PayGateway} 验签通过——这正是「用真网关验真签名」的验收方式。</p>
+     */
+    protected PayCallbackCmd signedCallback(String txnNo, String orderNo, long amountCent) {
+        Map<String, String> notify = new MockPayGateway(TEST_PAY_SECRET, Clock.systemUTC())
+                .buildCallback(txnNo, orderNo, amountCent, true);
+        return PayCallbackCmd.fromNotify(notify);
     }
 
     protected long orderCount() {

@@ -102,17 +102,41 @@ class MapperIT extends BaseIntegrationTest {
     private CouponMapper couponMapper;
 
     @Test
-    @DisplayName("V1~V44：四十四次迁移全部应用，62 张表就位（V44 券模板管理）")
+    @DisplayName("V1~V49：四十九次迁移全部应用，63 张表就位（V49 演示账号积分余额）")
     void migrationsApplyAllThirteenVersions() {
         Integer versions = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1", Integer.class);
-        assertThat(versions).isEqualTo(44);
+        assertThat(versions).isEqualTo(49);
 
         Integer tables = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM information_schema.tables "
                         + "WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE' "
                         + "AND table_name <> 'flyway_schema_history'", Integer.class);
-        assertThat(tables).isEqualTo(62);
+        assertThat(tables).isEqualTo(63);
+
+        // V48：券模板管理从 customer:grant 拆出独立权限点（R15）
+        // 权限行本身会被 IT 基类 TRUNCATE，这里断言迁移已成功落地（版本号存在且成功）
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM flyway_schema_history "
+                        + "WHERE version = '48' AND success = 1", Integer.class))
+                .as("V48 券模板管理独立权限点必须已应用").isEqualTo(1);
+
+        // V47：积分流水幂等键（订单完成发积分 / 退款扣回都靠它防重复入账）
+        // 复合唯一键在 information_schema.statistics 里按列拆行，取首列即「键存在」
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() "
+                        + "AND table_name = 'point_log' AND index_name = 'uk_point_source' "
+                        + "AND seq_in_index = 1",
+                Integer.class)).as("point_log 必须有 uk_point_source 唯一键").isEqualTo(1);
+
+        // V46：违禁词库表与唯一键就位（词不可重复录入靠它兜底）
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() "
+                        + "AND table_name = 'sys_sensitive_word'", Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() "
+                        + "AND table_name = 'sys_sensitive_word' AND index_name = 'uk_sensitive_word'",
+                Integer.class)).isEqualTo(1);
 
         // V37：客服小结表就位（种子行由 IT 基类 TRUNCATE，不在本用例断言）
         Integer noteTable = jdbc.queryForObject(
@@ -243,6 +267,20 @@ class MapperIT extends BaseIntegrationTest {
                 "SELECT COUNT(*) FROM information_schema.columns "
                         + "WHERE table_schema = DATABASE() AND table_name = 'customer_coupon' "
                         + "AND column_name = 'deleted'", Integer.class)).isEqualTo(1);
+
+        // V45：企业审核留痕 + 10 类表格软删标记
+        for (String[] pair : new String[][]{
+                {"enterprise_profile", "audit_remark"}, {"enterprise_profile", "audited_at"},
+                {"enterprise_profile", "deleted"}, {"receivable", "deleted"},
+                {"payment_record", "deleted"}, {"write_off", "deleted"},
+                {"stock_flow", "deleted"}, {"sku_stock", "deleted"},
+                {"sys_operation_log", "deleted"}}) {
+            assertThat(jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM information_schema.columns "
+                            + "WHERE table_schema = DATABASE() AND table_name = ? "
+                            + "AND column_name = ?", Integer.class, pair[0], pair[1]))
+                    .as("%s.%s", pair[0], pair[1]).isEqualTo(1);
+        }
         // 券号唯一：运营口头报券号时要能唯一定位
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM information_schema.statistics "
@@ -465,7 +503,7 @@ class MapperIT extends BaseIntegrationTest {
         assertThat(after.getPayStatus()).isEqualTo("FULL_REFUNDED");
 
         assertThat(refundOrderMapper.insertCloseRefund("RF-CLOSE-IT", order.getId(),
-                20000L, "客户取消")).isEqualTo(1);
+                20000L, "客户取消", 0L)).isEqualTo(1);
         RefundOrderPO refund = refundOrderMapper.selectByRefundNo("RF-CLOSE-IT");
         assertThat(refund.getStatus()).isEqualTo("REFUNDED");
         assertThat(refund.getReasonCode()).isEqualTo("ADMIN_CLOSE");

@@ -17,6 +17,7 @@ import com.sent.sports.finance.repository.PaymentRecordRepository;
 import com.sent.sports.finance.repository.ReceivableRepository;
 import com.sent.sports.finance.repository.WriteOffRepository;
 import com.sent.sports.order.domain.Order;
+import com.sent.sports.order.domain.OrderAction;
 import com.sent.sports.order.domain.OrderItem;
 import com.sent.sports.order.domain.OrderStatus;
 import com.sent.sports.order.repository.OrderRepository;
@@ -78,7 +79,7 @@ class RepositoryIT extends BaseIntegrationTest {
         assertThat(loaded.getItems().get(0).getLineTotalCent()).isEqualTo(19800L);
         assertThat(loaded.getVersion()).isZero();
 
-        loaded.setStatus(OrderStatus.WAIT_SHIP);
+        loaded.transit(OrderAction.PAY); // WAIT_PAY → WAIT_SHIP，状态只能经状态机流转
         orderRepository.save(loaded);
 
         Order updated = orderRepository.findByOrderNo("O1001").orElseThrow();

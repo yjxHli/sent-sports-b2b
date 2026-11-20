@@ -2,6 +2,8 @@ package com.sent.sports.system;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.sent.sports.common.error.BizException;
+import com.sent.sports.common.error.ErrorCode;
+import com.sent.sports.common.util.SensitiveWordFilter;
 import com.sent.sports.common.web.PageQuery;
 import com.sent.sports.common.web.PageResult;
 import com.sent.sports.report.dto.DashboardReportDtos;
@@ -70,10 +72,14 @@ class SystemServiceImplTest {
     @Mock
     private DashboardReportService dashboardReportService;
 
+    /** 真词库（小样本）：员工昵称风控要验证真实匹配，不能拿 mock 糊过去。 */
+    private final SensitiveWordFilter sensitiveWordFilter = new SensitiveWordFilter(
+            List.of("测试违禁词", "傻X", "加V"));
+
     private SystemServiceImpl newService() {
         return new SystemServiceImpl(operationLogMapper, staffMapper, roleMapper,
                 permissionMapper, configMapper, permissionService, stockQueryService,
-                dashboardReportService);
+                dashboardReportService, sensitiveWordFilter);
     }
 
     /* ---------------- 操作日志 ---------------- */
@@ -224,6 +230,22 @@ class SystemServiceImplTest {
         BizException error = assertThrows(BizException.class, () -> newService().createStaff(
                 new AdminSystemDtos.StaffForm("li", "李四", " ", "SALES")));
         assertEquals(40001, error.getErrorCode().getCode());
+    }
+
+    @Test
+    @DisplayName("createStaff 拒绝敏感词昵称/登录名（客服名字会直接展示给客户）")
+    void createStaffRejectsSensitiveNicknameOrUsername() {
+        BizException byName = assertThrows(BizException.class, () -> newService().createStaff(
+                new AdminSystemDtos.StaffForm("kefu01", "加V返现客服", "13800008888", "SALES")));
+        assertEquals(ErrorCode.SENSITIVE_NICKNAME, byName.getErrorCode());
+        assertEquals(400, byName.getErrorCode().getCode());
+        assertEquals("昵称/用户名包含违禁词，请修改后重试", byName.resolvedMessage());
+
+        BizException byUsername = assertThrows(BizException.class, () -> newService().createStaff(
+                new AdminSystemDtos.StaffForm("测试违禁词", "小王", "13800008888", "SALES")));
+        assertEquals(ErrorCode.SENSITIVE_NICKNAME, byUsername.getErrorCode());
+
+        verify(staffMapper, never()).insert(any(SysStaffPO.class));
     }
 
     @Test

@@ -10,6 +10,7 @@ import com.sent.sports.chat.repository.ChatMessageRepository;
 import com.sent.sports.chat.repository.ChatSessionRepository;
 import com.sent.sports.chat.service.ChatNotifier;
 import com.sent.sports.common.util.IdGen;
+import com.sent.sports.common.util.SensitiveWordFilter;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -23,9 +24,11 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.net.URI;
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
@@ -56,7 +59,8 @@ class ChatWebSocketHandlerTest {
 
     private ChatWebSocketHandler handler() {
         return new ChatWebSocketHandler(broadcaster, notifier, tokenService, new ObjectMapper(),
-                chatSessionRepository, chatMessageRepository, idGen, FIXED_CLOCK);
+                chatSessionRepository, chatMessageRepository, idGen, FIXED_CLOCK,
+                new SensitiveWordFilter(List.of("测试违禁词", "傻X", "加V")));
     }
 
     @Test
@@ -85,9 +89,32 @@ class ChatWebSocketHandlerTest {
         verify(wsSession).sendMessage(any(TextMessage.class)); // ACK
     }
 
+    /**
+     * 敏感词风控（2026-11-19）：WS 上行命中后只回错误 ACK，不落库、不广播。
+     * <p>REST 与 WS 必须同口径：只拦 REST 的话，客户端切到长连接就能绕过风控发脏话。</p>
+     */
     @Test
-    void duplicateClientMsgIdSkipsPersist() throws Exception {
+    void sensitiveContentRejectedWithErrorAckAndNoPersist() throws Exception {
         ChatSession session = new ChatSession(10L, 100L, ChatSessionStatus.ACTIVE, 7L);
+        when(chatSessionRepository.findById(10L)).thenReturn(Optional.of(session));
+        when(chatMessageRepository.findBySessionAndClientMsgId(eq(10L), any())).thenReturn(Optional.empty());
+        when(wsSession.isOpen()).thenReturn(true);
+
+        handler().handleChatMessage(wsSession,
+                WsEnvelope.msg(10L, 0L, "{\"clientMsgId\":\"c-bad\",\"content\":\"加V详聊\"}"), 100L, null);
+
+        verify(chatMessageRepository, never()).save(any());
+        verify(broadcaster, never()).broadcast(anyLong(), any());
+        verify(broadcaster, never()).broadcastAll(any());
+        ArgumentCaptor<TextMessage> frame = ArgumentCaptor.forClass(TextMessage.class);
+        verify(wsSession).sendMessage(frame.capture());
+        String payload = frame.getValue().getPayload();
+        assertTrue(payload.contains("40003"), "错误码必须是 40003，前端据此保留输入框内容");
+        assertTrue(payload.contains("违禁词"), "文案要能直接弹给用户看");
+    }
+
+    @Test
+    void duplicateClientMsgIdSkipsPersist() throws Exception {        ChatSession session = new ChatSession(10L, 100L, ChatSessionStatus.ACTIVE, 7L);
         when(chatSessionRepository.findById(10L)).thenReturn(Optional.of(session));
         when(chatMessageRepository.findBySessionAndClientMsgId(10L, "c-1"))
                 .thenReturn(Optional.of(new ChatMessage("M0", 10L,

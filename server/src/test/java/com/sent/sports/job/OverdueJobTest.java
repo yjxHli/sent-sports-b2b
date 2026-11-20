@@ -2,8 +2,7 @@ package com.sent.sports.job;
 
 import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
-import com.sent.sports.finance.mapper.ReceivableMapper;
-import com.sent.sports.finance.mapper.po.ReceivablePO;
+import com.sent.sports.finance.service.ReceivableJobService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -31,33 +30,32 @@ import static org.mockito.Mockito.when;
 class OverdueJobTest {
 
     @Mock
-    private ReceivableMapper receivableMapper;
+    private ReceivableJobService receivableJobService;
 
     private OverdueJob job;
 
     @BeforeEach
     void setUp() {
-        job = new OverdueJob(receivableMapper,
+        job = new OverdueJob(receivableJobService,
                 Clock.fixed(Instant.parse("2026-11-04T02:00:00Z"), ZoneOffset.UTC));
     }
 
     @Test
     @DisplayName("逾期应收批量置为 OVERDUE，已是 OVERDUE 的跳过")
     void marksOverdueReceivables() {
-        when(receivableMapper.selectOverdue(any()))
-                .thenReturn(List.of(receivable(1L, "OPEN"), receivable(2L, "PARTIAL"), receivable(3L, "OVERDUE")));
-        when(receivableMapper.updateStatus(anyLong(), anyString())).thenReturn(1);
+        // 已是 OVERDUE 的由 finance 服务过滤，这里只拿到待更新的 1、2
+        when(receivableJobService.findOverdueIds(any())).thenReturn(List.of(1L, 2L));
+        when(receivableJobService.markOverdue(anyLong())).thenReturn(1);
 
         assertThat(job.runOnce()).isEqualTo(2);
-        verify(receivableMapper, times(2)).updateStatus(anyLong(), eq("OVERDUE"));
+        verify(receivableJobService, times(2)).markOverdue(anyLong());
     }
 
     @Test
     @DisplayName("单笔并发冲突（STATE_CONFLICT）不影响其余应收")
     void skipsConflictingReceivableAndContinues() {
-        when(receivableMapper.selectOverdue(any()))
-                .thenReturn(List.of(receivable(1L, "OPEN"), receivable(2L, "OPEN")));
-        when(receivableMapper.updateStatus(anyLong(), anyString()))
+        when(receivableJobService.findOverdueIds(any())).thenReturn(List.of(1L, 2L));
+        when(receivableJobService.markOverdue(anyLong()))
                 .thenThrow(new BizException(ErrorCode.STATE_CONFLICT))
                 .thenReturn(1);
 
@@ -67,16 +65,9 @@ class OverdueJobTest {
     @Test
     @DisplayName("没有逾期应收时不动作")
     void noopWhenNothingOverdue() {
-        when(receivableMapper.selectOverdue(any())).thenReturn(List.of());
+        when(receivableJobService.findOverdueIds(any())).thenReturn(List.of());
 
         assertThat(job.runOnce()).isZero();
-        verify(receivableMapper, never()).updateStatus(anyLong(), anyString());
-    }
-
-    private ReceivablePO receivable(long id, String status) {
-        ReceivablePO po = new ReceivablePO();
-        po.setId(id);
-        po.setStatus(status);
-        return po;
+        verify(receivableJobService, never()).markOverdue(anyLong());
     }
 }

@@ -243,9 +243,9 @@ class FullBusinessFlowIT extends FullStackIntegrationTest {
         tampered.put("amountCent", "1");
         assertThat(gateway.verify(tampered)).as("篡改金额后签名必须失败").isFalse();
 
-        assertThat(payCallbackUseCase.handle(new PayCallbackCmd(
-                callback.get("txnNo"), callback.get("orderNo"), PAYABLE_CENT, "MOCK",
-                "CH-ACCEPT-1", System.currentTimeMillis())).status()).isEqualTo("SUCCESS");
+        // 回调只认「渠道签过名」的参数表：用例最前面就是验签，伪造的通知到这里根本进不去
+        assertThat(payCallbackUseCase.handle(PayCallbackCmd.fromNotify(callback)).status())
+                .isEqualTo("SUCCESS");
         assertThat(statusOf(order.orderNo())).isEqualTo("WAIT_SHIP");
         assertThat(payStatusOf(order.orderNo())).isEqualTo("PAID");
         assertThat(jdbc.queryForObject("SELECT paid_cent FROM orders WHERE order_no = ?",
@@ -264,9 +264,8 @@ class FullBusinessFlowIT extends FullStackIntegrationTest {
                 Long.class, payment.txnNo())).isEqualTo(PAYABLE_CENT);
 
         // 重复回调：uk_txn_no + 条件更新兜底，不产生第二条流水、不二次回写 paid_cent
-        assertThat(payCallbackUseCase.handle(new PayCallbackCmd(
-                callback.get("txnNo"), callback.get("orderNo"), PAYABLE_CENT, "MOCK",
-                "CH-ACCEPT-1", System.currentTimeMillis())).status()).isEqualTo("ALREADY_PAID");
+        assertThat(payCallbackUseCase.handle(PayCallbackCmd.fromNotify(callback)).status())
+                .isEqualTo("ALREADY_PAID");
         assertThat(countOf("payment_txn")).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT paid_cent FROM orders WHERE order_no = ?",
                 Long.class, order.orderNo())).isEqualTo(PAYABLE_CENT);

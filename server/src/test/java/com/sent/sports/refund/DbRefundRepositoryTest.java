@@ -53,7 +53,7 @@ class DbRefundRepositoryTest {
         repo.save(o);
 
         verify(mapper).insert(any(RefundOrderPO.class));
-        verify(mapper, never()).updateRefundState(anyString(), anyString(), anyInt(), isNull(), any());
+        verify(mapper, never()).updateRefundState(anyString(), anyString(), anyInt(), isNull(), any(), any());
     }
 
     @Test
@@ -68,7 +68,7 @@ class DbRefundRepositoryTest {
         o.setAppealCount(1);
         repo.save(o);
 
-        verify(mapper).updateRefundState(eq("RF1"), eq("REFUNDING"), eq(1), isNull(), isNull());
+        verify(mapper).updateRefundState(eq("RF1"), eq("REFUNDING"), eq(1), isNull(), isNull(), isNull());
         verify(mapper, never()).insert(any(RefundOrderPO.class));
     }
 
@@ -84,7 +84,7 @@ class DbRefundRepositoryTest {
         o.setAuditRemark("凭证不足");
         repo.save(o);
 
-        verify(mapper).updateRefundState(eq("RF1"), eq("CLOSED"), eq(0), isNull(), eq("凭证不足"));
+        verify(mapper).updateRefundState(eq("RF1"), eq("CLOSED"), eq(0), isNull(), eq("凭证不足"), isNull());
     }
 
     @Test

@@ -2,10 +2,8 @@ package com.sent.sports.job;
 
 import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
-import com.sent.sports.customize.mapper.CustomOrderMapper;
-import com.sent.sports.customize.mapper.po.CustomOrderPO;
-import com.sent.sports.refund.mapper.RefundOrderMapper;
-import com.sent.sports.refund.mapper.po.RefundOrderPO;
+import com.sent.sports.customize.service.CustomizeJobQueryService;
+import com.sent.sports.refund.service.RefundJobQueryService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -16,7 +14,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -28,25 +25,23 @@ import static org.mockito.Mockito.when;
 class SlaRemindJobTest {
 
     @Mock
-    private CustomOrderMapper customOrderMapper;
+    private CustomizeJobQueryService customizeJobQueryService;
     @Mock
-    private RefundOrderMapper refundOrderMapper;
+    private RefundJobQueryService refundJobQueryService;
 
     private SlaRemindJob job;
 
     @BeforeEach
     void setUp() {
-        job = new SlaRemindJob(customOrderMapper, refundOrderMapper,
+        job = new SlaRemindJob(customizeJobQueryService, refundJobQueryService,
                 Clock.fixed(Instant.parse("2026-11-04T02:00:00Z"), ZoneOffset.UTC));
     }
 
     @Test
     @DisplayName("汇总审图超时与待审退款两路待办总数")
     void sumsBothSlaBacklogs() {
-        when(customOrderMapper.selectReviewTimeout(any(), anyInt()))
-                .thenReturn(List.of(new CustomOrderPO(), new CustomOrderPO()));
-        when(refundOrderMapper.selectPending(anyInt()))
-                .thenReturn(List.of(new RefundOrderPO()));
+        when(customizeJobQueryService.countReviewTimeout(any(), anyInt())).thenReturn(2);
+        when(refundJobQueryService.countPending(anyInt())).thenReturn(1);
 
         assertThat(job.runOnce()).isEqualTo(3);
     }
@@ -54,10 +49,9 @@ class SlaRemindJobTest {
     @Test
     @DisplayName("审图超时查询抛业务异常时跳过该路，仍汇总待审退款")
     void skipsFailingQueryAndContinues() {
-        when(customOrderMapper.selectReviewTimeout(any(), anyInt()))
+        when(customizeJobQueryService.countReviewTimeout(any(), anyInt()))
                 .thenThrow(new BizException(ErrorCode.STATE_CONFLICT));
-        when(refundOrderMapper.selectPending(anyInt()))
-                .thenReturn(List.of(new RefundOrderPO(), new RefundOrderPO()));
+        when(refundJobQueryService.countPending(anyInt())).thenReturn(2);
 
         assertThat(job.runOnce()).isEqualTo(2);
     }
@@ -65,8 +59,8 @@ class SlaRemindJobTest {
     @Test
     @DisplayName("两路都没有待办时返回 0")
     void noopWhenNoBacklog() {
-        when(customOrderMapper.selectReviewTimeout(any(), anyInt())).thenReturn(List.of());
-        when(refundOrderMapper.selectPending(anyInt())).thenReturn(List.of());
+        when(customizeJobQueryService.countReviewTimeout(any(), anyInt())).thenReturn(0);
+        when(refundJobQueryService.countPending(anyInt())).thenReturn(0);
 
         assertThat(job.runOnce()).isZero();
     }

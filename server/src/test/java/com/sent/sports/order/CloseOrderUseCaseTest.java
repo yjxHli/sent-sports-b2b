@@ -10,7 +10,7 @@ import com.sent.sports.order.service.CloseOrderUseCase;
 import com.sent.sports.order.service.dto.CloseOrderCmd;
 import com.sent.sports.order.service.dto.CloseOrderResult;
 import com.sent.sports.refund.service.RefundService;
-import com.sent.sports.stock.repository.StockRepository;
+import com.sent.sports.stock.service.StockService;
 import com.sent.sports.system.service.SystemService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -45,7 +45,7 @@ class CloseOrderUseCaseTest {
     @Mock
     private OrderMapper orderMapper;
     @Mock
-    private StockRepository stockRepository;
+    private StockService stockService;
     @Mock
     private RefundService refundService;
     @Mock
@@ -57,7 +57,7 @@ class CloseOrderUseCaseTest {
 
     @BeforeEach
     void setUp() {
-        useCase = new CloseOrderUseCase(orderMapper, stockRepository, refundService,
+        useCase = new CloseOrderUseCase(orderMapper, stockService, refundService,
                 creditFacade, systemService);
     }
 
@@ -79,7 +79,7 @@ class CloseOrderUseCaseTest {
         assertEquals(20000L, result.refundedCent());
         assertEquals(20000L, result.payableCent());
         assertTrue(result.stockReleased());
-        verify(stockRepository).releaseByOrderNo(ORDER_NO);
+        verify(stockService).releaseByOrderNo(ORDER_NO);
         verify(creditFacade).releaseCreditForOrder(ORDER_NO);
         verify(systemService).recordLog("ORDER", "CLOSE", "ORDER", ORDER_NO, REASON, 9003L);
     }
@@ -97,7 +97,7 @@ class CloseOrderUseCaseTest {
         CloseOrderResult result = useCase.close(new CloseOrderCmd(ORDER_NO, REASON, null));
 
         assertFalse(result.stockReleased());
-        verify(stockRepository, never()).releaseByOrderNo(anyString());
+        verify(stockService, never()).releaseByOrderNo(anyString());
         verify(refundService).createCloseRefund(anyString(), anyLong(), eq(20000L), eq(REASON));
     }
 
@@ -112,7 +112,7 @@ class CloseOrderUseCaseTest {
 
         assertEquals(ErrorCode.STATE_CONFLICT, ex.getErrorCode());
         verify(orderMapper, never()).closeOnAdminRefund(anyString(), anyString(), anyString(), anyString());
-        verifyNoInteractions(refundService, stockRepository, creditFacade, systemService);
+        verifyNoInteractions(refundService, stockService, creditFacade, systemService);
     }
 
     @Test
@@ -127,7 +127,7 @@ class CloseOrderUseCaseTest {
                             .getErrorCode(),
                     status + " 不应允许关单");
         }
-        verifyNoInteractions(refundService, stockRepository, creditFacade, systemService);
+        verifyNoInteractions(refundService, stockService, creditFacade, systemService);
     }
 
     @Test
@@ -140,7 +140,7 @@ class CloseOrderUseCaseTest {
                 assertThrows(BizException.class,
                         () -> useCase.close(new CloseOrderCmd(ORDER_NO, REASON, null)))
                         .getErrorCode());
-        verifyNoInteractions(refundService, stockRepository, creditFacade, systemService);
+        verifyNoInteractions(refundService, stockService, creditFacade, systemService);
     }
 
     @Test
@@ -152,7 +152,7 @@ class CloseOrderUseCaseTest {
                             () -> useCase.close(new CloseOrderCmd(ORDER_NO, reason, null)))
                             .getErrorCode());
         }
-        verifyNoInteractions(orderMapper, refundService, stockRepository, creditFacade, systemService);
+        verifyNoInteractions(orderMapper, refundService, stockService, creditFacade, systemService);
     }
 
     @Test
@@ -178,7 +178,7 @@ class CloseOrderUseCaseTest {
                 assertThrows(BizException.class,
                         () -> useCase.close(new CloseOrderCmd(ORDER_NO, REASON, null)))
                         .getErrorCode());
-        verifyNoInteractions(refundService, stockRepository, creditFacade, systemService);
+        verifyNoInteractions(refundService, stockService, creditFacade, systemService);
     }
 
     @Test
@@ -208,7 +208,7 @@ class CloseOrderUseCaseTest {
                 assertThrows(BizException.class,
                         () -> useCase.close(new CloseOrderCmd(ORDER_NO, REASON, null)))
                         .getErrorCode());
-        verifyNoInteractions(refundService, stockRepository, creditFacade, systemService);
+        verifyNoInteractions(refundService, stockService, creditFacade, systemService);
     }
 
     private OrderPO order(String status, PayStatus payStatus, long paidCent) {

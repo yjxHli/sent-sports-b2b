@@ -2,9 +2,8 @@ package com.sent.sports.job;
 
 import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
-import com.sent.sports.order.mapper.OrderMapper;
-import com.sent.sports.order.mapper.po.OrderPO;
 import com.sent.sports.order.service.CancelOrderUseCase;
+import com.sent.sports.order.service.OrderJobQueryService;
 import com.sent.sports.order.service.dto.CancelOrderCmd;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -31,7 +30,7 @@ import static org.mockito.Mockito.when;
 class OrderTimeoutJobTest {
 
     @Mock
-    private OrderMapper orderMapper;
+    private OrderJobQueryService orderJobQueryService;
     @Mock
     private CancelOrderUseCase cancelOrderUseCase;
 
@@ -39,15 +38,15 @@ class OrderTimeoutJobTest {
 
     @BeforeEach
     void setUp() {
-        job = new OrderTimeoutJob(orderMapper, cancelOrderUseCase,
+        job = new OrderTimeoutJob(orderJobQueryService, cancelOrderUseCase,
                 Clock.fixed(Instant.parse("2026-11-04T02:00:00Z"), ZoneOffset.UTC));
     }
 
     @Test
     @DisplayName("批量取消到期的未支付订单")
     void cancelsAllTimeoutOrders() {
-        when(orderMapper.selectTimeoutUnpaid(any(), anyInt()))
-                .thenReturn(List.of(order("O0001"), order("O0002")));
+        when(orderJobQueryService.findTimeoutUnpaidOrderNos(any(), anyInt()))
+                .thenReturn(List.of("O0001", "O0002"));
 
         assertThat(job.cancelTimeoutOrders()).isEqualTo(2);
 
@@ -60,8 +59,8 @@ class OrderTimeoutJobTest {
     @Test
     @DisplayName("单笔已被并发处理（STATE_CONFLICT）不影响其余订单")
     void skipsConflictingOrderAndContinues() {
-        when(orderMapper.selectTimeoutUnpaid(any(), anyInt()))
-                .thenReturn(List.of(order("O0001"), order("O0002")));
+        when(orderJobQueryService.findTimeoutUnpaidOrderNos(any(), anyInt()))
+                .thenReturn(List.of("O0001", "O0002"));
         when(cancelOrderUseCase.cancel(any()))
                 .thenThrow(new BizException(ErrorCode.STATE_CONFLICT))
                 .thenReturn(null);
@@ -72,15 +71,10 @@ class OrderTimeoutJobTest {
     @Test
     @DisplayName("没有到期订单时不调用取消用例")
     void noopWhenNothingTimeout() {
-        when(orderMapper.selectTimeoutUnpaid(any(), anyInt())).thenReturn(List.of());
+        when(orderJobQueryService.findTimeoutUnpaidOrderNos(any(), anyInt())).thenReturn(List.of());
 
         assertThat(job.cancelTimeoutOrders()).isZero();
         verify(cancelOrderUseCase, times(0)).cancel(any());
     }
 
-    private OrderPO order(String orderNo) {
-        OrderPO po = new OrderPO();
-        po.setOrderNo(orderNo);
-        return po;
-    }
 }

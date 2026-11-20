@@ -52,7 +52,7 @@ class AdjustPointUseCaseTest extends BaseUseCaseTest {
 
     @Test
     void positiveAdjustWritesFlowAndUpdatesPoints() {
-        Member member = new Member(1L, com.sent.sports.member.domain.MemberLevel.NORMAL, 0L, 100L);
+        Member member = new Member(1L, com.sent.sports.member.domain.MemberTier.NORMAL, 0L, 100L);
         when(memberRepository.findByCustomerId(1L)).thenReturn(Optional.of(member));
         when(clock.instant()).thenReturn(NOW);
         when(idGen.next("PF")).thenReturn("PF0001");
@@ -71,7 +71,7 @@ class AdjustPointUseCaseTest extends BaseUseCaseTest {
 
     @Test
     void negativeAdjustAllowed() {
-        Member member = new Member(1L, com.sent.sports.member.domain.MemberLevel.NORMAL, 0L, 100L);
+        Member member = new Member(1L, com.sent.sports.member.domain.MemberTier.NORMAL, 0L, 100L);
         when(memberRepository.findByCustomerId(1L)).thenReturn(Optional.of(member));
         when(clock.instant()).thenReturn(NOW);
         when(idGen.next("PF")).thenReturn("PF0001");

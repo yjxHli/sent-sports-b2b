@@ -77,10 +77,9 @@ class OrderFlowIT extends FullStackIntegrationTest {
                 order.orderNo(), PAYABLE_CENT, "MOCK", "PAY-IDEM-48"));
         assertThat(payment.status()).isEqualTo("CREATED");
 
-        // 3) 渠道回调：CREATED 流水继续落账，订单迁移 WAIT_SHIP + PAID
-        PayCallbackResult callback = payCallbackUseCase.handle(new PayCallbackCmd(
-                payment.txnNo(), order.orderNo(), PAYABLE_CENT, "MOCK", "CH-48",
-                System.currentTimeMillis()));
+        // 3) 渠道回调（带通道签名）：CREATED 流水继续落账，订单迁移 WAIT_SHIP + PAID
+        PayCallbackResult callback = payCallbackUseCase.handle(
+                signedCallback(payment.txnNo(), order.orderNo(), PAYABLE_CENT));
         assertThat(callback.status()).isEqualTo("SUCCESS");
         assertThat(statusOf(order.orderNo())).isEqualTo("WAIT_SHIP");
         assertThat(payStatusOf(order.orderNo())).isEqualTo("PAID");

@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * 真库等级档位（TDD 红）：{@code customer.level_code} 的真实值域是 NORMAL / LV1 / LV2 / LV3，
- * 门槛 0 / 1000 / 5000 / 20000，与早期内存档位 {@link MemberLevel}（VIP1/VIP2）不是同一套。
+ * 门槛 0 / 1000 / 5000 / 20000；早期内存档位 MemberLevel / LevelCalculator 已删除（R12）。
  * <p>缺陷背景：成长值累加后从未回写 {@code level_code}，于是出现「成长值 16167 却是 LV1」，
  * 进度条按 LV1 的下一档 5000 计算直接顶满、差额算出 -11167。档位换算必须有唯一实现。</p>
  */

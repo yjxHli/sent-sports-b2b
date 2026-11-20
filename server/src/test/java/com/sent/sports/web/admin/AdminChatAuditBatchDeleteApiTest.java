@@ -4,6 +4,7 @@ import com.sent.sports.chat.controller.admin.AdminChatAuditBatchDeleteController
 import com.sent.sports.chat.service.ChatAuditBatchDeleteUseCase;
 import com.sent.sports.common.domain.ConfirmAction;
 import com.sent.sports.common.service.ConfirmTokenService;
+import com.sent.sports.common.web.ConfirmBodyCacheFilter;
 import com.sent.sports.support.BaseApiTest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -39,10 +40,14 @@ class AdminChatAuditBatchDeleteApiTest extends BaseApiTest {
                 .thenReturn(true);
         when(deleteUseCase.delete(List.of("102", "101"))).thenReturn(2);
 
+        String body = toJson(Map.of("ids", List.of("102", "101")));
         mvc.perform(post("/api/admin/chat/audit/sessions/batch-delete")
                         .header("X-Confirm-Token", "tk-ok")
+                        // 拦截器在参数绑定前算目标，依赖请求体预读缓存（生产由 ConfirmBodyCacheFilter 填充）
+                        .requestAttr(ConfirmBodyCacheFilter.BODY_ATTR,
+                                body.getBytes(java.nio.charset.StandardCharsets.UTF_8))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(toJson(Map.of("ids", List.of("102", "101")))))
+                        .content(body))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.deleted").value(2));

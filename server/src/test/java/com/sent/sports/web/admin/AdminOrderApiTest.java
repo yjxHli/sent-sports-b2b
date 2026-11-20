@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -191,6 +192,7 @@ class AdminOrderApiTest extends BaseApiTest {
     @Test
     @DisplayName("关单：原因为空被 Bean Validation 拦截（400）")
     void closeWithBlankReasonRejects() throws Exception {
+        when(confirmTokenService.consume("ORDER_CLOSE", "SO-100", "ct-1")).thenReturn(true);
         mvc.perform(post("/api/admin/orders/SO-100/close")
                         .header("X-Confirm-Token", "ct-1")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -200,12 +202,18 @@ class AdminOrderApiTest extends BaseApiTest {
     }
 
     @Test
-    @DisplayName("关单端点必须声明 @RequirePerm(\"order:close\")")
+    @DisplayName("关单端点必须声明 @RequirePerm(\"order:close\") 与 @Confirm(ORDER_CLOSE)")
     void closeEndpointDeclaresPermission() throws Exception {
-        Method method = AdminOrderController.class.getMethod("close", String.class, String.class,
+        Method method = AdminOrderController.class.getMethod("close", String.class,
                 AdminOrderDtos.CloseCmd.class);
         RequirePerm perm = method.getAnnotation(RequirePerm.class);
         org.junit.jupiter.api.Assertions.assertNotNull(perm, "关单端点必须声明权限注解");
         assertArrayEquals(new String[]{"order:close"}, perm.value());
+        com.sent.sports.common.anno.Confirm confirm =
+                method.getAnnotation(com.sent.sports.common.anno.Confirm.class);
+        org.junit.jupiter.api.Assertions.assertNotNull(confirm, "关单端点必须声明确认令牌注解");
+        assertEquals(com.sent.sports.common.domain.ConfirmAction.ORDER_CLOSE, confirm.action());
+        assertEquals(com.sent.sports.common.anno.Confirm.Target.PATH_VARIABLE, confirm.target(),
+                "关单的令牌目标取路径变量 id，不能退化成请求体");
     }
 }

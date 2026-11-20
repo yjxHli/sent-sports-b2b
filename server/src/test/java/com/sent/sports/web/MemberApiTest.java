@@ -2,7 +2,7 @@ package com.sent.sports.web;
 
 import com.sent.sports.member.controller.MemberController;
 import com.sent.sports.member.dto.MemberDtos;
-import com.sent.sports.member.domain.MemberLevel;
+import com.sent.sports.member.domain.MemberTier;
 import com.sent.sports.member.service.AdjustPointUseCase;
 import com.sent.sports.member.service.GrantLevelUseCase;
 import com.sent.sports.member.service.MemberQueryService;
@@ -49,13 +49,13 @@ class MemberApiTest extends BaseApiTest {
     @Test
     @DisplayName("会员等级进度 200")
     void levelProgressReturns200() throws Exception {
-        MemberDtos.LevelVO vo = new MemberDtos.LevelVO(1L, "VIP1", 5000L, 2000L, 10000L, 0.375d, 0L);
+        MemberDtos.LevelVO vo = new MemberDtos.LevelVO(1L, "LV1", 1200L, 1000L, 5000L, 0.05d, 0L);
         when(memberQueryService.levelProgress(any())).thenReturn(vo);
         mvc.perform(get("/api/member/level"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
-                .andExpect(jsonPath("$.data.level").value("VIP1"))
-                .andExpect(jsonPath("$.data.growthValue").value(5000));
+                .andExpect(jsonPath("$.data.level").value("LV1"))
+                .andExpect(jsonPath("$.data.growthValue").value(1200));
     }
 
     @Test
@@ -109,10 +109,10 @@ class MemberApiTest extends BaseApiTest {
     @DisplayName("人工授级 200")
     void grantLevelReturns200() throws Exception {
         when(grantLevelUseCase.grant(any()))
-                .thenReturn(new GrantLevelResult(1L, MemberLevel.VIP2, 1_800_000_000_000L));
+                .thenReturn(new GrantLevelResult(1L, MemberTier.LV2, 1_800_000_000_000L));
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("customerId", 1L);
-        body.put("targetLevel", "VIP2");
+        body.put("targetLevel", "LV2");
         body.put("validToMillis", 1_800_000_000_000L);
         body.put("reason", "大客户维护");
         mvc.perform(post("/api/member/grant-level")
@@ -120,7 +120,7 @@ class MemberApiTest extends BaseApiTest {
                         .content(toJson(body)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
-                .andExpect(jsonPath("$.data.level").value("VIP2"))
+                .andExpect(jsonPath("$.data.level").value("LV2"))
                 .andExpect(jsonPath("$.data.validToMillis").value(1_800_000_000_000L));
     }
 

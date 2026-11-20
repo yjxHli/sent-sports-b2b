@@ -180,4 +180,62 @@ class StockQueryServiceImplTest {
                 ArgumentMatchers.<Page<StockFlowPO>>any(), ArgumentMatchers.isNull(),
                 ArgumentMatchers.eq("INBOUND"));
     }
+
+    /** R16 红用例：正则只认识扁平字符串值，嵌套对象会拼出半截 "{"。 */
+    @Test
+    @DisplayName("规格 JSON 含嵌套对象时递归取值，不再残留花括号")
+    void skuNameHandlesNestedSpecJson() {
+        StockMapper.StockLedgerRow row = ledger(9330L, 2, 0, 0, 0, 10);
+        row.setSpecJson("{\"size\":\"XL\",\"detail\":{\"color\":\"红\",\"weight\":300}}");
+        when(stockMapper.selectStockPage(
+                ArgumentMatchers.<Page<StockMapper.StockLedgerRow>>any(), any(), any()))
+                .thenReturn(ledgerPage(row));
+
+        String name = service.list(new PageQuery(), null, false).getList().get(0).skuName();
+
+        assertEquals("尤尼克斯 AS-05 比赛级羽毛球 · XL / 红 / 300", name);
+        assertFalse(name.contains("{"));
+    }
+
+    @Test
+    @DisplayName("规格 JSON 含数组时逐个取值，不再拼出半个 '['")
+    void skuNameHandlesArraySpecJson() {
+        StockMapper.StockLedgerRow row = ledger(9331L, 2, 0, 0, 0, 10);
+        row.setSpecJson("{\"size\":\"XL\",\"colors\":[\"红\",\"蓝\"]}");
+        when(stockMapper.selectStockPage(
+                ArgumentMatchers.<Page<StockMapper.StockLedgerRow>>any(), any(), any()))
+                .thenReturn(ledgerPage(row));
+
+        String name = service.list(new PageQuery(), null, false).getList().get(0).skuName();
+
+        assertEquals("尤尼克斯 AS-05 比赛级羽毛球 · XL / 红 / 蓝", name);
+        assertFalse(name.contains("["));
+    }
+
+    @Test
+    @DisplayName("null / 布尔 / 数字值按 JSON 类型处理：null 跳过，其余拼接")
+    void skuNameHandlesScalarTypes() {
+        StockMapper.StockLedgerRow row = ledger(9332L, 2, 0, 0, 0, 10);
+        row.setSpecJson("{\"size\":\"XL\",\"weight\":12.5,\"flag\":true,\"note\":null}");
+        when(stockMapper.selectStockPage(
+                ArgumentMatchers.<Page<StockMapper.StockLedgerRow>>any(), any(), any()))
+                .thenReturn(ledgerPage(row));
+
+        String name = service.list(new PageQuery(), null, false).getList().get(0).skuName();
+
+        assertEquals("尤尼克斯 AS-05 比赛级羽毛球 · XL / 12.5 / true", name);
+    }
+
+    @Test
+    @DisplayName("非 JSON 的历史脏串原样兜底，不抛异常")
+    void malformedSpecJsonFallsBackToRaw() {
+        StockMapper.StockLedgerRow row = ledger(9333L, 2, 0, 0, 0, 10);
+        row.setSpecJson("  XL / 红  ");
+        when(stockMapper.selectStockPage(
+                ArgumentMatchers.<Page<StockMapper.StockLedgerRow>>any(), any(), any()))
+                .thenReturn(ledgerPage(row));
+
+        assertEquals("尤尼克斯 AS-05 比赛级羽毛球 · XL / 红",
+                service.list(new PageQuery(), null, false).getList().get(0).skuName());
+    }
 }

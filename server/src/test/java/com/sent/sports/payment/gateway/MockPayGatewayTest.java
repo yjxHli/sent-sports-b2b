@@ -84,13 +84,31 @@ class MockPayGatewayTest {
     }
 
     @Test
-    @DisplayName("发起支付返回通道交易号与可复现报文")
+    @DisplayName("发起支付返回通道交易号与「已签名的通知参数」（可复现）")
     void createReturnsTicket() {
         PayGateway.PayTicket ticket = gateway.create("T0001", "O1001", 19900L, "MOCK");
 
         assertThat(ticket.txnNo()).isEqualTo("T0001");
         assertThat(ticket.sign()).hasSize(64);
-        assertThat(ticket.payload()).contains("\"orderNo\":\"O1001\"", "\"amountCent\":\"19900\"");
+        assertThat(ticket.notifyParams())
+                .containsEntry("orderNo", "O1001")
+                .containsEntry("amountCent", "19900")
+                .containsEntry("payChannelTradeNo", "MOCK-T0001")
+                .containsKeys("txnNo", "channel", "paidAtMillis");
         assertThat(gateway.create("T0001", "O1001", 19900L, "MOCK").sign()).isEqualTo(ticket.sign());
+    }
+
+    @Test
+    @DisplayName("发起支付下发的签名参数可直接通过验签（前端只能回放，不能伪造）")
+    void ticketParamsPassVerification() {
+        PayGateway.PayTicket ticket = gateway.create("T0001", "O1001", 19900L, "MOCK");
+
+        // 回放顺序与渠道一致：参数表 + 通道签名
+        Map<String, String> replay = new HashMap<>(ticket.notifyParams());
+        replay.put("sign", ticket.sign());
+        assertThat(gateway.verify(replay)).isTrue();
+
+        replay.put("amountCent", "1");
+        assertThat(gateway.verify(replay)).as("改金额即失效").isFalse();
     }
 }

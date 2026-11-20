@@ -4,7 +4,7 @@ import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
 import com.sent.sports.common.util.IdGen;
 import com.sent.sports.member.domain.Member;
-import com.sent.sports.member.domain.MemberLevel;
+import com.sent.sports.member.domain.MemberTier;
 import com.sent.sports.member.repository.MemberRepository;
 import com.sent.sports.member.service.GrantLevelUseCase;
 import com.sent.sports.member.service.dto.GrantLevelCmd;
@@ -49,24 +49,24 @@ class GrantLevelUseCaseTest extends BaseUseCaseTest {
 
     @Test
     void grantSetsLevelAndValidity() {
-        Member member = new Member(1L, MemberLevel.NORMAL, 0L, 0L);
+        Member member = new Member(1L, MemberTier.NORMAL, 0L, 0L);
         when(memberRepository.findByCustomerId(1L)).thenReturn(Optional.of(member));
         when(clock.instant()).thenReturn(NOW);
 
-        GrantLevelResult r = useCase.grant(new GrantLevelCmd(1L, MemberLevel.VIP1, NOW.toEpochMilli() + 86_400_000L, "达标授级", 9L));
+        GrantLevelResult r = useCase.grant(new GrantLevelCmd(1L, MemberTier.LV1, NOW.toEpochMilli() + 86_400_000L, "达标授级", 9L));
 
         verify(memberRepository).save(memberCaptor.capture());
         Member saved = memberCaptor.getValue();
-        assertEquals(MemberLevel.VIP1, saved.getLevel());
+        assertEquals(MemberTier.LV1, saved.getLevel());
         assertEquals("达标授级", saved.getLastGrantReason());
         assertEquals(NOW.toEpochMilli() + 86_400_000L, saved.getLevelValidToMillis());
-        assertEquals(MemberLevel.VIP1, r.level());
+        assertEquals(MemberTier.LV1, r.level());
     }
 
     @Test
     void reasonMustNotBeBlank() {
         BizException e = assertThrows(BizException.class,
-                () -> useCase.grant(new GrantLevelCmd(1L, MemberLevel.VIP1, NOW.toEpochMilli() + 86_400_000L, "   ", 9L)));
+                () -> useCase.grant(new GrantLevelCmd(1L, MemberTier.LV1, NOW.toEpochMilli() + 86_400_000L, "   ", 9L)));
         assertEquals(ErrorCode.PARAM_INVALID, e.getErrorCode());
         verify(memberRepository, never()).save(any());
     }
@@ -76,7 +76,7 @@ class GrantLevelUseCaseTest extends BaseUseCaseTest {
         when(memberRepository.findByCustomerId(2L)).thenReturn(Optional.empty());
 
         BizException e = assertThrows(BizException.class,
-                () -> useCase.grant(new GrantLevelCmd(2L, MemberLevel.VIP1, NOW.toEpochMilli() + 86_400_000L, "达标", 9L)));
+                () -> useCase.grant(new GrantLevelCmd(2L, MemberTier.LV1, NOW.toEpochMilli() + 86_400_000L, "达标", 9L)));
         assertEquals(ErrorCode.NOT_FOUND, e.getErrorCode());
     }
 }

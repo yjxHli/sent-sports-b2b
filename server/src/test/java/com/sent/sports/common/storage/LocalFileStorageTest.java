@@ -23,7 +23,7 @@ class LocalFileStorageTest {
     @TempDir
     Path tempDir;
 
-    private LocalFileStorage storage;
+    private Storage storage;
 
     @BeforeEach
     void setUp() {
@@ -40,7 +40,7 @@ class LocalFileStorageTest {
 
         assertThat(relative).matches("2026/11/[0-9a-f]{2}/[0-9a-f]{64}\\.png");
         assertThat(Files.exists(tempDir.resolve(relative))).isTrue();
-        assertThat(storage.read(relative)).isEqualTo(content);
+        assertThat(storage.load(relative)).isEqualTo(content);
     }
 
     @Test
@@ -81,9 +81,12 @@ class LocalFileStorageTest {
     @Test
     @DisplayName("路径穿越被拒绝")
     void traversalIsRejected() {
-        assertThatThrownBy(() -> storage.resolve("../../etc/passwd"))
+        // resolve 是本地实现特有的路径安全能力，不属于通用 Storage 端口
+        LocalFileStorage local = new LocalFileStorage(tempDir.toString(),
+                Clock.fixed(Instant.parse("2026-11-04T02:00:00Z"), ZoneId.of("Asia/Shanghai")));
+        assertThatThrownBy(() -> local.resolve("../../etc/passwd"))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> storage.read("../secret.txt"))
+        assertThatThrownBy(() -> storage.load("../secret.txt"))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> storage.store(new byte[0], "a.png"))
                 .isInstanceOf(IllegalArgumentException.class);
@@ -96,6 +99,6 @@ class LocalFileStorageTest {
 
         assertThat(storage.delete(relative)).isTrue();
         assertThat(storage.delete(relative)).isFalse();
-        assertThat(storage.read(relative)).isNull();
+        assertThat(storage.load(relative)).isNull();
     }
 }

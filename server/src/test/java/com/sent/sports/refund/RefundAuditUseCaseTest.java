@@ -6,6 +6,7 @@ import com.sent.sports.notify.service.MessageSendService;
 import com.sent.sports.notify.service.dto.InboxMessage;
 import com.sent.sports.order.service.OrderRefundViewService;
 import com.sent.sports.order.service.dto.OrderRefundView;
+import com.sent.sports.refund.domain.RefundAction;
 import com.sent.sports.refund.domain.RefundOrder;
 import com.sent.sports.refund.domain.RefundStatus;
 import com.sent.sports.refund.repository.RefundRepository;
@@ -187,6 +188,31 @@ class RefundAuditUseCaseTest extends BaseUseCaseTest {
         verify(refundRepository).save(saveCaptor.capture());
         assertEquals(RefundStatus.PENDING, saveCaptor.getValue().getStatus());
         assertEquals(1, saveCaptor.getValue().getAppealCount());
+    }
+
+    @Test
+    void illegalTransitionRejectedByStateMachine() {
+        // 退款中不允许再次 APPROVE / REJECT：错误状态变更统一 40901
+        RefundOrder o = pending();
+        o.transit(RefundAction.APPROVE);
+        when(refundRepository.findByRefundNo("RF20240101000001")).thenReturn(Optional.of(o));
+
+        BizException ex = assertThrows(BizException.class,
+                () -> useCase.audit(new AuditRefundCmd("RF20240101000001", "APPROVE", null)));
+        assertEquals(ErrorCode.STATE_CONFLICT, ex.getErrorCode());
+        verify(refundCallbackService, never()).process(any());
+        verify(refundRepository, never()).save(any());
+    }
+
+    @Test
+    void unknownActionRejected() {
+        RefundOrder o = pending();
+        when(refundRepository.findByRefundNo("RF20240101000001")).thenReturn(Optional.of(o));
+
+        BizException ex = assertThrows(BizException.class,
+                () -> useCase.audit(new AuditRefundCmd("RF20240101000001", "NO_SUCH_ACTION", null)));
+        assertEquals(ErrorCode.PARAM_INVALID, ex.getErrorCode());
+        verify(refundRepository, never()).save(any());
     }
 
     @Test

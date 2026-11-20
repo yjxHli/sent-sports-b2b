@@ -65,10 +65,8 @@ class ShipOrderUseCaseTest extends BaseUseCaseTest {
     private static final Instant FIXED = Instant.parse("2024-01-01T00:00:00Z");
 
     private Order waitShipOrder(OrderItem... items) {
-        Order order = new Order("SO20240101000099", 1L, "idem-1", List.of(items),
-                10000L, 0L, 0L, 0L, 0L, 10000L, 0L);
-        order.setStatus(OrderStatus.WAIT_SHIP);
-        return order;
+        return new Order("SO20240101000099", 1L, "idem-1", List.of(items),
+                10000L, 0L, 0L, 0L, 0L, 10000L, 0L, OrderStatus.WAIT_SHIP);
     }
 
     @Test
@@ -106,6 +104,25 @@ class ShipOrderUseCaseTest extends BaseUseCaseTest {
         verify(orderRepository).save(orderCaptor.capture());
         assertEquals(OrderStatus.PART_SHIPPED, orderCaptor.getValue().getStatus());
         verify(eventPublisher).publish(any(ShipEvent.class));
+    }
+
+    @Test
+    void continueShipFromPartShippedUsesShipContinueAction() {
+        OrderItem item = new OrderItem(1L, 5);
+        item.ship(2);
+        Order order = new Order("SO20240101000099", 1L, "idem-1", List.of(item),
+                10000L, 0L, 0L, 0L, 0L, 10000L, 0L, OrderStatus.PART_SHIPPED);
+        when(orderRepository.findByOrderNo("SO20240101000099")).thenReturn(Optional.of(order));
+        when(customizeShipGateway.isReadyToShip("SO20240101000099", 1L)).thenReturn(true);
+        when(clock.instant()).thenReturn(FIXED);
+
+        ShipOrderResult result = useCase.ship(
+                new ShipOrderCmd("SO20240101000099", "SF", "SF123456", List.of(new ShipLineCmd(1L, 2))));
+
+        assertEquals("PART_SHIPPED", result.status());
+        verify(orderRepository).save(orderCaptor.capture());
+        assertEquals(OrderStatus.PART_SHIPPED, orderCaptor.getValue().getStatus());
+        assertEquals(4, orderCaptor.getValue().getItems().get(0).getShippedQty());
     }
 
     @Test

@@ -1,5 +1,7 @@
 package com.sent.sports;
 
+import com.sent.sports.order.domain.Order;
+import com.sent.sports.order.domain.OrderStatus;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
@@ -79,11 +81,20 @@ class ArchitectureTest {
             String self = BASE + "." + module;
             ArchRule rule = noClasses()
                     .that().resideInAPackage(self + "..")
-                    .and().resideInAnyPackage("..controller..", "..service..", "..event..")
+                    .and().resideInAnyPackage("..controller..", "..service..", "..event..", "..job..")
                     .should().dependOnClassesThat()
                     .resideInAnyPackage(otherModuleForbiddenPackages(module));
             rule.check(classes);
         }
+    }
+
+    /** 规则5：订单主状态只能由 domain 内部改写（重建走构造器，流转走 transit）。 */
+    @Test
+    void orderStatusMustNotBeSetOutsideDomain() {
+        ArchRule rule = noClasses()
+                .that().resideOutsideOfPackage(BASE + ".order.domain..")
+                .should().callMethod(Order.class, "setStatus", OrderStatus.class);
+        rule.check(classes);
     }
 
     private static String[] businessPackages() {
@@ -102,6 +113,7 @@ class ArchitectureTest {
             }
             String base = BASE + "." + m;
             list.add(base + "..mapper..");
+            list.add(base + "..repository..");
             list.add(base + "..domain..");
             list.add(base + "..controller..");
         }

@@ -2,6 +2,7 @@ package com.sent.sports.customer;
 
 import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
+import com.sent.sports.common.util.SensitiveWordFilter;
 import com.sent.sports.customer.dto.user.MeVO;
 import com.sent.sports.customer.mapper.CustomerMapper;
 import com.sent.sports.customer.service.CustomerProfileQueryService;
@@ -10,6 +11,9 @@ import com.sent.sports.support.BaseUnitTest;
 import org.junit.jupiter.api.Test;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
+
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -26,6 +30,10 @@ class UpdateProfileUseCaseTest extends BaseUnitTest {
     private CustomerMapper customerMapper;
     @Mock
     private CustomerProfileQueryService profileQueryService;
+    /** 真词库（小样本）：昵称风控要验证真实匹配行为。 */
+    @Spy
+    private SensitiveWordFilter sensitiveWordFilter = new SensitiveWordFilter(
+            List.of("测试违禁词", "傻X", "加V"));
 
     @InjectMocks
     private UpdateProfileUseCase useCase;
@@ -68,9 +76,29 @@ class UpdateProfileUseCaseTest extends BaseUnitTest {
         verify(customerMapper, never()).updateProfile(anyLong(), anyString(), anyString());
     }
 
+    /** 2026-11-19 风控：昵称命中敏感词直接拒绝保存，不留库、不回读资料。 */
     @Test
-    void missingCustomerRejected() {
-        when(customerMapper.updateProfile(9999L, "昵称", null)).thenReturn(0);
+    void sensitiveNicknameRejectedBeforePersist() {
+        BizException e = assertThrows(BizException.class,
+                () -> useCase.update(9002L, "加V领红包的傻X", null));
+
+        assertEquals(ErrorCode.SENSITIVE_NICKNAME, e.getErrorCode());
+        assertEquals(400, e.getErrorCode().getCode());
+        assertEquals("昵称/用户名包含违禁词，请修改后重试", e.resolvedMessage());
+        verify(customerMapper, never()).updateProfile(anyLong(), anyString(), anyString());
+    }
+
+    /** 「操作」这种含「操」字的正常昵称不能被误杀——词库只收完整词组。 */
+    @Test
+    void nicknameContainingSimilarNormalWordIsAccepted() {
+        when(customerMapper.updateProfile(9002L, "操作员小王", null)).thenReturn(1);
+        when(profileQueryService.profile(9002L)).thenReturn(vo("操作员小王", null));
+
+        assertEquals("操作员小王", useCase.update(9002L, "操作员小王", null).nickname());
+    }
+
+    @Test
+    void missingCustomerRejected() {        when(customerMapper.updateProfile(9999L, "昵称", null)).thenReturn(0);
 
         assertEquals(ErrorCode.NOT_FOUND,
                 assertThrows(BizException.class, () -> useCase.update(9999L, "昵称", null)).getErrorCode());

@@ -74,9 +74,8 @@ class IdempotentIT extends FullStackIntegrationTest {
         assertThat(statusOf(order.orderNo())).isEqualTo("CANCELLED");
         long versionAfterCancel = versionOf(order.orderNo());
 
-        PayCallbackResult result = payCallbackUseCase.handle(new PayCallbackCmd(
-                "TXN-LATE-50-B", order.orderNo(), 10_000L, "MOCK", "CH-LATE",
-                System.currentTimeMillis()));
+        PayCallbackResult result = payCallbackUseCase.handle(
+                signedCallback("TXN-LATE-50-B", order.orderNo(), 10_000L));
 
         assertThat(result.status()).isEqualTo("REFUNDED");
         assertThat(statusOf(order.orderNo())).isEqualTo("CANCELLED");
@@ -94,8 +93,7 @@ class IdempotentIT extends FullStackIntegrationTest {
         CreateOrderResult order = createOrderUseCase.create(orderCmd("IDEM-50-CALLBACK", skuId, 1));
         CreatePaymentResult payment = createPaymentUseCase.create(new CreatePaymentCmd(
                 order.orderNo(), 10_000L, "MOCK", "PAY-IDEM-50-C"));
-        PayCallbackCmd callback = new PayCallbackCmd(payment.txnNo(), order.orderNo(), 10_000L,
-                "MOCK", "CH-50-C", System.currentTimeMillis());
+        PayCallbackCmd callback = signedCallback(payment.txnNo(), order.orderNo(), 10_000L);
 
         assertThat(payCallbackUseCase.handle(callback).status()).isEqualTo("SUCCESS");
         assertThat(payCallbackUseCase.handle(callback).status()).isEqualTo("ALREADY_PAID");

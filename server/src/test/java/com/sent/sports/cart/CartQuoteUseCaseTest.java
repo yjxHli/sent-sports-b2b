@@ -18,6 +18,8 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.when;
 
 /**
@@ -32,6 +34,8 @@ class CartQuoteUseCaseTest extends BaseUseCaseTest {
     private PointFacade pointFacade;
     @Mock
     private com.sent.sports.coupon.service.CouponDeduction couponDeduction;
+    @Mock
+    private com.sent.sports.customize.service.CustomFeeFacade customFeeFacade;
 
     @InjectMocks
     private CartQuoteUseCase useCase;
@@ -82,6 +86,24 @@ class CartQuoteUseCaseTest extends BaseUseCaseTest {
 
         assertEquals(0L, result.goodsAmountCent());
         assertEquals(0L, result.freightCent());
+        assertEquals(0L, result.payableCent());
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("券后余额不足时积分抵扣按剩余应付拦截，不输出被 payable 截断的虚高抵扣")
+    void pointDeductClampedToRemainingAfterCoupon() {
+        QuoteItemCmd item = new QuoteItemCmd(50L, 1, "PERSON", 100, 100, false, List.of());
+        when(pricingFacade.price(any())).thenReturn(new LinePrice(10000L, "RETAIL", false));
+        // 领域上限 = 10000 × 30% = 3000；券先抵 8000，包邮后应付基数只剩 2000
+        when(pointFacade.maxDeductibleCent(100000, 10000L)).thenReturn(3000L);
+        when(couponDeduction.discountFor(anyLong(), anyLong(), anyList())).thenReturn(8000L);
+
+        CartQuoteCmd cmd = new CartQuoteCmd(100000, 10000, 1200, List.of(item), 3000L, 100L);
+        CartQuoteResult result = useCase.quote(cmd);
+
+        assertEquals(0L, result.freightCent());
+        assertEquals(8000L, result.couponDiscountCent());
+        assertEquals(2000L, result.pointDeductCent(), "积分抵扣不得超过券后剩余应付基数，否则试算抵扣是虚高的");
         assertEquals(0L, result.payableCent());
     }
 }
