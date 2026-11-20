@@ -24,6 +24,33 @@ export interface RecordVO {
   remark?: string;
 }
 
+/** 企业审核列表行：与后端 AdminFinanceDtos.EnterpriseAuditRow 对齐（Long 已按字符串处理） */
+export interface EnterpriseAuditRow {
+  customerId: number;
+  customerNo: string;
+  phone: string;
+  companyName: string;
+  creditCode: string;
+  licenseFileId: string;
+  status: string;
+  auditRemark: string | null;
+  auditedAtMillis: number | null;
+  submittedAtMillis: number | null;
+  creditLimitCent: number;
+  creditUsedCent: number;
+}
+
+/** 核销/冲销明细行：与后端 AdminFinanceDtos.WriteOffRow 对齐 */
+export interface WriteOffRow {
+  id: number;
+  writeOffNo: string;
+  paymentRecordNo: string;
+  customerId: number;
+  receivableId: number;
+  amountCent: number;
+  createdAtMillis: number | null;
+}
+
 /** 回款列表行：后端 GET /admin/payment-records 真分页返回 */
 export interface PaymentRecordVO {
   paymentNo: string;
@@ -204,4 +231,19 @@ export const financeApi = {
     http.post<{ deleted: number }>('/admin/invoices/batch-delete', { ids }, config),
   batchDeleteContracts: (ids: string[], config?: SentRequestConfig) =>
     http.post<{ deleted: number }>('/admin/contracts/batch-delete', { ids }, config),
+
+  /** 企业审核列表：基本信息 + 审核意见，详情弹窗再展示营业执照。 */
+  enterpriseAudits: (query: PageQuery & { keyword?: string; status?: string }) =>
+    http.get<PageResult<EnterpriseAuditRow>>('/admin/enterprise/audits', query),
+  batchDeleteEnterpriseAudits: (ids: string[], config?: SentRequestConfig) =>
+    http.post<{ deleted: number }>('/admin/enterprise/audits/batch-delete', { ids }, config),
+  batchDeleteReceivables: (ids: string[], config?: SentRequestConfig) =>
+    http.post<{ deleted: number }>('/admin/receivables/batch-delete', { ids }, config),
+  batchDeletePaymentRecords: (ids: string[], config?: SentRequestConfig) =>
+    http.post<{ deleted: number }>('/admin/payment-records/batch-delete', { ids }, config),
+  batchDeleteWriteOffs: (ids: string[], config?: SentRequestConfig) =>
+    http.post<{ deleted: number }>('/admin/write-offs/batch-delete', { ids }, config),
+  /** 每个用户的核销与冲销明细 */
+  writeOffs: (query: PageQuery & { customerId?: number }) =>
+    http.get<PageResult<WriteOffRow>>('/admin/write-offs', query),
 };

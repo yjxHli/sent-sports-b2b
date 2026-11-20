@@ -60,8 +60,8 @@
       <h3 class="section-title">销售业绩排行</h3>
       <SentTable
         :columns="columns"
-        :rows="pagedRanks"
-        :total="ranks.length"
+        :rows="rows"
+        :total="total"
         :page="page"
         :size="size"
         :loading="loading"
@@ -89,12 +89,12 @@
 
 <script setup lang="ts">
 /** 销售报表：近 N 天趋势 + 汇总卡 + 业绩排行，三者口径一致、统计区间一并下推后端。 */
-import { computed, onMounted, ref } from 'vue';
+import { computed, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import { unwrap } from '@/utils/http';
 import { systemApi, type SalesRankVO, type SalesTrendVO } from '@/api';
 import { fmtMoney } from '@sent/shared';
-import { usePagination } from '@/composables/usePagination';
+import { useTable } from '@/composables/useTable';
 import SentTable from '@/components/SentTable.vue';
 import type { TableColumn } from '@/components/types';
 
@@ -108,21 +108,32 @@ const columns: TableColumn[] = [
 
 const days = ref(30);
 const trend = ref<SalesTrendVO | null>(null);
+/** 全量排行（柱宽按全量最大值算，不能只看当前页） */
 const ranks = ref<SalesRankVO[]>([]);
-const loading = ref(false);
-const { page, size } = usePagination();
-/** 排行结果集上限为在职员工数（含「未分配」一行），远小于单页上限 100，展示层切片不漏数据。 */
-const pagedRanks = computed(() =>
-  ranks.value.slice((page.value - 1) * size.value, page.value * size.value),
-);
-
-function onPage(value: number): void {
-  page.value = value;
-}
-function onSize(value: number): void {
-  size.value = value;
-  page.value = 1;
-}
+/**
+ * 排行结果集上限为在职员工数（含「未分配」一行），远小于单页上限，
+ * 所以走 client 模式：一次拉全、前端切片，翻页不再打接口。
+ */
+const { rows, total, loading, page, size, load, onPage, onSize, onSearch } = useTable<SalesRankVO>({
+  mode: 'client',
+  // 趋势卡不分页，但和排行同一统计区间，顺路在同一个请求里刷新
+  fetch: async () => {
+    const [trendRes, rankRes] = await Promise.allSettled([
+      unwrap(systemApi.salesTrend(days.value)),
+      unwrap(systemApi.salesRanking(days.value)),
+    ]);
+    trend.value = trendRes.status === 'fulfilled' ? trendRes.value : null;
+    if (trendRes.status === 'rejected') ElMessage.error('销售趋势加载失败');
+    if (rankRes.status === 'rejected') {
+      ElMessage.error('销售业绩排行加载失败');
+      throw rankRes.reason;
+    }
+    ranks.value = rankRes.value ?? [];
+    return ranks.value;
+  },
+  // 两个请求各自的失败文案已在 fetch 里给过，门面不再补一条笼统报错
+  errorMessage: '',
+});
 
 const maxTrendAmount = computed(() =>
   Math.max(1, ...(trend.value?.points ?? []).map((p) => Number(p.amountCent ?? 0))),
@@ -145,30 +156,11 @@ function showLabel(i: number): boolean {
   return i % step === 0 || i === (trend.value?.points.length ?? 0) - 1;
 }
 function selectDays(value: number | string | boolean): void {
+  // 换统计区间等于换结果集：必须回第 1 页再拉（后端按 days 重新聚合）
   days.value = Number(value);
-  page.value = 1;
-  void load();
+  onSearch();
 }
 
-async function load(): Promise<void> {
-  loading.value = true;
-  const [trendRes, rankRes] = await Promise.allSettled([
-    unwrap(systemApi.salesTrend(days.value)),
-    unwrap(systemApi.salesRanking(days.value)),
-  ]);
-  trend.value = trendRes.status === 'fulfilled' ? trendRes.value : null;
-  // 后端按 days 重新聚合多行排行，统计区间切换时与趋势同步刷新
-  ranks.value = rankRes.status === 'fulfilled' ? (rankRes.value ?? []) : [];
-  if (trendRes.status === 'rejected') {
-    ElMessage.error('销售趋势加载失败');
-  }
-  if (rankRes.status === 'rejected') {
-    ElMessage.error('销售业绩排行加载失败');
-  }
-  loading.value = false;
-}
-
-onMounted(() => { void load(); });
 </script>
 
 <style scoped>

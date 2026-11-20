@@ -131,3 +131,34 @@ export function overdueDays(dueAt: number | string | null | undefined, now = Dat
   if (!date) return 0;
   return Math.max(0, Math.floor((now - date.getTime()) / 86_400_000));
 }
+
+// ===========================================================================
+// 会员日规则（每周三/周四）：前后端共用同一口径
+// ===========================================================================
+
+/** 会员日是周三(3)、周四(4)，其余日期不可从领券中心领券 */
+export function isMemberDay(date: Date | number = new Date()): boolean {
+  const d = date instanceof Date ? date : new Date(date);
+  const day = d.getDay();
+  return day === 3 || day === 4;
+}
+
+/**
+ * 从给定时刻向后（严格大于）找第一个会员日的 00:00。
+ * 今天是周三/周四时指向下一次（下周三），与后端 MemberDayPolicy 一致。
+ */
+export function nextMemberDayAt(now: Date | number = new Date()): Date {
+  const d = (now instanceof Date ? now : new Date(now));
+  const next = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, 0, 0, 0, 0);
+  while (!isMemberDay(next)) next.setDate(next.getDate() + 1);
+  return next;
+}
+
+/** 毫秒差 -> `xx天xx小时xx分钟`（不足 1 分钟按 0，向下取整） */
+export function formatCountdown(ms: number): string {
+  const totalMin = Math.max(0, Math.floor(ms / 60_000));
+  const days = Math.floor(totalMin / 1440);
+  const hours = Math.floor((totalMin % 1440) / 60);
+  const minutes = totalMin % 60;
+  return `${days}天${hours}小时${minutes}分钟`;
+}

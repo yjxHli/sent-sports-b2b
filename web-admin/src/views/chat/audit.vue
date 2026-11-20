@@ -143,10 +143,13 @@
  * 后端以 @RequirePerm(exact=true) 精确校验，持 '*' 的其他业务角色不能越权访问接口。
  */
 import { onMounted, reactive, ref } from 'vue';
-import { fmtChatTime, fmtDateTime, shouldShowTimeDivider } from '@sent/shared';
+import {
+  CHAT_CATEGORY_LABELS, CHAT_INFO_LABELS, fmtChatTime, fmtDateTime,
+  shouldShowTimeDivider, statusLabel,
+} from '@sent/shared';
 import { unwrap } from '@/utils/http';
 import { chatApi, type ChatAuditRowVO, type ChatAuditStaffVO, type ChatTranscriptVO } from '@/api';
-import { usePagination } from '@/composables/usePagination';
+import { useTable } from '@/composables/useTable';
 import SentTable from '@/components/SentTable.vue';
 import StatusTag from '@/components/StatusTag.vue';
 import BatchDeleteButton from '@/components/BatchDeleteButton.vue';
@@ -162,11 +165,38 @@ const columns: TableColumn[] = [
   { prop: 'noteStatus', label: '小结', width: 100, align: 'center' },
 ];
 
-const { page, size } = usePagination();
+const filter = reactive({
+  staffId: undefined as number | undefined,
+  result: '',
+  keyword: '',
+});
+const dateRange = ref<string[] | null>(null);
+
 const tableSizes = [10, 15, 20, 50, 100];
-const rows = ref<ChatAuditRowVO[]>([]);
-const total = ref(0);
-const loading = ref(false);
+const { rows, total, loading, page, size, load, onPage, onSize, onSearch } = useTable<ChatAuditRowVO>({
+  fetch: (params) => unwrap(chatApi.auditSessions({
+    ...params,
+    staffId: filter.staffId,
+    result: filter.result || undefined,
+    keyword: filter.keyword || undefined,
+    from: dateRange.value?.[0],
+    to: dateRange.value?.[1],
+  })),
+  // JacksonConfig 把 Long 序列化成字符串，列表行统一 Number() 归一
+  transform: ({ list, total: count }) => ({
+    total: count,
+    list: list.map((r) => ({
+      ...r,
+      sessionId: Number(r.sessionId),
+      customerId: Number(r.customerId),
+      staffId: Number(r.staffId),
+      startedAtMillis: Number(r.startedAtMillis ?? 0),
+      endedAtMillis: Number(r.endedAtMillis ?? 0),
+    })),
+  }),
+  // 质检台失败时只展示空表，不额外弹错（与改造前一致）
+  errorMessage: '',
+});
 /** 批量删除模式与勾选集合（与发票管理同一套 BatchDeleteButton 口径） */
 const deleteMode = ref(false);
 const selected = ref<ChatAuditRowVO[]>([]);
@@ -176,29 +206,18 @@ function onDeleted(): void {
   void load();
 }
 const staffOptions = ref<ChatAuditStaffVO[]>([]);
-const filter = reactive({
-  staffId: undefined as number | undefined,
-  result: '',
-  keyword: '',
-});
-const dateRange = ref<string[] | null>(null);
 
+/** 解决情况：DONE / UNRESOLVED 走共享字典，空值才有「未填写」这个专属兜底 */
 function resultLabel(value?: string | null): string {
-  if (value === 'DONE') return '已完成';
-  if (value === 'UNRESOLVED') return '未解决';
-  return '未填写';
+  return value ? statusLabel(value) : '未填写';
 }
 
 function categoryLabel(value?: string | null): string {
-  const labels: Record<string, string> = {
-    QUALITY: '商品品质问题', INQUIRY: '商品咨询', UNCLEAR: '未明确',
-  };
-  return labels[value ?? ''] ?? (value ?? '--');
+  return CHAT_CATEGORY_LABELS[value ?? ''] ?? statusLabel(value) ?? '--';
 }
 
 function infoLabel(value?: string | null): string {
-  const labels: Record<string, string> = { CLEAR: '明确信息', NO_REPLY: '用户未回复' };
-  return labels[value ?? ''] ?? (value ?? '--');
+  return CHAT_INFO_LABELS[value ?? ''] ?? statusLabel(value) ?? '--';
 }
 
 /**
@@ -209,52 +228,6 @@ function systemMessageText(m: { senderType: string; msgType: string; content: st
   const raw = String(m.content ?? '').trim();
   if (m.msgType === 'SATISFY' || raw.startsWith('{')) return '会话已结束';
   return raw;
-}
-
-async function load(): Promise<void> {
-  loading.value = true;
-  try {
-    const data = await unwrap(chatApi.auditSessions({
-      page: page.value,
-      size: size.value,
-      staffId: filter.staffId,
-      result: filter.result || undefined,
-      keyword: filter.keyword || undefined,
-      from: dateRange.value?.[0],
-      to: dateRange.value?.[1],
-    }));
-    // JacksonConfig 把 Long 序列化成字符串，列表行统一 Number() 归一
-    rows.value = (data?.list ?? []).map((r) => ({
-      ...r,
-      sessionId: Number(r.sessionId),
-      customerId: Number(r.customerId),
-      staffId: Number(r.staffId),
-      startedAtMillis: Number(r.startedAtMillis ?? 0),
-      endedAtMillis: Number(r.endedAtMillis ?? 0),
-    }));
-    total.value = Number(data?.total ?? 0);
-  } catch {
-    rows.value = [];
-    total.value = 0;
-  } finally {
-    loading.value = false;
-  }
-}
-
-function onPage(value: number): void {
-  page.value = value;
-  void load();
-}
-
-function onSize(value: number): void {
-  size.value = value;
-  page.value = 1;
-  void load();
-}
-
-function onSearch(): void {
-  page.value = 1;
-  void load();
 }
 
 function resetFilters(): void {
@@ -282,13 +255,13 @@ async function openDetail(sessionId: number): Promise<void> {
   }
 }
 
+/** 客服下拉先就位；列表本身由 useTable 在 onMounted 自动加载 */
 onMounted(async () => {
   try {
     staffOptions.value = (await unwrap(chatApi.auditStaff())) ?? [];
   } catch {
     staffOptions.value = [];
   }
-  await load();
 });
 </script>
 

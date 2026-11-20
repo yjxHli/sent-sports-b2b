@@ -55,6 +55,12 @@ export const stockApi = {
     http.post<{ deleted: number }>('/admin/stock/batch-delete', { ids }, config),
   flows: (query: PageQuery & { skuId?: number; bizType?: string }) =>
     http.get<PageResult<StockFlowVO>>('/admin/stock/flows', query),
+  /** 报损 / 手工入库流水批量软删：库存数量不动 */
+  batchDeleteFlows: (ids: string[], config?: SentRequestConfig) =>
+    http.post<{ deleted: number }>('/admin/stock/flows/batch-delete', { ids }, config),
+  /** 库存预警清单批量软删：只隐藏台账 */
+  batchDeleteWarnings: (ids: string[], config?: SentRequestConfig) =>
+    http.post<{ deleted: number }>('/admin/stock/warnings/batch-delete', { ids }, config),
   inbound: (cmd: InboundCmd, config?: SentRequestConfig) =>
     http.post<InboundVO>('/admin/stock/inbound', cmd, config),
   loss: (cmd: LossCmd, config?: SentRequestConfig) =>

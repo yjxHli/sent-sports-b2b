@@ -14,13 +14,26 @@
               :size="size"
               :loading="loading"
               :page-sizes="tableSizes"
+              :selectable="deleteMode"
+              row-key="customerId"
               exportable
               export-name="企业客户"
+              :export-rows="exportAll"
               :operation-width="110"
+              @selection-change="selected = $event"
               @update:page="onPage"
-              @update:size="onSize"
+              @update:size="onUserSize"
               @refresh="load"
             >
+              <template #toolbar-actions>
+                <BatchDeleteButton
+                  v-model:active="deleteMode"
+                  :ids="selected.map((r: any) => String(r.customerId))"
+                  :summary="`已选择 ${selected.length} 家企业客户`"
+                  :delete-fn="(ids, config) => unwrap(customerApi.batchDelete(ids, config))"
+                  @done="onDeleted"
+                />
+              </template>
               <template #toolbar>
                 <el-input
                   v-model="keyword"
@@ -34,8 +47,8 @@
               </template>
               <template #col-enterpriseStatus="{ row }">
                 <StatusTag
-                  :label="enterpriseStatusLabel(row.enterpriseStatus)"
-                  :tone="enterpriseStatusTone(row.enterpriseStatus)"
+                  :label="statusLabel(row.enterpriseStatus, ENTERPRISE_STATUS_LABELS)"
+                  :tone="statusTone(row.enterpriseStatus)"
                 />
               </template>
               <template #col-creditState="{ row }">
@@ -67,8 +80,8 @@
               <el-descriptions-item label="企业客户">{{ current.name }}（{{ current.customerId }}）</el-descriptions-item>
               <el-descriptions-item label="认证状态">
                 <StatusTag
-                  :label="enterpriseStatusLabel(current.enterpriseStatus)"
-                  :tone="enterpriseStatusTone(current.enterpriseStatus)"
+                  :label="statusLabel(current.enterpriseStatus, ENTERPRISE_STATUS_LABELS)"
+                  :tone="statusTone(current.enterpriseStatus)"
                 />
               </el-descriptions-item>
               <!-- 企业自助注册提交的材料：不展示就只能「盲审」 -->
@@ -138,11 +151,15 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { unwrap } from '@/utils/http';
 import { customerApi, financeApi } from '@/api';
 import { fileApi } from '@/api/file';
-import { fmtMoney, yuanToCent } from '@sent/shared';
+import {
+  ENTERPRISE_STATUS_LABELS, fmtMoney, statusLabel, statusTone, yuanToCent,
+} from '@sent/shared';
 import { openConfirm } from '@/utils/confirm';
-import { usePagination } from '@/composables/usePagination';
+import { useTable } from '@/composables/useTable';
 import SentTable from '@/components/SentTable.vue';
 import StatusTag from '@/components/StatusTag.vue';
+import BatchDeleteButton from '@/components/BatchDeleteButton.vue';
+import { useBatchDelete } from '@/composables/useBatchDelete';
 import type { TableColumn } from '@/components/types';
 
 const columns: TableColumn[] = [
@@ -158,29 +175,23 @@ const columns: TableColumn[] = [
   { prop: 'creditState', label: '授信状态', width: 100, align: 'center' },
 ];
 
-/**
- * 认证状态标签：真库 enterprise_profile.status 里 ACTIVE 表示已认证、
- * REJECTED 表示已驳回，NORMAL / PENDING 视为待审核（演示数据用的是 NORMAL）。
- */
-function enterpriseStatusLabel(status?: string): string {
-  const key = (status ?? '').toUpperCase();
-  if (key === 'ACTIVE') return '已认证';
-  if (key === 'REJECTED') return '已驳回';
-  return '待审核';
-}
-
-function enterpriseStatusTone(status?: string): 'success' | 'danger' | 'warning' {
-  const key = (status ?? '').toUpperCase();
-  if (key === 'ACTIVE') return 'success';
-  if (key === 'REJECTED') return 'danger';
-  return 'warning';
-}
-
-const { page, size } = usePagination();
-const rows = ref<any[]>([]);
-const total = ref(0);
 const keyword = ref('');
-const loading = ref(false);
+/** 导出必须导整张表：按筛选条件分页拉全，不能只导当前页（useTable.fetchAll 已内置） */
+const { rows, total, loading, page, size, load, onPage, onSize, onSearch,
+  fetchAll: exportAll } = useTable<any>({
+  fetch: (params) => unwrap(customerApi.list({
+    ...params,
+    keyword: keyword.value || undefined,
+    type: 'ENTERPRISE',
+  })),
+  errorMessage: '企业客户加载失败',
+  onLoaded: () => syncCurrent(),
+  // 列表落地后卡片高度才定型，这时再量每页能放几行
+  onSettled: () => armFit(),
+  // 首屏要先挂好宽屏监听/ResizeObserver 再首次测量，所以由页面自己的 onMounted 触发
+  immediate: false,
+});
+const { deleteMode, selected, onDeleted } = useBatchDelete(load);
 const auditing = ref(false);
 const submitting = ref(false);
 const current = ref<any>(null);
@@ -275,30 +286,6 @@ const creditForm = reactive<{
   remark: '',
 });
 
-async function load(): Promise<void> {
-  loading.value = true;
-  try {
-    const data = await unwrap(customerApi.list({
-      page: page.value,
-      size: size.value,
-      keyword: keyword.value || undefined,
-      type: 'ENTERPRISE',
-    }));
-    rows.value = data?.list ?? [];
-    // Jackson 会把 Long 序列化成字符串，ElPagination 的 total 只收 Number
-    total.value = Number(data?.total ?? 0);
-    syncCurrent();
-  } catch (error) {
-    rows.value = [];
-    total.value = 0;
-    ElMessage.error((error as Error)?.message || '企业客户加载失败');
-  } finally {
-    // 列表落地后卡片高度才定型，这时再量每页能放几行
-    loading.value = false;
-    armFit();
-  }
-}
-
 /**
  * 刷新后把右侧面板指回同一条记录：列表行是新建对象，
  * 不同步会让面板一直显示改动前的「未授信 / 未认证」旧值。
@@ -310,20 +297,10 @@ function syncCurrent(): void {
   current.value = fresh ?? null;
 }
 
-function onSearch(): void {
-  page.value = 1;
-  void load();
-}
-function onPage(value: number): void {
-  page.value = value;
-  void load();
-}
-function onSize(value: number): void {
-  // 用户主动选条数 → 关掉自适应
+/** 用户主动选条数 → 关掉自适应（自适应自己改 size 时不算用户操作） */
+function onUserSize(value: number): void {
   if (!applyingFit) autoFitSize.value = false;
-  size.value = value;
-  page.value = 1;
-  void load();
+  onSize(value);
 }
 
 function select(row: any): void {
@@ -332,19 +309,36 @@ function select(row: any): void {
 
 async function audit(approved: boolean): Promise<void> {
   if (!current.value) return;
-  try {
-    await ElMessageBox.confirm(
-      `确认${approved ? '通过' : '驳回'}「${current.value.name}」的企业认证？`,
-      '企业认证审核',
-      { type: 'warning' },
-    );
-  } catch {
-    return;
+  let remark = '资料齐全';
+  if (approved) {
+    try {
+      await ElMessageBox.confirm(
+        `确认通过「${current.value.name}」的企业认证？`, '企业认证审核', { type: 'warning' },
+      );
+    } catch {
+      return;
+    }
+  } else {
+    // 驳回必须写清原因：企业端审核进度页会原文展示，不能只给一句「资料不完整」
+    try {
+      const answered = await ElMessageBox.prompt(
+        `驳回「${current.value.name}」的企业认证，请填写具体原因（企业可见）：`,
+        '驳回企业认证',
+        {
+          inputType: 'textarea',
+          inputPlaceholder: '例如：营业执照模糊，请重新上传清晰照片',
+          inputValidator: (value: string) => (value && value.trim() ? true : '驳回原因不能为空'),
+        },
+      );
+      remark = String(answered.value || '').trim();
+    } catch {
+      return;
+    }
   }
   auditing.value = true;
   try {
     const result = await unwrap(customerApi.auditEnterprise(
-      Number(current.value.customerId), approved, approved ? '资料齐全' : '资料不完整',
+      Number(current.value.customerId), approved, remark,
     ));
     ElMessage.success(
       approved ? '审核已通过' : '已驳回',

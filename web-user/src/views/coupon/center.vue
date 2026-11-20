@@ -4,6 +4,12 @@
       <div class="center-hero__main">
         <h1 class="center-hero__title">领券中心</h1>
         <p class="center-hero__sub">先领券再下单：无门槛券、满减券、品类券一次领齐，单笔订单限用 1 张。</p>
+        <p v-if="!memberDay" class="center-hero__countdown" data-testid="member-day-countdown">
+          距下次会员日（每周三、周四）还有 {{ countdownText }}，期间暂不可领券
+        </p>
+        <p v-else class="center-hero__countdown center-hero__countdown--open">
+          今日会员日，可领取优惠券
+        </p>
       </div>
       <router-link to="/coupons" class="center-hero__link">我的优惠券 ›</router-link>
     </header>
@@ -29,7 +35,7 @@
             <div class="claim-card__value">
               <span v-if="isPercent(c)" class="claim-card__rate">{{ rateText(c) }}</span>
               <template v-else>
-                <span class="claim-card__symbol">¥</span>{{ yuan(c.amountCent) }}
+                <span class="claim-card__symbol">¥</span>{{ fmtCent(c.amountCent) }}
               </template>
             </div>
             <div class="claim-card__cond">{{ thresholdText(c) }}</div>
@@ -42,12 +48,12 @@
                 {{ c.scopeType === 'SPU' ? '限指定商品' : '限指定规格' }}
               </span>
             </div>
-            <span class="claim-card__valid">领取后 {{ c.validDays }} 天内有效</span>
+            <span class="claim-card__valid">领取后 {{ c.claimValidDays || c.validDays }} 天内有效</span>
             <button
               type="button"
               class="claim-card__btn"
-              :class="{ 'claim-card__btn--done': c.claimed || c.remainQty === 0 }"
-              :disabled="c.claimed || c.remainQty === 0 || claimingId === c.templateId"
+              :class="{ 'claim-card__btn--done': !memberDay || c.claimed || c.remainQty === 0 }"
+              :disabled="!memberDay || c.claimed || c.remainQty === 0 || claimingId === c.templateId"
               data-testid="claim-btn"
               @click="claim(c)"
             >
@@ -83,9 +89,10 @@
  * 数据全部走服务端：`GET /api/coupons/claimable` 已经按客户类型过滤（企业专属券
  * 不对个人客户展示）并回填 claimed；前端不重复判断领取资格，只负责渲染与防连点。
  */
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
+import { fmtCent, formatCountdown, isMemberDay, nextMemberDayAt } from '@sent/shared';
 import { unwrap } from '@/utils/http';
 import { couponApi, type ClaimableVO } from '@/api/coupon';
 import { productApi, type CatalogProductVO } from '@/api/product';
@@ -98,15 +105,18 @@ const products = ref<CatalogProductVO[]>([]);
 const loading = ref(true);
 const loadingGoods = ref(true);
 const claimingId = ref<number | null>(null);
+/** 会员日门禁与倒计时：口径与后端 MemberDayPolicy 一致（周三/周四） */
+const now = ref(new Date());
+const memberDay = computed(() => isMemberDay(now.value));
+const countdownText = computed(() =>
+  formatCountdown(nextMemberDayAt(now.value).getTime() - now.value.getTime()),
+);
+let clockTimer: ReturnType<typeof setInterval> | undefined;
 
 const claimedCount = computed(() => coupons.value.filter((c) => c.claimed).length);
 
 function num(v: number | string | null | undefined): number {
   return Number(v ?? 0);
-}
-function yuan(cent: number | string): string {
-  const n = num(cent);
-  return Number.isInteger(n / 100) ? String(n / 100) : (n / 100).toFixed(2);
 }
 function isPercent(c: ClaimableVO): boolean {
   return c.discountType === 'PERCENT';
@@ -119,7 +129,7 @@ function rateText(c: ClaimableVO): string {
 }
 function thresholdText(c: ClaimableVO): string {
   const n = num(c.thresholdCent);
-  if (n > 0) return `满 ${yuan(n)} 元可用`;
+  if (n > 0) return `满 ${fmtCent(n)} 元可用`;
   return isPercent(c) ? '无门槛折扣' : '无门槛';
 }
 function typeText(c: ClaimableVO): string {
@@ -139,6 +149,7 @@ function typeText(c: ClaimableVO): string {
 function btnText(c: ClaimableVO): string {
   if (c.claimed) return '已领取';
   if (c.remainQty === 0) return '已领完';
+  if (!memberDay.value) return '会员日可领';
   return claimingId.value === c.templateId ? '领取中…' : '立即领取';
 }
 /** 券名里已经写了券型（如「5元无门槛券」）就不再挂一枚同义标签 */
@@ -147,6 +158,10 @@ function showTypeTag(c: ClaimableVO): boolean {
 }
 
 async function claim(c: ClaimableVO): Promise<void> {
+  if (!memberDay.value) {
+    ElMessage.warning('仅会员日（每周三、周四）可领取优惠券');
+    return;
+  }
   if (c.claimed || c.remainQty === 0 || claimingId.value !== null) return;
   claimingId.value = c.templateId;
   try {
@@ -189,8 +204,14 @@ async function loadProducts(): Promise<void> {
 }
 
 onMounted(() => {
+  now.value = new Date();
+  clockTimer = setInterval(() => { now.value = new Date(); }, 1000);
   void loadCoupons();
   void loadProducts();
+});
+
+onUnmounted(() => {
+  if (clockTimer) clearInterval(clockTimer);
 });
 </script>
 
@@ -221,6 +242,20 @@ onMounted(() => {
   margin: 8px 0 0;
   font-size: 13px;
   opacity: 0.94;
+}
+.center-hero__countdown {
+  margin: 8px 0 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.22);
+  border-radius: 6px;
+  padding: 4px 10px;
+  display: inline-block;
+  font-variant-numeric: tabular-nums;
+}
+.center-hero__countdown--open {
+  background: rgba(255, 255, 255, 0.24);
 }
 .center-hero__link {
   flex: none;

@@ -2,7 +2,7 @@
  * 系统与报表 API（P6-21，对应 AdminSystemController）。
  * 报表数据用于工作台六个指标卡与菜单角标；菜单本身仍由静态路由表 + permissions[] 生成。
  */
-import { http } from '@/utils/http';
+import { http, type SentRequestConfig } from '@/utils/http';
 import type { PageQuery, PageResult, StaffVO, RoleVO, SalesReportVO } from '@sent/shared';
 
 export interface StaffForm {
@@ -26,6 +26,40 @@ export interface ParamVO {
 export interface ParamForm {
   paramKey: string;
   paramValue: string;
+}
+
+/* ---------------- 违禁词库（V46，系统管理 → 违禁词库） ---------------- */
+
+/** 词条分类：与后端 sys_sensitive_word.category 一一对应，label 由后端下发。 */
+export interface SensitiveWordVO {
+  id: number;
+  word: string;
+  category: string;
+  categoryLabel: string;
+  enabled: boolean;
+  remark: string;
+  createdAtMillis: number;
+  updatedAtMillis: number;
+}
+
+export interface SensitiveWordForm {
+  word: string;
+  category?: string;
+  enabled?: boolean;
+  remark?: string;
+}
+
+export interface SensitiveWordQuery extends PageQuery {
+  keyword?: string;
+  category?: string;
+  /** 1 只看启用、0 只看停用、不传表示不限 */
+  enabled?: number;
+}
+
+export interface SensitiveWordStatsVO {
+  total: number;
+  enabled: number;
+  disabled: number;
 }
 
 export interface LogVO {
@@ -122,7 +156,22 @@ export const systemApi = {
 
   params: () => http.get<ParamVO[]>('/admin/params'),
   upsertParam: (form: ParamForm) => http.put<ParamVO>('/admin/params', form),
+
+  /* 违禁词库（V46）：保存即热生效，作用于聊天消息 + 昵称/登录名 */
+  sensitiveWords: (query: SensitiveWordQuery) =>
+    http.get<PageResult<SensitiveWordVO>>('/admin/sensitive-words', query),
+  sensitiveWordStats: () => http.get<SensitiveWordStatsVO>('/admin/sensitive-words/stats'),
+  createSensitiveWord: (form: SensitiveWordForm) =>
+    http.post<SensitiveWordVO>('/admin/sensitive-words', form),
+  updateSensitiveWord: (id: number, form: SensitiveWordForm) =>
+    http.put<SensitiveWordVO>(`/admin/sensitive-words/${id}`, form),
+  toggleSensitiveWord: (id: number, enabled: boolean) =>
+    http.put<SensitiveWordVO>(`/admin/sensitive-words/${id}/enabled`, { enabled }),
+  deleteSensitiveWord: (id: number) =>
+    http.delete<void>(`/admin/sensitive-words/${id}`),
   logs: (query: LogQuery) => http.get<PageResult<LogVO>>('/admin/logs', query),
+  batchDeleteLogs: (ids: string[], config?: SentRequestConfig) =>
+    http.post<{ deleted: number }>('/admin/logs/batch-delete', { ids }, config),
 
   salesReport: () => http.get<SalesReportVO>('/admin/reports/sales'),
   /** 销售趋势（真查 orders.paid_at + paid_cent，剔除全额退款订单）。 */

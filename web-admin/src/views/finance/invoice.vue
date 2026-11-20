@@ -158,12 +158,12 @@
  * 行内「预览 / 下载」走 GET /admin/invoices/{id}/pdf —— 之前 pdfUrl 指向的
  * /files/invoice/*.pdf 从来不存在，点下载必然 404，只能靠人手填地址。
  */
-import { onMounted, reactive, ref } from 'vue';
+import { reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import { unwrap } from '@/utils/http';
 import { financeApi, orderApi } from '@/api';
 import { fmtDateTime, fmtMoney } from '@sent/shared';
-import { usePagination } from '@/composables/usePagination';
+import { useTable } from '@/composables/useTable';
 import { useBatchDelete } from '@/composables/useBatchDelete';
 import SentTable from '@/components/SentTable.vue';
 import StatusTag from '@/components/StatusTag.vue';
@@ -183,14 +183,18 @@ const columns: TableColumn[] = [
   { prop: 'createdAt', label: '创建时间', width: 160, formatter: (_r, v) => fmtDateTime(v) },
 ];
 
-const rows = ref<any[]>([]);
-const { deleteMode, selected, onDeleted } = useBatchDelete(load);
-const total = ref(0);
-const { page, size } = usePagination();
-const loading = ref(false);
 const submitting = ref(false);
 /** 发票 ID / 发票号 / 客户 ID 三选一模糊搜索，条件由后端 SQL 收敛（前端只负责传参） */
 const keyword = ref('');
+/** 换关键字必须回到第 1 页，否则会停在一个不存在的页码上看到空表（onSearch 已内置） */
+const { rows, total, loading, page, size, load, onPage, onSize, onSearch } = useTable<any>({
+  fetch: (params) => unwrap(financeApi.invoices({
+    ...params,
+    keyword: keyword.value.trim() || undefined,
+  })),
+  errorMessage: '发票列表加载失败',
+});
+const { deleteMode, selected, onDeleted } = useBatchDelete(load);
 
 const visible = ref(false);
 const mode = ref<Mode>('create');
@@ -205,31 +209,6 @@ const form = reactive({
   pdfUrl: '',
   remark: '',
 });
-
-async function load(): Promise<void> {
-  loading.value = true;
-  try {
-    const data = await unwrap(financeApi.invoices({
-      page: page.value,
-      size: size.value,
-      keyword: keyword.value.trim() || undefined,
-    }));
-    rows.value = data?.list ?? [];
-    total.value = Number(data?.total ?? 0);
-  } catch (error) {
-    rows.value = [];
-    total.value = 0;
-    ElMessage.error((error as Error)?.message || '发票列表加载失败');
-  } finally {
-    loading.value = false;
-  }
-}
-
-/** 换关键字必须回到第 1 页，否则会停在一个不存在的页码上看到空表 */
-function onSearch(): void {
-  page.value = 1;
-  void load();
-}
 
 async function loadOrderOptions(): Promise<void> {
   try {
@@ -364,11 +343,6 @@ async function submit(): Promise<void> {
     submitting.value = false;
   }
 }
-
-function onPage(value: number): void { page.value = value; void load(); }
-function onSize(value: number): void { size.value = value; page.value = 1; void load(); }
-
-onMounted(() => { void load(); });
 </script>
 
 <style scoped>

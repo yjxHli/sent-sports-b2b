@@ -13,6 +13,18 @@ import { useChatSocket, type IncomingAck, type IncomingMessage } from '@/composa
 /** 业务错误码：会话状态冲突（已结束 / 已关闭），后端 ErrorCode.STATE_CONFLICT。 */
 const STATE_CONFLICT = 40901;
 
+/** 业务错误码：消息命中敏感词（后端 ErrorCode.SENSITIVE_MESSAGE），直接阻断、不打码。 */
+const SENSITIVE_MESSAGE = 40003;
+
+/** 页面侧回调：实时通道的拒绝结果拿不到 Promise，只能靠 ACK 回调回来。 */
+export interface ChatSessionHandlers {
+  /**
+   * 服务端拒绝发送（如命中敏感词）：把原文还给输入框并提示，让用户自己改。
+   * <p>不在这里 ElMessage，是因为 composable 不引 UI 库；页面才知道提示应该弹在哪。</p>
+   */
+  onSendRejected?: (reason: string, content: string) => void;
+}
+
 export interface ChatMessage {
   seq: number;
   senderType: string;
@@ -37,7 +49,7 @@ function toMessage(m: MessageVO): ChatMessage {
   };
 }
 
-export function useChatSession(customerId: number, vip = false) {
+export function useChatSession(customerId: number, vip = false, handlers: ChatSessionHandlers = {}) {
   const messages = ref<ChatMessage[]>([]);
   const sessionId = ref<number | null>(null);
   const online = ref(false);
@@ -131,8 +143,17 @@ export function useChatSession(customerId: number, vip = false) {
     const queued = pending.get(key) as { content: string; msgType: string };
     pending.delete(key);
     if (ack.code) {
-      // 服务端拒绝（会话关闭/参数错误等）：撤回乐观消息，改走 REST 发一次（REST 会给出明确错误）
+      // 服务端拒绝（会话关闭/参数错误/敏感词等）：先撤回乐观消息，别让脏气泡留在时间线里
       messages.value = messages.value.filter((m) => m.clientMsgId !== key);
+      if (ack.code === SENSITIVE_MESSAGE) {
+        // 敏感词：不打码、不重试（REST 兜底也是同一个 40003），把原文还回输入框让用户自己改
+        handlers.onSendRejected?.(
+          ack.reason || '发送失败：消息包含违禁词，请文明发言',
+          queued.content,
+        );
+        return;
+      }
+      // 其余错误改走 REST 发一次（REST 会给出明确错误）
       // REST 侧会自行处理「会话已结束 → 重开会话补发」，这里只需吃掉未处理的 reject
       void sendViaRest(queued.content, key, queued.msgType).catch(() => undefined);
       return;
@@ -278,6 +299,10 @@ export function useChatSession(customerId: number, vip = false) {
         }
       }
       tmp.pending = false;
+      // 敏感词被拒：这条消息根本没落库，留在时间线里会让人以为「发出去了只是没回」
+      if (code === SENSITIVE_MESSAGE) {
+        messages.value = messages.value.filter((m) => m.clientMsgId !== clientMsgId);
+      }
       throw e;
     }
   }

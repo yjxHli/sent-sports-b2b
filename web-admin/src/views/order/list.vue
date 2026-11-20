@@ -74,14 +74,14 @@
  * 订单列表（P6-33）：筛选/分页/导出复用 SentTable，状态统一 StatusTag。
  * 关单属危险操作：先填原因 → openConfirm 换一次性令牌 → 带 X-Confirm-Token 提交。
  */
-import { onMounted, reactive, ref } from 'vue';
+import { reactive } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { unwrap } from '@/utils/http';
 import { orderApi } from '@/api';
 import { OrderStatus, fmtCent, fmtDateTime, fmtMoney, statusLabel } from '@sent/shared';
 import { openConfirm } from '@/utils/confirm';
-import { usePagination } from '@/composables/usePagination';
+import { useTable } from '@/composables/useTable';
 import { useBatchDelete } from '@/composables/useBatchDelete';
 import SentTable from '@/components/SentTable.vue';
 import StatusTag from '@/components/StatusTag.vue';
@@ -103,51 +103,18 @@ const columns: TableColumn[] = [
     formatter: (_row, value) => fmtDateTime(value) },
 ];
 
-const rows = ref<any[]>([]);
-const { deleteMode, selected, onDeleted } = useBatchDelete(load);
-const total = ref(0);
-const { page, size } = usePagination();
-const loading = ref(false);
 const query = reactive<{ keyword: string; status?: string }>({ keyword: '' });
+const { rows, total, loading, page, size, load, onPage, onSize, onSearch } = useTable<any>({
+  fetch: (params) => unwrap(orderApi.list(params)),
+  query: () => ({ keyword: query.keyword || undefined, status: query.status || undefined }),
+  errorMessage: '订单列表加载失败',
+});
+const { deleteMode, selected, onDeleted } = useBatchDelete(load);
 
 function isClosed(status: string): boolean {
   return status === OrderStatus.CLOSED
     || status === OrderStatus.CANCELLED
     || status === OrderStatus.COMPLETED;
-}
-
-async function load(): Promise<void> {
-  loading.value = true;
-  try {
-    const data = await unwrap(orderApi.list({
-      page: page.value,
-      size: size.value,
-      keyword: query.keyword || undefined,
-      status: query.status || undefined,
-    }));
-    rows.value = data?.list ?? [];
-    total.value = data?.total ?? 0;
-  } catch (error) {
-    rows.value = [];
-    total.value = 0;
-    ElMessage.error((error as Error)?.message || '订单列表加载失败');
-  } finally {
-    loading.value = false;
-  }
-}
-
-function onSearch(): void {
-  page.value = 1;
-  void load();
-}
-function onPage(value: number): void {
-  page.value = value;
-  void load();
-}
-function onSize(value: number): void {
-  size.value = value;
-  page.value = 1;
-  void load();
 }
 
 async function closeOrder(row: any): Promise<void> {
@@ -184,6 +151,4 @@ async function closeOrder(row: any): Promise<void> {
     ElMessage.error((error as Error)?.message || '关单失败');
   }
 }
-
-onMounted(() => { void load(); });
 </script>

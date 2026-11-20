@@ -22,7 +22,8 @@ export interface AppRoute {
 export const LOGIN_PATH = '/login';
 /** 路由守卫白名单（不含 base） */
 export const WHITE_LIST = [
-  '/login', '/forgot-password', '/enterprise/login', '/enterprise/register', '/:pathMatch(.*)*',
+  '/login', '/register', '/forgot-password', '/enterprise/login', '/enterprise/register',
+  '/enterprise/audit-progress', '/:pathMatch(.*)*',
 ];
 
 export const MENU_ROUTES: AppRoute[] = [
@@ -84,13 +85,20 @@ const REAL_PAGES: Record<string, RouteComponentLoader> = {
 
 const NotFound: RouteComponentLoader = () => import('@/views/error/404.vue');
 
-/** 公开路由：登录、404 */
+/** 公开路由：登录、注册（复用登录卡片）、404 */
 export const staticRoutes: RouteRecordRaw[] = [
   {
     path: LOGIN_PATH,
     name: 'Login',
     component: () => import('@/views/login/index.vue'),
     meta: { title: '登录', hidden: true },
+  },
+  {
+    // 未注册手机号被拦截后跳到这里，query.phone 自动回填注册表单
+    path: '/register',
+    name: 'Register',
+    component: () => import('@/views/login/index.vue'),
+    meta: { title: '注册', hidden: true },
   },
   {
     path: '/forgot-password',
@@ -109,6 +117,12 @@ export const staticRoutes: RouteRecordRaw[] = [
     name: 'EnterpriseRegister',
     component: () => import('@/views/enterprise/register.vue'),
     meta: { title: '企业注册', hidden: true },
+  },
+  {
+    path: '/enterprise/audit-progress',
+    name: 'EnterpriseAuditProgress',
+    component: () => import('@/views/enterprise/audit-progress.vue'),
+    meta: { title: '企业审核进度', hidden: true },
   },
   {
     path: '/:pathMatch(.*)*',

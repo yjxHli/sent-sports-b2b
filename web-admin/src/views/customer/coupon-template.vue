@@ -246,12 +246,12 @@
  * 列表口径对齐发票管理：券号 / 创建人 / 创建时间 + 分页 + 批量删除 + 导出（导的是全量，
  * 不是当前页 —— 用户要的是「整张表下载下来」）。
  */
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
-import { fmtDateTime } from '@sent/shared';
+import { fmtCent, fmtDateTime } from '@sent/shared';
 import { unwrap } from '@/utils/http';
-import { usePagination } from '@/composables/usePagination';
+import { useTable } from '@/composables/useTable';
 import { useBatchDelete } from '@/composables/useBatchDelete';
 import SentTable from '@/components/SentTable.vue';
 import StatusTag from '@/components/StatusTag.vue';
@@ -284,7 +284,7 @@ const columns: TableColumn[] = [
   { prop: 'amountCent', label: '面额 / 折扣', width: 105, align: 'right',
     formatter: (row) => (row.discountType === 'PERCENT'
       ? rateText(Number(row.discountRate))
-      : `¥${yuan(row.amountCent)}`) },
+      : `¥${fmtCent(row.amountCent)}`) },
   { prop: 'thresholdCent', label: '门槛', width: 95, align: 'right',
     formatter: (_row, v) => thresholdText(v) },
   { prop: 'scopeType', label: '适用范围', width: 105 },
@@ -295,18 +295,18 @@ const columns: TableColumn[] = [
   { prop: 'status', label: '状态', width: 80, align: 'center' },
 ];
 
-const rows = ref<CouponTemplatePageVO[]>([]);
-const total = ref(0);
-const loading = ref(false);
 const keyword = ref('');
 const couponType = ref<string>('');
-const { page, size } = usePagination();
+const { rows, total, loading, page, size, load, onPage, onSize, onSearch,
+  fetchAll: fetchAllTemplates } = useTable<CouponTemplatePageVO>({
+  fetch: (params) => unwrap(couponApi.templatesPage({
+    ...params,
+    keyword: keyword.value.trim() || undefined,
+    couponType: couponType.value || undefined,
+  })),
+  errorMessage: '优惠券列表加载失败',
+});
 const { deleteMode, selected, onDeleted } = useBatchDelete(load);
-
-function yuan(cent: number | string): string {
-  const n = Number(cent ?? 0);
-  return Number.isInteger(n / 100) ? String(n / 100) : (n / 100).toFixed(2);
-}
 function rateText(rate: number): string {
   const zhe = Number(rate ?? 100) / 10;
   return `${Number.isInteger(zhe) ? zhe : zhe.toFixed(1)}折`;
@@ -316,58 +316,13 @@ function typeText(type?: string): string {
 }
 function thresholdText(cent: number | string): string {
   const n = Number(cent ?? 0);
-  return n > 0 ? `满 ${yuan(n)} 元` : '无门槛';
+  return n > 0 ? `满 ${fmtCent(n)} 元` : '无门槛';
 }
 function scopeText(row: CouponTemplatePageVO): string {
   if (row.scopeType === 'SPU') return '指定商品';
   if (row.scopeType === 'SKU') return '指定规格';
   return '全部商品';
 }
-
-async function load(): Promise<void> {
-  loading.value = true;
-  try {
-    const data = await unwrap(couponApi.templatesPage({
-      page: page.value,
-      size: size.value,
-      keyword: keyword.value.trim() || undefined,
-      couponType: couponType.value || undefined,
-    }));
-    rows.value = data?.list ?? [];
-    total.value = Number(data?.total ?? 0);
-  } catch (error) {
-    rows.value = [];
-    total.value = 0;
-    ElMessage.error((error as Error)?.message || '优惠券列表加载失败');
-  } finally {
-    loading.value = false;
-  }
-}
-
-/** 导出「整张表」：按当前筛选条件把所有分页拉完（单页上限 100） */
-async function fetchAllTemplates(): Promise<CouponTemplatePageVO[]> {
-  const pageSize = 100;
-  const all: CouponTemplatePageVO[] = [];
-  for (let p = 1; p <= 50; p += 1) {
-    const data = await unwrap(couponApi.templatesPage({
-      page: p,
-      size: pageSize,
-      keyword: keyword.value.trim() || undefined,
-      couponType: couponType.value || undefined,
-    }));
-    const list = data?.list ?? [];
-    all.push(...list);
-    if (list.length < pageSize || all.length >= Number(data?.total ?? 0)) break;
-  }
-  return all;
-}
-
-function onSearch(): void {
-  page.value = 1;
-  void load();
-}
-function onPage(value: number): void { page.value = value; void load(); }
-function onSize(value: number): void { size.value = value; page.value = 1; void load(); }
 
 /* ---------------- 新建 ---------------- */
 
@@ -503,7 +458,6 @@ function goIssue(row: CouponTemplatePageVO): void {
   void router.push({ path: '/customer/coupon', query: { templateId: String(row.templateId) } });
 }
 
-onMounted(() => { void load(); });
 </script>
 
 <style scoped>

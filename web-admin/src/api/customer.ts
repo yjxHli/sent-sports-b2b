@@ -2,7 +2,7 @@
  * 客户与会员 API（P6-18，对应 AdminCustomerController / MemberController）。
  * 客户列表后端带数据范围（ALL/TEAM/SELF），前端不做数据过滤。
  */
-import { http } from '@/utils/http';
+import { http, type SentRequestConfig } from '@/utils/http';
 import type { PageQuery, PageResult, CustomerVO, MemberLevelVO, PointVO } from '@sent/shared';
 
 /**
@@ -60,6 +60,9 @@ export const customerApi = {
   list: (query: PageQuery & { keyword?: string; level?: string; type?: string }) =>
     http.get<PageResult<CustomerVO>>('/admin/customers', query),
   detail: (id: number) => http.get<CustomerVO>(`/admin/customers/${id}`),
+  /** 客户列表 / 授信企业客户批量软删：config 带 BATCH_DELETE 令牌 */
+  batchDelete: (ids: string[], config?: SentRequestConfig) =>
+    http.post<{ deleted: number }>('/admin/customers/batch-delete', { ids }, config),
   transfer: (id: number, toStaffId: number, reason: string) =>
     http.post<TransferVO>(`/admin/customers/${id}/transfer`, { toStaffId, reason }),
   grantLevel: (id: number, level: string, validToMillis: number, reason: string) =>

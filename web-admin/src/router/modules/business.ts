@@ -49,7 +49,8 @@ export const MENU_ROUTES: MenuEntry[] = [
   { path: '/customer/list', title: '客户列表', group: '客户与会员', perm: 'customer:read', icon: '客' },
   { path: '/customer/detail/:id', title: '客户详情', group: '客户与会员', perm: 'customer:read', hidden: true },
   { path: '/customer/enterprise', title: '企业审核与授信', group: '客户与会员', perm: 'customer:audit', icon: '企' },
-  { path: '/customer/coupon-template', title: '优惠券创建', group: '客户与会员', perm: 'customer:grant', icon: '建' },
+  { path: '/customer/enterprise-audit', title: '企业审核', group: '客户与会员', perm: 'customer:audit', icon: '审' },
+  { path: '/customer/coupon-template', title: '优惠券创建', group: '客户与会员', perm: 'coupon:template:manage', icon: '建' },
   { path: '/customer/coupon', title: '优惠券管理', group: '客户与会员', perm: 'customer:grant', icon: '券' },
   { path: '/member/index', title: '会员与积分', group: '客户与会员', perm: 'member:config', icon: '会' },
 
@@ -67,13 +68,14 @@ export const MENU_ROUTES: MenuEntry[] = [
   { path: '/system/staff', title: '员工管理', group: '系统', perm: 'system:staff', icon: '员' },
   { path: '/system/role', title: '角色权限矩阵', group: '系统', perm: 'system:role', icon: '角' },
   { path: '/system/config', title: '业务参数', group: '系统', perm: 'system:config', icon: '参' },
+  { path: '/system/sensitive-words', title: '违禁词库', group: '系统', perm: 'system:sensitive', icon: '禁' },
   { path: '/system/log', title: '操作日志', group: '系统', perm: 'system:log', icon: '志' },
 
   { path: '/report/sales', title: '销售报表', group: '报表', perm: 'report:sales', icon: '销' },
   { path: '/report/stock-warning', title: '库存预警', group: '报表', perm: 'report:stock', icon: '警' },
 ];
 
-/** 已落地的真实页面：P6-23~54 后 MENU_ROUTES 全部 30 条均已登记；StubView 仅作兜底 */
+/** 已落地的真实页面：MENU_ROUTES 里每一条都在此登记；StubView 仅作兜底 */
 type RouteComponentLoader = RouteRecordSingleView['component'];
 const REAL_PAGES: Record<string, RouteComponentLoader> = {
   '/dashboard': () => import('@/views/dashboard/index.vue'),
@@ -98,6 +100,7 @@ const REAL_PAGES: Record<string, RouteComponentLoader> = {
   '/customer/list': () => import('@/views/customer/list.vue'),
   '/customer/detail/:id': () => import('@/views/customer/detail.vue'),
   '/customer/enterprise': () => import('@/views/customer/enterprise.vue'),
+  '/customer/enterprise-audit': () => import('@/views/customer/enterprise-audit.vue'),
   '/customer/coupon-template': () => import('@/views/customer/coupon-template.vue'),
   '/customer/coupon': () => import('@/views/customer/coupon.vue'),
   '/member/index': () => import('@/views/member/index.vue'),
@@ -116,6 +119,7 @@ const REAL_PAGES: Record<string, RouteComponentLoader> = {
   '/system/staff': () => import('@/views/system/staff.vue'),
   '/system/role': () => import('@/views/system/role.vue'),
   '/system/config': () => import('@/views/system/config.vue'),
+  '/system/sensitive-words': () => import('@/views/system/sensitive-words.vue'),
   '/system/log': () => import('@/views/system/log.vue'),
 
   '/report/sales': () => import('@/views/report/sales.vue'),

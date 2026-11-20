@@ -152,7 +152,7 @@
           <span class="issue-type">{{ typeText(row.couponType) }}</span>
         </template>
         <template #col-amountCent="{ row }">
-          {{ row.discountType === 'PERCENT' ? rateText(row.discountRate) : `¥${yuan(row.amountCent)}` }}
+          {{ row.discountType === 'PERCENT' ? rateText(row.discountRate) : `¥${fmtCent(row.amountCent)}` }}
         </template>
         <template #col-thresholdCent="{ row }">{{ thresholdText(row.thresholdCent) }}</template>
         <template #col-status="{ row }">
@@ -182,11 +182,11 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { fmtDateTime } from '@sent/shared';
+import { fmtCent, fmtDateTime, statusLabel } from '@sent/shared';
 import type { CustomerVO } from '@sent/shared';
 import { unwrap } from '@/utils/http';
 import { useIdempotencyKey } from '@/utils/idempotent';
-import { usePagination } from '@/composables/usePagination';
+import { useTable } from '@/composables/useTable';
 import { useBatchDelete } from '@/composables/useBatchDelete';
 import SentTable from '@/components/SentTable.vue';
 import StatusTag from '@/components/StatusTag.vue';
@@ -202,14 +202,19 @@ import { customerApi } from '@/api/customer';
 const route = useRoute();
 const idem = useIdempotencyKey('COUPON_ISSUE');
 const templates = ref<CouponTemplateVO[]>([]);
-const issues = ref<CouponIssuePageVO[]>([]);
-const issueTotal = ref(0);
-const loading = ref(false);
 const saving = ref(false);
 const customerOptions = ref<CustomerVO[]>([]);
 const customerLoading = ref(false);
 const issueKeyword = ref('');
-const { page, size } = usePagination();
+const { rows: issues, total: issueTotal, loading, page, size,
+  load: loadIssues, onPage, onSize, onSearch: onIssueSearch,
+  fetchAll: fetchAllIssues } = useTable<CouponIssuePageVO>({
+  fetch: (params) => unwrap(couponApi.issuesPage({
+    ...params,
+    keyword: issueKeyword.value.trim() || undefined,
+  })),
+  errorMessage: '发放记录加载失败',
+});
 const { deleteMode, selected, onDeleted } = useBatchDelete(loadIssues);
 
 /** 列宽按 1440 视口内一屏看全（合计 ≈1050px），否则「发放时间」会被挤出可视区 */
@@ -246,10 +251,6 @@ const reasonPlaceholder = computed(() => form.scene === 'AFTER_SALE'
 const selectedTemplate = computed<CouponTemplateVO | undefined>(() =>
   templates.value.find((t) => Number(t.templateId) === form.templateId));
 
-function yuan(cent: number | string): string {
-  const n = Number(cent ?? 0);
-  return Number.isInteger(n / 100) ? String(n / 100) : (n / 100).toFixed(2);
-}
 function rateText(rate: number | string): string {
   const zhe = Number(rate ?? 100) / 10;
   return `${Number.isInteger(zhe) ? zhe : zhe.toFixed(1)}折`;
@@ -268,16 +269,6 @@ function typeText(couponType?: string): string {
       return '优惠券';
   }
 }
-function statusLabel(status?: string): string {
-  switch (status) {
-    case 'USED':
-      return '已使用';
-    case 'EXPIRED':
-      return '已过期';
-    default:
-      return '待使用';
-  }
-}
 function sourceText(source?: string): string {
   if (source === 'REGISTER') return '注册礼';
   if (source === 'AFTER_SALE') return '售后补券';
@@ -287,7 +278,7 @@ function sourceText(source?: string): string {
 /** 90 → 9折；88 → 8.8折 */
 function thresholdText(cent: number | string): string {
   const n = Number(cent ?? 0);
-  return n > 0 ? `满 ${yuan(n)} 元` : '无门槛';
+  return n > 0 ? `满 ${fmtCent(n)} 元` : '无门槛';
 }
 
 /**
@@ -298,10 +289,11 @@ function templateLabel(t: CouponTemplateVO): string {
   const name = t.name || '优惠券';
   // 折扣券按「9折 / 8.8折」展示，金额券按面额；名称已含金额时不重复拼
   if (t.discountType === 'PERCENT') return name;
-  const amount = yuan(t.amountCent);
-  return name.includes(`${amount}元`) || name.includes(`¥${amount}`)
+  // 券名里的面额是「5元券」这种整数写法，比对时用去掉 .00 的紧凑形式，展示仍走 fmtCent
+  const bare = fmtCent(t.amountCent).replace(/\.00$/, '');
+  return name.includes(`${bare}元`) || name.includes(`¥${bare}`)
     ? name
-    : `¥${amount} · ${name}`;
+    : `¥${fmtCent(t.amountCent)} · ${name}`;
 }
 async function loadTemplates(): Promise<void> {
   try {
@@ -318,48 +310,6 @@ async function loadTemplates(): Promise<void> {
   }
 }
 
-async function loadIssues(): Promise<void> {
-  loading.value = true;
-  try {
-    const data = await unwrap(couponApi.issuesPage({
-      page: page.value,
-      size: size.value,
-      keyword: issueKeyword.value.trim() || undefined,
-    }));
-    issues.value = data?.list ?? [];
-    issueTotal.value = Number(data?.total ?? 0);
-  } catch (error) {
-    issues.value = [];
-    issueTotal.value = 0;
-    ElMessage.error((error as Error)?.message || '发放记录加载失败');
-  } finally {
-    loading.value = false;
-  }
-}
-
-/** 导出「整张表」：按当前筛选把全部分页拉完（单页上限 100） */
-async function fetchAllIssues(): Promise<CouponIssuePageVO[]> {
-  const pageSize = 100;
-  const all: CouponIssuePageVO[] = [];
-  for (let p = 1; p <= 50; p += 1) {
-    const data = await unwrap(couponApi.issuesPage({
-      page: p,
-      size: pageSize,
-      keyword: issueKeyword.value.trim() || undefined,
-    }));
-    const list = data?.list ?? [];
-    all.push(...list);
-    if (list.length < pageSize || all.length >= Number(data?.total ?? 0)) break;
-  }
-  return all;
-}
-
-function onIssueSearch(): void {
-  page.value = 1;
-  void loadIssues();
-}
-function onPage(value: number): void { page.value = value; void loadIssues(); }
-function onSize(value: number): void { size.value = value; page.value = 1; void loadIssues(); }
 
 async function searchCustomers(keyword: string): Promise<void> {
   customerLoading.value = true;
@@ -391,7 +341,7 @@ async function submit(): Promise<void> {
     ? '该券'
     : template.discountType === 'PERCENT'
       ? `${rateText(template.discountRate)}（${typeText(template.couponType)}）`
-      : `¥${yuan(template.amountCent)}（${typeText(template.couponType)}）`;
+      : `¥${fmtCent(template.amountCent)}（${typeText(template.couponType)}）`;
   const targetText = form.scope === 'ALL'
     ? (template?.customerScope === 'ENTERPRISE' ? '全部企业客户' : '全部客户')
     : `${form.customerIds.length} 位指定客户`;

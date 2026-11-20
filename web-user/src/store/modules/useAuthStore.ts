@@ -50,9 +50,22 @@ export const useAuthStore = defineStore('sent-user-auth', () => {
     touch();
   }
 
+  /** 保留业务错误码：登录页据此区分「未注册手机号」并引导去注册页 */
+  function authError(code: number, message: string): Error & { code: number } {
+    return Object.assign(new Error(message), { code });
+  }
+
   async function login(username: string, password: string): Promise<TokenVO> {
     const res = await authApi.login({ username, password, aud, deviceId });
-    if (res.code !== ErrorCode.SUCCESS) throw new Error(res.message || '登录失败');
+    if (res.code !== ErrorCode.SUCCESS) throw authError(res.code, res.message || '登录失败');
+    setToken(res.data);
+    return res.data;
+  }
+
+  /** 验证码登录：与密码登录共用登录态写入，未注册手机号同样带 42202 供前端拦截 */
+  async function loginByCode(phone: string, code: string): Promise<TokenVO> {
+    const res = await authApi.loginByCode({ phone, code, deviceId });
+    if (res.code !== ErrorCode.SUCCESS) throw authError(res.code, res.message || '验证码登录失败');
     setToken(res.data);
     return res.data;
   }
@@ -63,7 +76,7 @@ export const useAuthStore = defineStore('sent-user-auth', () => {
    */
   async function register(payload: RegisterPayload): Promise<RegisterVO> {
     const res = await authApi.register(payload);
-    if (res.code !== ErrorCode.SUCCESS) throw new Error(res.message || '注册失败');
+    if (res.code !== ErrorCode.SUCCESS) throw authError(res.code, res.message || '注册失败');
     await login(payload.phone, payload.password);
     return res.data;
   }
@@ -90,6 +103,6 @@ export const useAuthStore = defineStore('sent-user-auth', () => {
 
   return {
     accessToken, refreshToken, isLoggedIn, userId, aud, deviceId,
-    setToken, clearTokens, login, register, refresh, logout, logoutToLogin, isExpired,
+    setToken, clearTokens, login, loginByCode, register, refresh, logout, logoutToLogin, isExpired,
   };
 });

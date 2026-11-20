@@ -38,6 +38,10 @@ export enum ErrorCode {
   REFUND_OVERFLOW = 40940,
   CREDIT_NOT_ENOUGH = 40950,
   BIZ_REJECT = 42201,
+  /** 手机号未注册：登录页据此弹提示并跳注册页回填手机号 */
+  PHONE_NOT_REGISTERED = 42202,
+  /** 验证码错误/过期/已消费 */
+  SMS_CODE_INVALID = 42203,
   TOO_FREQUENT = 42901,
   SYSTEM_ERROR = 50001,
 }

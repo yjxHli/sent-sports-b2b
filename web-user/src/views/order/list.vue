@@ -81,7 +81,7 @@
             </span>
             <el-button size="small" @click="goDetail(o.orderNo)">查看详情</el-button>
             <el-button
-              v-if="canInvoice(o)"
+              v-if="canInvoiceOrder(o)"
               size="small"
               @click="openInvoice(o)"
             >
@@ -162,6 +162,7 @@ import { unwrap } from '@/utils/http';
 import { orderApi, type OrderItemLine, type OrderListItem } from '@/api/order';
 import ProductThumb from '@/components/ProductThumb.vue';
 import InvoiceApplyDialog from '@/components/InvoiceApplyDialog.vue';
+import { canInvoiceOrder } from '@/composables/useOrderActions';
 
 const route = useRoute();
 const router = useRouter();
@@ -254,16 +255,6 @@ function openProduct(it: OrderItemLine): void {
   router.push(`/product/${pid}`);
 }
 
-/** 有实付金额才允许开票：未支付/支付中不给入口，整单退款后票面无依据也不给 */
-/**
- * 开票入口口径（用户 2026-11-15 收紧）：只有**已完成**的订单才能申请开票。
- * 在途订单货还没到手、可能退换，票面金额与实际成交不一致，财务无法核销，
- * 因此列表页也不再给入口（后端同样按此口径校验，前端少一次无谓的 409）。
- */
-function canInvoice(o: OrderListItem): boolean {
-  if (o.status !== 'COMPLETED') return false;
-  return o.payStatus === 'PAID' || o.payStatus === 'PART_REFUNDED';
-}
 
 function openInvoice(o: OrderListItem): void {
   invoiceOrderNo.value = o.orderNo;

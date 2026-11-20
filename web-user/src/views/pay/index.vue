@@ -158,14 +158,8 @@ async function confirmPay(): Promise<void> {
       idemKey: payIdem.current() ?? '',
     }, { headers: payIdem.headers() }));
     payIdem.clear();
-    scheduleMockPayCallback({
-      txnNo: pay.txnNo ?? '',
-      orderNo: current.orderNo,
-      amountCent: Number(pay.amountCent ?? current.payableCent ?? 0),
-      channel: 'BALANCE',
-      payChannelTradeNo: `MOCK-${current.orderNo}-${Date.now()}`,
-      paidAtMillis: Date.now(),
-    });
+    // 回放后端下发的签名参数模拟渠道异步通知（签名密钥不在前端，无法伪造别的订单/金额）
+    scheduleMockPayCallback(pay);
     paidAmount.value = pay.amountYuan || current.payableYuan || '0.00';
     paid.value = true;
   } catch (e) {

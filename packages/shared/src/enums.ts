@@ -126,11 +126,75 @@ export const STATUS_LABELS: Record<string, string> = {
   // 客服
   WAITING: '待接入', ACTIVE: '进行中', ONLINE: '在线', BUSY: '忙碌', OFFLINE: '离线',
   CUSTOMER: '客户', STAFF: '客服', SYSTEM: '系统',
+  // 客服质检小结
+  DONE: '已完成', UNRESOLVED: '未解决',
   // 客户
   PERSON: '个人', ENTERPRISE: '企业',
+  // 优惠券（券实例状态）
+  UNUSED: '待使用', USED: '已使用',
   // 发票 / 合同（收口阶段管理端列表）
   APPLIED: '待开票', ISSUED: '已开票', EXPIRED: '已到期', SOON: '即将到期',
   TERMINATED: '已终止',
+};
+
+/**
+ * 域内覆盖字典：同一个状态码在不同业务里中文不同（ACTIVE 在会话是「进行中」、
+ * 在企业认证是「已认证」；FAILED 在支付是「支付失败」、在售后是「退款失败」）。
+ * 基础字典只放通用语义，这类冲突由各域覆盖，避免每个页面各抄一份。
+ */
+/**
+ * 企业认证状态：真库 enterprise_profile.status 里 ACTIVE=已认证、REJECTED=已驳回，
+ * 演示数据与历史档案用的是 NORMAL / PENDING（都按「待审核」展示）。
+ * 注意 ACTIVE 在会话语境是「进行中」，所以这里必须覆盖而不能只靠基础字典。
+ */
+export const ENTERPRISE_STATUS_LABELS: Record<string, string> = {
+  PENDING: '待审核',
+  NORMAL: '待审核',
+  ACTIVE: '已认证',
+  REJECTED: '已驳回',
+};
+
+export const REFUND_STATUS_LABELS: Record<string, string> = {
+  PENDING: '待审核',
+  REFUNDING: '退款中',
+  REFUNDED: '已退款',
+  CLOSED: '已关闭',
+  FAILED: '退款失败',
+};
+
+export const REFUND_STATUS_TONES: Record<string, StatusTone> = {
+  PENDING: 'warning',
+  REFUNDING: 'warning',
+  REFUNDED: 'success',
+  CLOSED: 'info',
+  FAILED: 'danger',
+};
+
+/** 企业注册审核进度页：面向企业的口吻（审核中 / 已审核 / 审核未通过），与后台审核台措辞不同 */
+export const AUDIT_PROGRESS_LABELS: Record<string, string> = {
+  PENDING: '审核中',
+  ACTIVE: '已审核',
+  APPROVED: '已审核',
+  REJECTED: '审核未通过',
+};
+
+/** 客服小结的问题分类 / 信息充分度（质检台与工作台历史弹窗共用一份） */
+export const CHAT_CATEGORY_LABELS: Record<string, string> = {
+  QUALITY: '商品品质问题',
+  INQUIRY: '商品咨询',
+  UNCLEAR: '未明确',
+};
+
+export const CHAT_INFO_LABELS: Record<string, string> = {
+  CLEAR: '明确信息',
+  NO_REPLY: '用户未回复',
+};
+
+/** 满意度评分（客服评价卡 / 用户端评价弹窗共用） */
+export const SATISFY_LABELS: Record<string, string> = {
+  SATISFIED: '满意',
+  NORMAL: '一般',
+  UNSATISFIED: '不满意',
 };
 
 const TONE_MAP: Record<string, StatusTone> = {
@@ -147,10 +211,25 @@ const TONE_MAP: Record<string, StatusTone> = {
   TERMINATED: 'info',
 };
 
-export function statusLabel(status: string | null | undefined): string {
-  return (status && STATUS_LABELS[status]) || status || '-';
+/**
+ * 状态码 -> 中文文案。
+ * @param dict 域内覆盖字典（如 ENTERPRISE_STATUS_LABELS）：命中优先，未命中回落基础字典，
+ *             这样页面只需要指明「这是哪个域」，不用自己再抄一份 switch。
+ */
+export function statusLabel(
+  status: string | null | undefined,
+  dict?: Record<string, string>,
+): string {
+  // 统一按大写匹配：后端个别历史接口会下发小写状态，页面不必各写一次 toUpperCase
+  const key = status ? status.toUpperCase() : '';
+  const text = (key && (dict?.[key] ?? STATUS_LABELS[key])) || status;
+  return text || '-';
 }
 
-export function statusTone(status: string | null | undefined): StatusTone {
-  return (status && TONE_MAP[status]) || 'info';
+export function statusTone(
+  status: string | null | undefined,
+  dict?: Record<string, StatusTone>,
+): StatusTone {
+  const key = status ? status.toUpperCase() : '';
+  return (key && (dict?.[key] ?? TONE_MAP[key])) || 'info';
 }

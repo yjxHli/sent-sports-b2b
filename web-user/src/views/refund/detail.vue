@@ -14,7 +14,7 @@
         <div class="row"><span>订单号</span><span>{{ detail.orderNo }}</span></div>
         <div class="row">
           <span>状态</span>
-          <el-tag :type="tone(detail.status)" size="small">{{ label(detail.status) }}</el-tag>
+          <el-tag :type="statusTone(detail.status, REFUND_STATUS_TONES)" size="small">{{ statusLabel(detail.status, REFUND_STATUS_LABELS) }}</el-tag>
         </div>
         <div class="row"><span>类型</span><span>{{ typeLabel(detail.type) }}</span></div>
         <div class="row"><span>申请人</span><span>{{ applicantLabel(detail.applicantType) }}</span></div>
@@ -46,7 +46,9 @@
 import { onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { unwrap } from '@/utils/http';
-import { fmtCent, fmtDateTime, statusLabel, statusTone, type StatusTone } from '@sent/shared';
+import {
+  REFUND_STATUS_LABELS, REFUND_STATUS_TONES, fmtCent, fmtDateTime, statusLabel, statusTone,
+} from '@sent/shared';
 import { refundApi, type RefundDetailVO } from '@/api/refund';
 
 const route = useRoute();
@@ -55,20 +57,6 @@ const router = useRouter();
 const detail = ref<RefundDetailVO | null>(null);
 const loading = ref(false);
 
-// 退款状态文案 / 配色（FAILED 在共享映射里是「支付失败」，此处按售后语义覆盖为「退款失败」）
-const REFUND_LABELS: Record<string, string> = {
-  PENDING: '待审核', REFUNDING: '退款中', REFUNDED: '已退款', CLOSED: '已关闭', FAILED: '退款失败',
-};
-const REFUND_TONES: Record<string, StatusTone> = {
-  PENDING: 'warning', REFUNDING: 'warning', REFUNDED: 'success', CLOSED: 'info', FAILED: 'danger',
-};
-
-function label(s: string | null | undefined): string {
-  return (s && REFUND_LABELS[s]) || statusLabel(s) || '-';
-}
-function tone(s: string | null | undefined): StatusTone {
-  return (s && REFUND_TONES[s]) || statusTone(s);
-}
 function typeLabel(t: string | null | undefined): string {
   switch (t) {
     case 'REFUND': return '仅退款';

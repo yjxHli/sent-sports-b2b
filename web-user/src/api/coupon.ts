@@ -42,6 +42,8 @@ export interface ClaimableVO {
   scopeIds?: string | null;
   customerScope: string;
   validDays: number;
+  /** 会员日领取后实际有效天数（后端按券型算出，前端只展示） */
+  claimValidDays: number;
   remainQty: number;
   claimed: boolean;
 }

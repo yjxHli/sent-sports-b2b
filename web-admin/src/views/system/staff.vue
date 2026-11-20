@@ -77,13 +77,13 @@
 
 <script setup lang="ts">
 /** 员工管理（P6-48）：增删改 + 强制全端下线（确认令牌，端点待后端补齐）。 */
-import { onMounted, reactive, ref } from 'vue';
+import { reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { unwrap } from '@/utils/http';
 import { systemApi } from '@/api';
 import { openConfirm } from '@/utils/confirm';
-import { usePagination } from '@/composables/usePagination';
+import { useTable } from '@/composables/useTable';
 import SentTable from '@/components/SentTable.vue';
 import StatusTag from '@/components/StatusTag.vue';
 import type { TableColumn } from '@/components/types';
@@ -98,10 +98,10 @@ const columns: TableColumn[] = [
   { prop: 'enabled', label: '状态', width: 110, align: 'center' },
 ];
 
-const rows = ref<any[]>([]);
-const total = ref(0);
-const { page, size } = usePagination();
-const loading = ref(false);
+const { rows, total, loading, page, size, load, onPage, onSize } = useTable<any>({
+  fetch: (params) => unwrap(systemApi.staffList(params)),
+  errorMessage: '员工列表加载失败',
+});
 const submitting = ref(false);
 /** 角色下拉：编码与中文名同源 sys_role，避免运营手敲出库里不存在的角色编码 */
 const roleOptions = ref<{ value: string; label: string }[]>([]);
@@ -111,21 +111,6 @@ const editing = ref<number | null>(null);
 const staffForm = reactive<{ username: string; name: string; phone: string; roleCode: string }>({
   username: '', name: '', phone: '', roleCode: '',
 });
-
-async function load(): Promise<void> {
-  loading.value = true;
-  try {
-    const data = await unwrap(systemApi.staffList({ page: page.value, size: size.value }));
-    rows.value = data?.list ?? [];
-    total.value = Number(data?.total ?? 0);
-  } catch (error) {
-    rows.value = [];
-    total.value = 0;
-    ElMessage.error((error as Error)?.message || '员工列表加载失败');
-  } finally {
-    loading.value = false;
-  }
-}
 
 async function loadRoles(): Promise<void> {
   try {
@@ -219,8 +204,5 @@ async function forceLogout(row: any): Promise<void> {
   }
 }
 
-function onPage(value: number): void { page.value = value; void load(); }
-function onSize(value: number): void { size.value = value; page.value = 1; void load(); }
 
-onMounted(() => { void load(); });
 </script>

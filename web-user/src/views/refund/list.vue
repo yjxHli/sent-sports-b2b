@@ -48,8 +48,8 @@
         <header class="rf-card__head">
           <span class="rf-card__time">{{ timeText(r.createdAtMillis) }} 申请</span>
           <span class="rf-card__no">退款单号 {{ r.refundNo }}</span>
-          <span class="rf-card__status" :class="`rf-card__status--${tone(r.status)}`">
-            {{ label(r.status) }}
+          <span class="rf-card__status" :class="`rf-card__status--${statusTone(r.status, REFUND_STATUS_TONES)}`">
+            {{ statusLabel(r.status, REFUND_STATUS_LABELS) }}
           </span>
         </header>
 
@@ -134,7 +134,9 @@
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
-import { fmtCent, statusLabel, statusTone, type StatusTone } from '@sent/shared';
+import {
+  REFUND_STATUS_LABELS, REFUND_STATUS_TONES, fmtCent, statusLabel, statusTone,
+} from '@sent/shared';
 import { unwrap } from '@/utils/http';
 import { refundApi, type RefundVO } from '@/api/refund';
 import ProductThumb from '@/components/ProductThumb.vue';
@@ -150,21 +152,6 @@ const FILTERS = [
   { label: '退款失败', value: 'FAILED' },
 ];
 
-/** 退款状态文案（FAILED 在共享映射里是「支付失败」，售后语境要改成「退款失败」） */
-const REFUND_LABELS: Record<string, string> = {
-  PENDING: '待审核',
-  REFUNDING: '退款中',
-  REFUNDED: '已退款',
-  CLOSED: '已关闭',
-  FAILED: '退款失败',
-};
-const REFUND_TONES: Record<string, StatusTone> = {
-  PENDING: 'warning',
-  REFUNDING: 'warning',
-  REFUNDED: 'success',
-  CLOSED: 'info',
-  FAILED: 'danger',
-};
 
 const list = ref<RefundVO[]>([]);
 const total = ref(0);
@@ -190,13 +177,6 @@ async function loadCounts(): Promise<void> {
   } catch {
     counts.value = { total: 0, inFlight: 0 };
   }
-}
-
-function label(s: string | null | undefined): string {
-  return (s && REFUND_LABELS[s]) || statusLabel(s) || '-';
-}
-function tone(s: string | null | undefined): StatusTone {
-  return (s && REFUND_TONES[s]) || statusTone(s);
 }
 
 function timeText(ms: number | string | null | undefined): string {

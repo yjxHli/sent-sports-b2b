@@ -12,13 +12,26 @@
             :page="page"
             :size="size"
             :loading="loading"
+            :selectable="deleteMode"
+            row-key="orderNo"
             exportable
             export-name="待发货订单"
+            :export-rows="exportAll"
             :operation-width="110"
+            @selection-change="selected = $event"
             @update:page="onPage"
             @update:size="onSize"
             @refresh="load"
           >
+            <template #toolbar-actions>
+              <BatchDeleteButton
+                v-model:active="deleteMode"
+                :ids="selected.map((r: any) => String(r.orderNo))"
+                :summary="`已选择 ${selected.length} 笔订单`"
+                :delete-fn="(ids, config) => unwrap(orderApi.batchDelete(ids, config))"
+                @done="onDeleted"
+              />
+            </template>
             <template #toolbar>
               <!-- 发货工作台恒定只查可发货状态，不提供 clearable：清空会把 COMPLETED 单放回列表并触发 409 -->
               <el-select v-model="status" placeholder="状态" style="width: 150px" @change="onSearch">
@@ -127,15 +140,17 @@
  * 同时左侧列表的 status 被后端忽略，前几页全是 COMPLETED 单，选中发货必然 409。
  * 现在选中订单即拉详情自动填充真实商品行，并前置拦截「定制未完工」的合法门禁。
  */
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import { unwrap } from '@/utils/http';
 import { orderApi, type ShipLineCmd } from '@/api';
 import { OrderStatus, fmtMoney, type AdminOrderDetailVO } from '@sent/shared';
 import { useIdempotencyKey } from '@/utils/idempotent';
-import { usePagination } from '@/composables/usePagination';
+import { useTable } from '@/composables/useTable';
 import SentTable from '@/components/SentTable.vue';
 import StatusTag from '@/components/StatusTag.vue';
+import BatchDeleteButton from '@/components/BatchDeleteButton.vue';
+import { useBatchDelete } from '@/composables/useBatchDelete';
 import type { TableColumn } from '@/components/types';
 
 interface ShippableLine {
@@ -167,12 +182,15 @@ const columns: TableColumn[] = [
     formatter: (_row, value) => fmtMoney(value) },
 ];
 
-const rows = ref<any[]>([]);
-const total = ref(0);
-const { page, size } = usePagination();
-const loading = ref(false);
-const loadingLines = ref(false);
 const status = ref<string>(OrderStatus.WAIT_SHIP);
+const { rows, total, loading, page, size, load, onPage, onSize, onSearch,
+  fetchAll: exportAll } = useTable<any>({
+  // 兜底：状态为空也只查待发货，绝不把全表订单放回工作台
+  fetch: (params) => unwrap(orderApi.list({ ...params, status: status.value || OrderStatus.WAIT_SHIP })),
+  errorMessage: '待发货订单加载失败',
+});
+const { deleteMode, selected, onDeleted } = useBatchDelete(load);
+const loadingLines = ref(false);
 const current = ref<any>(null);
 const submitting = ref(false);
 
@@ -221,26 +239,6 @@ function buildLines(source: AdminOrderDetailVO['lines']): ShippableLine[] {
       candidate.shipQty = candidate.selected ? maxQty : 0;
       return candidate;
     });
-}
-
-async function load(): Promise<void> {
-  loading.value = true;
-  try {
-    const data = await unwrap(orderApi.list({
-      page: page.value,
-      size: size.value,
-      // 兜底：状态为空也只查待发货，绝不把全表订单放回工作台
-      status: status.value || OrderStatus.WAIT_SHIP,
-    }));
-    rows.value = data?.list ?? [];
-    total.value = Number(data?.total ?? 0);
-  } catch (error) {
-    rows.value = [];
-    total.value = 0;
-    ElMessage.error((error as Error)?.message || '待发货订单加载失败');
-  } finally {
-    loading.value = false;
-  }
 }
 
 async function loadLines(orderNo: string): Promise<void> {
@@ -306,22 +304,6 @@ async function submit(): Promise<void> {
     submitting.value = false;
   }
 }
-
-function onSearch(): void {
-  page.value = 1;
-  void load();
-}
-function onPage(value: number): void {
-  page.value = value;
-  void load();
-}
-function onSize(value: number): void {
-  size.value = value;
-  page.value = 1;
-  void load();
-}
-
-onMounted(() => { void load(); });
 </script>
 
 <style scoped>

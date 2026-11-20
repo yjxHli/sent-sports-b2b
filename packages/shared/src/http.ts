@@ -456,10 +456,10 @@ class PureHttp implements SentHttp {
 
   private async onRejected(cause: AxiosError<ApiResult<unknown>>): Promise<ResultResponse> {
     const response = cause.response as ResultResponse | undefined;
+    const body = response?.data;
     if (response) {
       // 后端用 HTTP 401 + body.code 写 40102/40103，rejected 分支必须同样分流
       this.captureNewToken(response);
-      const body = response.data;
       if (isApiResult(body)) {
         if (body.code === ErrorCode.TOKEN_EXPIRED) return this.replayOnTokenExpired(response);
         if (isLogoutCode(body.code)) {
@@ -469,7 +469,10 @@ class PureHttp implements SentHttp {
         this.notify(body);
       }
     }
-    return Promise.reject(this.toHttpError(undefined, cause));
+    // 后端以 HTTP 4xx + 统一 R 结构返回业务错误（如 42202 未注册手机号）时，
+    // 必须把 body.code/message 透传出去，否则业务层只能拿到 axios 的
+    // "Request failed with status code xxx"，无法识别具体的业务拦截意图。
+    return Promise.reject(this.toHttpError(isApiResult(body) ? body : undefined, cause));
   }
 
   private async replayOnTokenExpired(response: ResultResponse): Promise<ResultResponse> {

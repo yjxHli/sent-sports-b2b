@@ -74,13 +74,12 @@
  * 定制列表（P6-37）：状态筛选 + 分页 + 导出；审核截止逾期标红。
  * 列表与审核台共用 customApi.pending，避免另造一份查询契约。
  */
-import { onMounted, reactive, ref } from 'vue';
+import { reactive } from 'vue';
 import { useRouter } from 'vue-router';
-import { ElMessage } from 'element-plus';
 import { unwrap } from '@/utils/http';
 import { customApi } from '@/api';
 import { CustomStatus, fmtDateTime, statusLabel } from '@sent/shared';
-import { usePagination } from '@/composables/usePagination';
+import { useTable } from '@/composables/useTable';
 import { useBatchDelete } from '@/composables/useBatchDelete';
 import SentTable from '@/components/SentTable.vue';
 import StatusTag from '@/components/StatusTag.vue';
@@ -99,53 +98,25 @@ const columns: TableColumn[] = [
   { prop: 'fileId', label: '图稿文件', width: 150 },
 ];
 
-const rows = ref<any[]>([]);
-const { deleteMode, selected, onDeleted } = useBatchDelete(load);
-const total = ref(0);
-const { page, size } = usePagination();
-const loading = ref(false);
 const query = reactive<{ status?: string; customNo?: string }>({});
+const { rows, total, loading, page, size, load, onPage, onSize, onSearch } = useTable<any>({
+  fetch: (params) => unwrap(customApi.pending({
+    ...params,
+    customNo: (query.customNo ?? '').trim() || undefined,
+  })),
+  // 后端 pending 暂不按状态过滤，前端仅做展示层筛选，不伪造服务端查询能力
+  transform: ({ list, total: count }) => {
+    if (!query.status) return { list, total: count };
+    const filtered = list.filter((item: any) => item.status === query.status);
+    return { list: filtered, total: filtered.length };
+  },
+  errorMessage: '定制订单加载失败',
+});
+const { deleteMode, selected, onDeleted } = useBatchDelete(load);
 
 function isOverdue(deadline: number | undefined): boolean {
   return typeof deadline === 'number' && deadline > 0 && Date.now() > deadline;
 }
-
-async function load(): Promise<void> {
-  loading.value = true;
-  try {
-    const data = await unwrap(customApi.pending({
-      page: page.value,
-      size: size.value,
-      customNo: (query.customNo ?? '').trim() || undefined,
-    }));
-    const list = data?.list ?? [];
-    // 后端 pending 暂不按状态过滤，前端仅做展示层筛选，不伪造服务端查询能力
-    rows.value = query.status ? list.filter((item: any) => item.status === query.status) : list;
-    total.value = query.status ? rows.value.length : (data?.total ?? 0);
-  } catch (error) {
-    rows.value = [];
-    total.value = 0;
-    ElMessage.error((error as Error)?.message || '定制订单加载失败');
-  } finally {
-    loading.value = false;
-  }
-}
-
-function onSearch(): void {
-  page.value = 1;
-  void load();
-}
-function onPage(value: number): void {
-  page.value = value;
-  void load();
-}
-function onSize(value: number): void {
-  size.value = value;
-  page.value = 1;
-  void load();
-}
-
-onMounted(() => { void load(); });
 </script>
 
 <style scoped>

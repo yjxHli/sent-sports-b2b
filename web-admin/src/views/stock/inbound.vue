@@ -32,21 +32,35 @@
     </div>
 
     <div class="sent-panel">
-      <div class="sent-form-row">
-        <strong>入库流水</strong>
-        <el-button size="small" @click="loadFlows">刷新</el-button>
-      </div>
-      <el-table :data="flows" border size="small" v-loading="flowLoading">
-        <el-table-column prop="flowId" label="流水 ID" width="150" />
-        <el-table-column prop="bizNo" label="业务单号" width="180" />
-        <el-table-column prop="skuId" label="SKU ID" width="150" />
-        <el-table-column prop="qty" label="数量" width="100" align="center" />
-        <el-table-column prop="reason" label="原因" min-width="160" />
-        <el-table-column prop="createdAt" label="时间" width="170">
-          <template #default="{ row }">{{ fmtDateTime(row.createdAt) }}</template>
-        </el-table-column>
-        <template #empty><el-empty description="暂无入库流水" :image-size="60" /></template>
-      </el-table>
+      <SentTable
+        :columns="flowColumns"
+        :rows="flows"
+        :total="flowTotal"
+        :page="flowPage"
+        :size="flowSize"
+        :loading="flowLoading"
+        :selectable="deleteMode"
+        row-key="flowId"
+        exportable
+        export-name="手工入库流水"
+        :export-rows="exportAllFlows"
+        @selection-change="selected = $event"
+        @update:page="onFlowPage"
+        @update:size="onFlowSize"
+        @refresh="loadFlows"
+      >
+        <template #toolbar><strong>入库流水</strong></template>
+        <template #toolbar-actions>
+          <BatchDeleteButton
+            v-model:active="deleteMode"
+            :ids="selected.map((r: any) => String(r.flowId))"
+            :summary="`已选择 ${selected.length} 条入库流水`"
+            :delete-fn="(ids, config) => unwrap(stockApi.batchDeleteFlows(ids, config))"
+            @done="onDeleted"
+          />
+        </template>
+        <template #col-createdAt="{ row }">{{ fmtDateTime(row.createdAt) }}</template>
+      </SentTable>
     </div>
   </div>
 </template>
@@ -61,26 +75,34 @@ import { unwrap } from '@/utils/http';
 import { useIdempotencyKey } from '@/utils/idempotent';
 import { stockApi, type InboundVO } from '@/api';
 import type { StockFlowVO } from '@sent/shared';
+import SentTable from '@/components/SentTable.vue';
+import BatchDeleteButton from '@/components/BatchDeleteButton.vue';
+import { useBatchDelete } from '@/composables/useBatchDelete';
+import { useTable } from '@/composables/useTable';
+import type { TableColumn } from '@/components/types';
+
+const flowColumns: TableColumn[] = [
+  { prop: 'flowId', label: '流水 ID', width: 140 },
+  { prop: 'bizNo', label: '业务单号', width: 180 },
+  { prop: 'skuId', label: 'SKU ID', width: 140 },
+  { prop: 'qty', label: '数量', width: 100, align: 'center' },
+  { prop: 'reason', label: '原因', minWidth: 160 },
+  { prop: 'createdAt', label: '时间', width: 170 },
+];
 
 const route = useRoute();
 const idem = useIdempotencyKey('STOCK_INBOUND');
 const form = reactive({ skuId: 0, qty: 1, reason: '', remark: '' });
 const saving = ref(false);
 const result = ref<InboundVO | null>(null);
-const flows = ref<StockFlowVO[]>([]);
-const flowLoading = ref(false);
-
-async function loadFlows(): Promise<void> {
-  flowLoading.value = true;
-  try {
-    const data = await unwrap(stockApi.flows({ page: 1, size: 20, bizType: 'INBOUND' }));
-    flows.value = data?.list ?? [];
-  } catch {
-    flows.value = [];
-  } finally {
-    flowLoading.value = false;
-  }
-}
+const { rows: flows, total: flowTotal, loading: flowLoading,
+  page: flowPage, size: flowSize, load: loadFlows,
+  onPage: onFlowPage, onSize: onFlowSize, fetchAll: exportAllFlows } = useTable<StockFlowVO>({
+  fetch: (params) => unwrap(stockApi.flows({ ...params, bizType: 'INBOUND' })),
+  // 入库明细失败时保持空表，不额外弹错
+  errorMessage: '',
+});
+const { deleteMode, selected, onDeleted } = useBatchDelete(loadFlows);
 
 async function submit(): Promise<void> {
   if (!form.skuId || !form.qty || !form.reason.trim()) {
@@ -107,6 +129,5 @@ async function submit(): Promise<void> {
 onMounted(() => {
   const skuId = Number(route.query.skuId);
   if (Number.isFinite(skuId) && skuId > 0) form.skuId = skuId;
-  void loadFlows();
 });
 </script>

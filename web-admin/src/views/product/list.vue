@@ -71,7 +71,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { unwrap } from '@/utils/http';
 import { productApi } from '@/api';
 import type { CategoryVO } from '@sent/shared';
-import { usePagination } from '@/composables/usePagination';
+import { useTable } from '@/composables/useTable';
 import SentTable from '@/components/SentTable.vue';
 import StatusTag from '@/components/StatusTag.vue';
 import type { TableColumn } from '@/components/types';
@@ -87,41 +87,27 @@ const columns: TableColumn[] = [
   { prop: 'onShelf', label: '状态', width: 110, align: 'center' },
 ];
 
-const rows = ref<any[]>([]);
 const selected = ref<any[]>([]);
 const categories = ref<CategoryVO[]>([]);
 const flatCategories = ref<CategoryVO[]>([]);
-const total = ref(0);
-const { page, size } = usePagination({ defaultSize: 10 });
-const loading = ref(false);
 const query = reactive<{ keyword: string; categoryId?: number; onShelf?: boolean }>({
   keyword: '',
+});
+// immediate: false —— 首屏要先吃 URL 上的 categoryId 再拉列表，见文件末尾的 onMounted
+const { rows, total, loading, page, size, load, onPage, onSize, onSearch } = useTable<any>({
+  fetch: (params) => unwrap(productApi.list({
+    ...params,
+    keyword: query.keyword || undefined,
+    categoryId: query.categoryId,
+    onShelf: query.onShelf,
+  })),
+  defaultSize: 10,
+  errorMessage: '商品列表加载失败',
+  immediate: false,
 });
 
 function flatten(list: CategoryVO[]): CategoryVO[] {
   return list.flatMap((item) => [item, ...(item.children ? flatten(item.children) : [])]);
-}
-
-async function load(): Promise<void> {
-  loading.value = true;
-  try {
-    const data = await unwrap(productApi.list({
-      page: page.value,
-      size: size.value,
-      keyword: query.keyword || undefined,
-      categoryId: query.categoryId,
-      onShelf: query.onShelf,
-    }));
-    rows.value = data?.list ?? [];
-    // 后端 Long 序列化成字符串，ElPagination 只收 Number
-    total.value = Number(data?.total ?? 0);
-  } catch (error) {
-    rows.value = [];
-    total.value = 0;
-    ElMessage.error((error as Error)?.message || '商品列表加载失败');
-  } finally {
-    loading.value = false;
-  }
 }
 
 async function loadCategories(): Promise<void> {
@@ -132,20 +118,6 @@ async function loadCategories(): Promise<void> {
     categories.value = [];
     flatCategories.value = [];
   }
-}
-
-function onSearch(): void {
-  page.value = 1;
-  void load();
-}
-function onPage(value: number): void {
-  page.value = value;
-  void load();
-}
-function onSize(value: number): void {
-  size.value = value;
-  page.value = 1;
-  void load();
 }
 
 async function batchPublish(onShelf: boolean): Promise<void> {

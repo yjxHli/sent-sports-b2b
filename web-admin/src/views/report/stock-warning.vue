@@ -26,12 +26,25 @@
         :page="page"
         :size="size"
         :loading="loading"
+        :selectable="deleteMode"
+        row-key="skuId"
         exportable
         export-name="库存预警"
+        :export-rows="exportAll"
+        @selection-change="selected = $event"
         @update:page="onPage"
         @update:size="onSize"
         @refresh="load"
       >
+        <template #toolbar-actions>
+          <BatchDeleteButton
+            v-model:active="deleteMode"
+            :ids="selected.map((r: any) => String(r.skuId))"
+            :summary="`已选择 ${selected.length} 条预警记录`"
+            :delete-fn="(ids, config) => unwrap(stockApi.batchDeleteWarnings(ids, config))"
+            @done="onDeleted"
+          />
+        </template>
         <template #toolbar>
           <el-input-number
             v-model="skuId"
@@ -42,7 +55,7 @@
           />
           <el-button type="primary" @click="onSearch">查询</el-button>
           <el-button @click="router.push('/stock/inbound')">去手工入库</el-button>
-          <el-checkbox v-model="onlyWarning" @change="onWarningChange">仅看低于安全库存</el-checkbox>
+          <el-checkbox v-model="onlyWarning" @change="onSearch">仅看低于安全库存</el-checkbox>
         </template>
         <template #col-warning="{ row }">
           <StatusTag
@@ -65,15 +78,16 @@
  * 现在筛选条件经 warningOnly 下推到 SQL（列表与 count 同条件），默认展示全量台账并用状态列
  * 标出哪些告急，需要时再勾选只看预警。
  */
-import { onMounted, ref } from 'vue';
+import { ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { ElMessage } from 'element-plus';
 import { unwrap } from '@/utils/http';
 import { stockApi, systemApi, type StockWarningVO } from '@/api';
 import { fmtQty } from '@sent/shared';
-import { usePagination } from '@/composables/usePagination';
+import { useTable } from '@/composables/useTable';
 import SentTable from '@/components/SentTable.vue';
 import StatusTag from '@/components/StatusTag.vue';
+import BatchDeleteButton from '@/components/BatchDeleteButton.vue';
+import { useBatchDelete } from '@/composables/useBatchDelete';
 import type { TableColumn } from '@/components/types';
 
 const router = useRouter();
@@ -90,44 +104,29 @@ const columns: TableColumn[] = [
 ];
 
 const summary = ref<StockWarningVO | null>(null);
-const rows = ref<any[]>([]);
-const total = ref(0);
-const { page, size } = usePagination();
-const loading = ref(false);
 const skuId = ref<number | undefined>(undefined);
 /** 默认展示全量台账；改勾选时由后端重新分页，不再前端截断 */
 const onlyWarning = ref(false);
+const { rows, total, loading, page, size, load, onPage, onSize, onSearch,
+  fetchAll: exportAll } = useTable<any>({
+  // 汇总卡与台账同一请求里并发取；台账失败要让门面走 catch（清空 + 提示）
+  fetch: async (params) => {
+    const [warn, stocks] = await Promise.allSettled([
+      unwrap(systemApi.stockWarningReport()),
+      unwrap(stockApi.list({ ...params, skuId: skuId.value, warningOnly: onlyWarning.value })),
+    ]);
+    summary.value = warn.status === 'fulfilled' ? warn.value : null;
+    if (stocks.status === 'rejected') throw stocks.reason;
+    return stocks.value;
+  },
+  errorMessage: '库存列表加载失败',
+});
+const { deleteMode, selected, onDeleted } = useBatchDelete(load);
 
 function isWarning(row: any): boolean {
   if (row.warning === true) return true;
   return Number(row.availableQty ?? 0) <= Number(row.safeQty ?? 0);
 }
-
-async function load(): Promise<void> {
-  loading.value = true;
-  const [warn, stocks] = await Promise.allSettled([
-    unwrap(systemApi.stockWarningReport()),
-    unwrap(stockApi.list({
-      page: page.value,
-      size: size.value,
-      skuId: skuId.value,
-      warningOnly: onlyWarning.value,
-    })),
-  ]);
-  summary.value = warn.status === 'fulfilled' ? warn.value : null;
-  rows.value = stocks.status === 'fulfilled' ? (stocks.value?.list ?? []) : [];
-  total.value = stocks.status === 'fulfilled' ? Number(stocks.value?.total ?? 0) : 0;
-  if (stocks.status === 'rejected') ElMessage.error('库存列表加载失败');
-  loading.value = false;
-}
-
-function onSearch(): void { page.value = 1; void load(); }
-/** 换筛选条件必须回到第 1 页，否则会停在一个不存在的页码上看到空表 */
-function onWarningChange(): void { page.value = 1; void load(); }
-function onPage(value: number): void { page.value = value; void load(); }
-function onSize(value: number): void { size.value = value; page.value = 1; void load(); }
-
-onMounted(() => { void load(); });
 </script>
 
 <style scoped>

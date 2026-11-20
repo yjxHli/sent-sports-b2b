@@ -9,13 +9,26 @@
         :page="page"
         :size="size"
         :loading="loading"
+        :selectable="deleteMode"
+        row-key="customerId"
         exportable
         export-name="客户列表"
+        :export-rows="exportAll"
         :operation-width="160"
+        @selection-change="selected = $event"
         @update:page="onPage"
         @update:size="onSize"
         @refresh="load"
       >
+        <template #toolbar-actions>
+          <BatchDeleteButton
+            v-model:active="deleteMode"
+            :ids="selected.map((r: any) => String(r.customerId))"
+            :summary="`已选择 ${selected.length} 位客户`"
+            :delete-fn="(ids, config) => unwrap(customerApi.batchDelete(ids, config))"
+            @done="onDeleted"
+          />
+        </template>
         <template #toolbar>
           <el-input
             v-model="query.keyword"
@@ -87,9 +100,11 @@ import { unwrap } from '@/utils/http';
 import { customerApi, systemApi, CUSTOMER_LEVELS } from '@/api';
 import { fmtDateTime, fmtMoney, maskPhone } from '@sent/shared';
 import type { StaffVO } from '@sent/shared';
-import { usePagination } from '@/composables/usePagination';
+import { useTable } from '@/composables/useTable';
 import SentTable from '@/components/SentTable.vue';
 import StatusTag from '@/components/StatusTag.vue';
+import BatchDeleteButton from '@/components/BatchDeleteButton.vue';
+import { useBatchDelete } from '@/composables/useBatchDelete';
 import type { TableColumn } from '@/components/types';
 
 const router = useRouter();
@@ -106,12 +121,19 @@ const columns: TableColumn[] = [
   { prop: 'createdAt', label: '创建时间', width: 160, formatter: (_r, v) => fmtDateTime(v) },
 ];
 
-const rows = ref<any[]>([]);
-const total = ref(0);
-const { page, size } = usePagination();
-const loading = ref(false);
-const submitting = ref(false);
 const query = reactive<{ keyword: string; level?: string }>({ keyword: '' });
+/** 整表导出走 useTable.fetchAll：按当前筛选分页拉全，不只导当前页 */
+const { rows, total, loading, page, size, load, onPage, onSize, onSearch,
+  fetchAll: exportAll } = useTable<any>({
+  fetch: (params) => unwrap(customerApi.list({
+    ...params,
+    keyword: query.keyword || undefined,
+    level: query.level || undefined,
+  })),
+  errorMessage: '客户列表加载失败',
+});
+const { deleteMode, selected, onDeleted } = useBatchDelete(load);
+const submitting = ref(false);
 
 const transferVisible = ref(false);
 const transferTarget = ref<any>(null);
@@ -126,40 +148,6 @@ async function loadStaff(): Promise<void> {
   } catch {
     staffOptions.value = [];
   }
-}
-
-async function load(): Promise<void> {
-  loading.value = true;
-  try {
-    const data = await unwrap(customerApi.list({
-      page: page.value,
-      size: size.value,
-      keyword: query.keyword || undefined,
-      level: query.level || undefined,
-    }));
-    rows.value = data?.list ?? [];
-    total.value = data?.total ?? 0;
-  } catch (error) {
-    rows.value = [];
-    total.value = 0;
-    ElMessage.error((error as Error)?.message || '客户列表加载失败');
-  } finally {
-    loading.value = false;
-  }
-}
-
-function onSearch(): void {
-  page.value = 1;
-  void load();
-}
-function onPage(value: number): void {
-  page.value = value;
-  void load();
-}
-function onSize(value: number): void {
-  size.value = value;
-  page.value = 1;
-  void load();
 }
 
 function openTransfer(row: any): void {
@@ -192,5 +180,5 @@ async function submitTransfer(): Promise<void> {
   }
 }
 
-onMounted(() => { void loadStaff(); void load(); });
+onMounted(() => { void loadStaff(); });
 </script>

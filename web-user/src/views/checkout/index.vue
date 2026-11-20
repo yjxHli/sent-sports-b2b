@@ -85,6 +85,39 @@
         <div v-if="Number(quote.couponDiscountCent ?? 0) > 0" class="quote-line quote-line--discount">
           <span>券抵扣</span><span class="sent-price">-¥{{ quote.couponDiscountYuan }}</span>
         </div>
+        <!-- 积分抵扣：余额来自后端 /api/member/points，实际抵扣额只认试算返回值 -->
+        <div class="quote-line quote-line--points" data-testid="checkout-points-row">
+          <span class="co-points__label">
+            <el-switch
+              v-model="usePoints"
+              data-testid="checkout-use-points"
+              :disabled="availablePoints <= 0"
+              @change="onPointsToggle"
+            />
+            使用积分抵扣
+          </span>
+          <el-input-number
+            v-if="usePoints"
+            v-model="pointsToUse"
+            data-testid="checkout-points-input"
+            :data-max="availablePoints"
+            :min="0"
+            :max="availablePoints"
+            :step="1"
+            controls-position="right"
+            @change="onPointsChange"
+          />
+        </div>
+        <p v-if="availablePoints > 0" class="quote-points-hint" data-testid="checkout-points-hint">
+          可用 {{ availablePoints }} 积分，本单最高可抵扣 30%
+        </p>
+        <div
+          v-if="Number(quote.pointDeductCent ?? 0) > 0"
+          class="quote-line quote-line--discount"
+          data-testid="checkout-point-deduct"
+        >
+          <span>积分抵扣</span><span class="sent-price">-¥{{ quote.pointDeductYuan }}</span>
+        </div>
         <div class="quote-line quote-line--total">
           <span>应付</span><span class="sent-price">¥{{ quote.payableYuan }}</span>
         </div>
@@ -161,10 +194,12 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { unwrap } from '@/utils/http';
 import { cartApi, type QuoteVO } from '@/api/cart';
 import { couponApi, type CouponVO } from '@/api/coupon';
+import { memberApi } from '@/api/member';
 import { orderApi } from '@/api/order';
 import { addressApi, type AddressVO } from '@/api/address';
 import { customApi, readPendingDraft, clearPendingDraft } from '@/api/custom';
 import { paymentApi, scheduleMockPayCallback } from '@/api/payment';
+import { fmtCent } from '@sent/shared';
 import { useCartStore, type BuyNowItem } from '@/store/modules/useCartStore';
 import { useAuthStore } from '@/store/modules/useAuthStore';
 import { createIdempotencyScope } from '@/utils/idempotent';
@@ -192,6 +227,10 @@ const paidOrderNo = ref('');
 const paidAmount = ref('');
 /** UV 定制件标记：勾选中后下单行携带 customFlag，后端即时生成 custom_order 供上传图稿。 */
 const customFlag = ref(false);
+/** 积分抵扣：余额来自后端（/api/member/points），输入上限与最终提交值都以此为准 */
+const availablePoints = ref(0);
+const usePoints = ref(false);
+const pointsToUse = ref(0);
 /** 本地持有「立即购买」项：进入即捕获并清空 store，避免污染后续购物车结算 */
 const buyNowLocal = ref<BuyNowItem | null>(null);
 
@@ -344,10 +383,6 @@ async function removeAddress(a: AddressVO): Promise<void> {
   }
 }
 
-function yuan(cent: number | string): string {
-  const n = Number(cent ?? 0);
-  return Number.isInteger(n / 100) ? String(n / 100) : (n / 100).toFixed(2);
-}
 
 /**
  * 券门槛口径 = 商品额 + 定制费，不含运费。
@@ -381,7 +416,7 @@ function couponLabel(c: CouponVO): string {
   const name = c.name || '优惠券';
   if (c.status === 'EXPIRED') return `${name} · 已过期`;
   const threshold = Number(c.thresholdCent ?? 0);
-  return threshold > 0 ? `${name} · 满${yuan(threshold)}元可用` : `${name} · 无门槛`;
+  return threshold > 0 ? `${name} · 满${fmtCent(threshold)}元可用` : `${name} · 无门槛`;
 }
 
 function couponOptionClass(c: CouponVO): string {
@@ -429,10 +464,42 @@ async function loadCoupons(): Promise<void> {
   }
 }
 
+/** 试算与下单共用的积分参数：开关关闭时一律传 0，避免残留输入值偷偷生效 */
+function effectivePoints(): number {
+  return usePoints.value ? Math.max(0, Math.min(pointsToUse.value, availablePoints.value)) : 0;
+}
+
+/** 余额以接口返回为准；读失败按 0 处理，不让用户勾一个必然被后端拒的开关 */
+async function loadPoints(): Promise<void> {
+  try {
+    const pt = await unwrap(memberApi.points());
+    availablePoints.value = Math.max(0, Number(pt?.availablePoints ?? 0));
+    pointsToUse.value = availablePoints.value;
+  } catch {
+    availablePoints.value = 0;
+    pointsToUse.value = 0;
+    usePoints.value = false;
+  }
+}
+
+function onPointsToggle(enabled: boolean): void {
+  pointsToUse.value = enabled ? availablePoints.value : 0;
+  void loadQuote();
+}
+
+/** 输入值收敛到 [0, 可用积分]；30% 上限由后端试算给出，前端不复制规则 */
+function onPointsChange(value: number | undefined): void {
+  const n = Number(value ?? 0);
+  pointsToUse.value = Number.isFinite(n)
+    ? Math.max(0, Math.min(Math.floor(n), availablePoints.value))
+    : 0;
+  void loadQuote();
+}
+
 async function loadQuote(): Promise<void> {
   try {
     quote.value = await unwrap(cartApi.checkoutPreview({
-      availablePoints: 0,
+      availablePoints: effectivePoints(),
       freightFreeThresholdCent: 0,
       freightFeeCent: 0,
       couponId: selectedCouponId.value,
@@ -452,7 +519,7 @@ async function refreshQuote(): Promise<void> {
 onMounted(async () => {
   buyNowLocal.value = cart.buyNow;
   await cart.clearBuyNow();
-  await loadAddresses();
+  await Promise.all([loadAddresses(), loadPoints()]);
   await refreshQuote();
 });
 
@@ -507,7 +574,8 @@ async function submit(payNow: boolean): Promise<void> {
       customerId,
       addressId: Number(selectedAddress.value.id),
       idemKey: orderIdem.getOrCreate(),
-      availablePoints: 0,
+      // 与试算完全同一个参数：后端重新算一次，金额不会因前端残留状态分叉
+      availablePoints: effectivePoints(),
       freightFreeThresholdCent: 0,
       freightFeeCent: 0,
       couponId: selectedCouponId.value,
@@ -538,15 +606,8 @@ async function submit(payNow: boolean): Promise<void> {
     }, { headers: payIdem.headers() }));
     payIdem.clear();
 
-    // 模拟第三方渠道异步通知：1.2s 后回调后端，把订单 WAIT_PAY → WAIT_SHIP
-    scheduleMockPayCallback({
-      txnNo: pay.txnNo ?? '',
-      orderNo: order.orderNo,
-      amountCent: Number(pay.amountCent ?? order.payableCent ?? 0),
-      channel: 'BALANCE',
-      payChannelTradeNo: `MOCK-${order.orderNo}-${Date.now()}`,
-      paidAtMillis: Date.now(),
-    });
+    // 模拟第三方渠道异步通知：1.2s 后回调后端（回放后端下发的签名参数），把订单 WAIT_PAY → WAIT_SHIP
+    scheduleMockPayCallback(pay);
 
     paidOrderNo.value = order.orderNo;
     paidAmount.value = pay.amountYuan || quote.value.payableYuan;
@@ -588,6 +649,9 @@ function submitLater(): void {
 }
 .quote-line--coupon { align-items: center; min-height: 34px; }
 .quote-coupon-hint { margin: 0 0 4px; text-align: right; font-size: 11px; color: var(--sent-muted); }
+.quote-line--points { align-items: center; min-height: 34px; }
+.co-points__label { display: inline-flex; align-items: center; gap: 8px; }
+.quote-points-hint { margin: 0 0 4px; text-align: right; font-size: 11px; color: var(--sent-muted); }
 .quote-line--discount span:last-child { color: var(--sent-accent-dark); }
 .quote-line--total {
   font-size: 15px;

@@ -55,11 +55,11 @@
 
 <script setup lang="ts">
 /** 合同管理（P6-47）：列表走后端真实分页；到期天数为展示层计算，不写库、不臆造提醒记录。 */
-import { onMounted, ref } from 'vue';
+import { ref } from 'vue';
 import { unwrap } from '@/utils/http';
 import { financeApi } from '@/api';
 import { fmtDate, fmtMoney } from '@sent/shared';
-import { usePagination } from '@/composables/usePagination';
+import { useTable } from '@/composables/useTable';
 import { useBatchDelete } from '@/composables/useBatchDelete';
 import SentTable from '@/components/SentTable.vue';
 import StatusTag from '@/components/StatusTag.vue';
@@ -77,11 +77,6 @@ const columns: TableColumn[] = [
   { prop: 'remaining', label: '剩余天数', width: 130, align: 'center' },
 ];
 
-const rows = ref<any[]>([]);
-const { deleteMode, selected, onDeleted } = useBatchDelete(load);
-const total = ref(0);
-const { page, size } = usePagination();
-const loading = ref(false);
 const dueState = ref<string>('');
 /** 合同 ID / 合同号 / 客户 ID 三选一模糊搜索，条件由后端 SQL 收敛 */
 const keyword = ref('');
@@ -124,41 +119,22 @@ function remainingInfo(validTo: number | string | null | undefined): RemainingIn
   return { days, text: `剩余 ${days} 天`, overdue: days <= 30, hint };
 }
 
-async function load(): Promise<void> {
-  loading.value = true;
-  try {
-    const data = await unwrap(financeApi.contracts({
-      page: page.value,
-      size: size.value,
-      dueState: dueState.value || undefined,
-      keyword: keyword.value.trim() || undefined,
-    }));
-    // 到期状态由后端按 expire_date 在 SQL 里判定；前端再过滤会让「本页之外」的合同被丢掉。
-    // 剩余天数是展示层派生值，随每次加载以真实当前时间重算。
-    rows.value = (data?.list ?? []).map((row: any) => ({
-      ...row,
-      remaining: remainingInfo(row.validToMillis),
-    }));
-    total.value = Number(data?.total ?? 0);
-  } catch {
-    rows.value = [];
-    total.value = 0;
-  } finally {
-    loading.value = false;
-  }
-}
-
-function onSearch(): void {
-  page.value = 1;
-  void load();
-}
-
-function onPage(value: number): void { page.value = value; void load(); }
-function onSize(value: number): void { size.value = value; page.value = 1; void load(); }
-
-onMounted(() => { void load(); });
+const { rows, total, loading, page, size, load, onPage, onSize, onSearch } = useTable<any>({
+  fetch: (params) => unwrap(financeApi.contracts({
+    ...params,
+    dueState: dueState.value || undefined,
+    keyword: keyword.value.trim() || undefined,
+  })),
+  // 到期状态由后端按 expire_date 在 SQL 里判定；前端再过滤会让「本页之外」的合同被丢掉。
+  // 剩余天数是展示层派生值，随每次加载以真实当前时间重算。
+  transform: ({ list, total: count }) => ({
+    total: count,
+    list: list.map((row: any) => ({ ...row, remaining: remainingInfo(row.validToMillis) })),
+  }),
+  errorMessage: '',
+});
+const { deleteMode, selected, onDeleted } = useBatchDelete(load);
 </script>
-
 <style scoped>
 .overdue { color: #d03050; font-weight: 600; }
 </style>

@@ -215,7 +215,9 @@
 import { nextTick, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
-import { fmtCent, fmtChatTime, shouldShowTimeDivider, statusLabel } from '@sent/shared';
+import {
+  SATISFY_LABELS, fmtCent, fmtChatTime, shouldShowTimeDivider, statusLabel,
+} from '@sent/shared';
 import { useChatSession } from '@/composables/useChatSession';
 import { useAuthStore } from '@/store/modules/useAuthStore';
 import { fileApi } from '@/api/file';
@@ -233,7 +235,15 @@ const imageInput = ref<HTMLInputElement | null>(null);
 const uploadingImg = ref(false);
 
 const customerId = auth.userId;
-const chat = customerId ? useChatSession(customerId, false) : null;
+const chat = customerId
+  ? useChatSession(customerId, false, {
+      // 敏感词被拒（WS 通道）：撤回气泡 + 原文还回输入框，让用户自己改，绝不替他打码
+      onSendRejected: (reason: string, content: string) => {
+        draft.value = content;
+        ElMessage.error(reason);
+      },
+    })
+  : null;
 const messages = chat ? chat.messages : ref([]);
 const online = chat ? chat.online : ref(false);
 const queued = chat ? chat.queued : ref(false);
@@ -260,8 +270,7 @@ function satisfactionOf(m: { content: string }): { status: string; score: string
 }
 
 function scoreLabel(score: string): string {
-  const labels: Record<string, string> = { SATISFIED: '满意', NORMAL: '一般', UNSATISFIED: '不满意' };
-  return labels[score] ?? score;
+  return SATISFY_LABELS[score] ?? score;
 }
 
 async function rateSatisfaction(score: string, m: { content: string }): Promise<void> {
@@ -330,9 +339,11 @@ async function doSend(): Promise<void> {
   sending.value = true;
   try {
     await chat.send(text);
+    // 只有成功才清空：被拒绝（如命中敏感词）时必须留着原文让用户自己改
     draft.value = '';
     scrollBottom();
   } catch (e) {
+    // REST 兜底通道的错误在这里冒泡：直接展示后端文案（40003 = 消息包含违禁词）
     ElMessage.error((e as Error).message || '发送失败');
   } finally {
     sending.value = false;

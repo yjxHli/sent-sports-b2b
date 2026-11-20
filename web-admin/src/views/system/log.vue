@@ -9,12 +9,25 @@
         :page="page"
         :size="size"
         :loading="loading"
+        :selectable="deleteMode"
+        row-key="logId"
         exportable
         export-name="操作日志"
+        :export-rows="exportAll"
+        @selection-change="selected = $event"
         @update:page="onPage"
         @update:size="onSize"
         @refresh="load"
       >
+        <template #toolbar-actions>
+          <BatchDeleteButton
+            v-model:active="deleteMode"
+            :ids="selected.map((r: any) => String(r.logId))"
+            :summary="`已选择 ${selected.length} 条操作日志`"
+            :delete-fn="(ids, config) => unwrap(systemApi.batchDeleteLogs(ids, config))"
+            @done="onDeleted"
+          />
+        </template>
         <template #toolbar>
           <el-input
             v-model="keyword"
@@ -40,13 +53,14 @@
 
 <script setup lang="ts">
 /** 操作日志（P6-51）：只读审计列表，筛选条件下推服务端，真查 sys_operation_log。 */
-import { onMounted, ref } from 'vue';
-import { ElMessage } from 'element-plus';
+import { ref } from 'vue';
 import { unwrap } from '@/utils/http';
 import { systemApi } from '@/api';
 import { fmtDateTime } from '@sent/shared';
-import { usePagination } from '@/composables/usePagination';
+import { useTable } from '@/composables/useTable';
 import SentTable from '@/components/SentTable.vue';
+import BatchDeleteButton from '@/components/BatchDeleteButton.vue';
+import { useBatchDelete } from '@/composables/useBatchDelete';
 import type { TableColumn } from '@/components/types';
 
 const columns: TableColumn[] = [
@@ -60,42 +74,22 @@ const columns: TableColumn[] = [
     formatter: (_r, v) => fmtDateTime(v) },
 ];
 
-const rows = ref<any[]>([]);
-const total = ref(0);
-const { page, size } = usePagination();
-const loading = ref(false);
 const keyword = ref('');
 const module = ref('');
+const { rows, total, loading, page, size, load, onPage, onSize, onSearch,
+  fetchAll: exportAll } = useTable<any>({
+  fetch: (params) => unwrap(systemApi.logs({
+    ...params,
+    keyword: keyword.value.trim() || undefined,
+    module: module.value.trim() || undefined,
+  })),
+  errorMessage: '日志加载失败',
+});
+const { deleteMode, selected, onDeleted } = useBatchDelete(load);
 
-async function load(): Promise<void> {
-  loading.value = true;
-  try {
-    const data = await unwrap(systemApi.logs({
-      page: page.value,
-      size: size.value,
-      keyword: keyword.value.trim() || undefined,
-      module: module.value.trim() || undefined,
-    }));
-    rows.value = data?.list ?? [];
-    total.value = data?.total ?? 0;
-  } catch (error) {
-    rows.value = [];
-    total.value = 0;
-    ElMessage.error((error as Error)?.message || '日志加载失败');
-  } finally {
-    loading.value = false;
-  }
-}
-
-function onSearch(): void { page.value = 1; void load(); }
 function onReset(): void {
   keyword.value = '';
   module.value = '';
-  page.value = 1;
-  void load();
+  onSearch();
 }
-function onPage(value: number): void { page.value = value; void load(); }
-function onSize(value: number): void { size.value = value; page.value = 1; void load(); }
-
-onMounted(() => { void load(); });
 </script>

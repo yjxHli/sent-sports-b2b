@@ -481,7 +481,10 @@ import {
 } from '@/api';
 import { fileApi } from '@/api/file';
 import { usePermissionStore } from '@/store/modules/permission';
-import { ChatSessionStatus, PresenceStatus, SenderType, statusLabel } from '@sent/shared';
+import {
+  CHAT_CATEGORY_LABELS, CHAT_INFO_LABELS, ChatSessionStatus, PresenceStatus,
+  SATISFY_LABELS, SenderType, statusLabel,
+} from '@sent/shared';
 import { useChatSocket, type IncomingAck, type IncomingMessage } from '@/composables/useChatSocket';
 import StatusTag from '@/components/StatusTag.vue';
 import ChatOrderCard from '@/components/ChatOrderCard.vue';
@@ -588,21 +591,18 @@ function satisfactionOf(m: { content: string }): { status: string; score: string
 }
 
 function scoreLabel(score: string): string {
-  const labels: Record<string, string> = {
-    SATISFIED: '满意', NORMAL: '一般', UNSATISFIED: '不满意',
-  };
-  return labels[score] ?? score;
+  return SATISFY_LABELS[score] ?? score;
 }
 
-/** 历史服务弹窗里的小结枚举标签（与右侧服务面板同一口径）。 */
+/** 历史服务弹窗里的小结枚举标签（与右侧服务面板、质检台共用共享字典）。 */
 function historyCategoryLabel(value?: string | null): string {
-  return ({ QUALITY: '商品品质问题', INQUIRY: '商品咨询', UNCLEAR: '未明确' } as Record<string, string>)[value ?? ''] ?? '--';
+  return CHAT_CATEGORY_LABELS[value ?? ''] ?? '--';
 }
 function historyInfoLabel(value?: string | null): string {
-  return ({ CLEAR: '明确信息', NO_REPLY: '用户未回复' } as Record<string, string>)[value ?? ''] ?? '--';
+  return CHAT_INFO_LABELS[value ?? ''] ?? '--';
 }
 function historyResultLabel(value?: string | null): string {
-  return ({ DONE: '已完成', UNRESOLVED: '未解决' } as Record<string, string>)[value ?? ''] ?? '--';
+  return value ? statusLabel(value) : '--';
 }
 
 /** 客服主动发评价卡：同会话幂等，重复点不会刷出第二张 */
@@ -909,7 +909,22 @@ function onFrame(frame: IncomingMessage): void {
 
 function onAck(ack: IncomingAck): void {
   if (ack.event === 'REJECTED' || ack.code) {
-    ElMessage.error(`消息被拒绝：${ack.reason ?? `code ${ack.code}`}`);
+    // 服务端拒绝（2026-11-19 起含敏感词 40003）：撤回乐观气泡 + 原文还给输入框，
+    // 客服改完再发。留着灰色气泡会让人以为「发出去了只是没回」。
+    const sessionId = Number(ack.sessionId ?? 0);
+    const list = messageStore[sessionId];
+    let rejectedContent = '';
+    if (list && ack.clientMsgId) {
+      const index = list.findIndex((item) => item.clientMsgId === ack.clientMsgId);
+      if (index >= 0) {
+        rejectedContent = list[index].content;
+        list.splice(index, 1);
+      }
+    }
+    if (rejectedContent && !(drafts[sessionId] ?? '').trim()) {
+      drafts[sessionId] = rejectedContent;
+    }
+    ElMessage.error(ack.reason ? `发送失败：${ack.reason}` : `消息被拒绝：code ${ack.code}`);
     return;
   }
   if (!ack.clientMsgId) return;

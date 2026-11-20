@@ -4,8 +4,8 @@
     <div class="sent-panel">
       <SentTable
         :columns="columns"
-        :rows="pagedRows"
-        :total="rows.length"
+        :rows="rows"
+        :total="total"
         :page="page"
         :size="size"
         :loading="loading"
@@ -17,8 +17,14 @@
         @refresh="load"
       >
         <template #toolbar>
-          <el-input v-model="keyword" placeholder="参数键过滤" clearable style="width: 220px" />
-          <el-button type="primary" @click="load">查询</el-button>
+          <el-input
+            v-model="keyword"
+            placeholder="参数键过滤"
+            clearable
+            style="width: 220px"
+            @keyup.enter="onSearch"
+          />
+          <el-button type="primary" @click="onSearch">查询</el-button>
           <el-button @click="openCreate">新增参数</el-button>
           <span class="sent-hint">参数值为字符串，金额/天数类由后端按各自单位解析</span>
         </template>
@@ -47,11 +53,11 @@
 
 <script setup lang="ts">
 /** 业务参数（P6-50）：键值对维护，值一律按字符串提交，单位解释权归后端。 */
-import { computed, onMounted, reactive, ref } from 'vue';
+import { reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import { unwrap } from '@/utils/http';
 import { systemApi, type ParamVO } from '@/api';
-import { usePagination } from '@/composables/usePagination';
+import { useTable } from '@/composables/useTable';
 import SentTable from '@/components/SentTable.vue';
 import type { TableColumn } from '@/components/types';
 
@@ -60,42 +66,24 @@ const columns: TableColumn[] = [
   { prop: 'paramValue', label: '参数值', minWidth: 240 },
 ];
 
-const rows = ref<ParamVO[]>([]);
 const keyword = ref('');
-const loading = ref(false);
 const submitting = ref(false);
-const { page, size } = usePagination();
-/** 参数量小，一次性拉取后展示层切片；页码与每页条数由 usePagination 记忆。 */
-const pagedRows = computed(() =>
-  rows.value.slice((page.value - 1) * size.value, page.value * size.value),
-);
-
-function onPage(value: number): void {
-  page.value = value;
-}
-function onSize(value: number): void {
-  size.value = value;
-  page.value = 1;
-}
+/** 参数量小，一次性拉取后展示层切片；页码与每页条数仍由 usePagination 记忆。 */
+const { rows, total, loading, page, size, load, onPage, onSize, onSearch } = useTable<ParamVO>({
+  mode: 'client',
+  fetch: () => unwrap(systemApi.params()),
+  // 关键字只在前端过滤：业务参数一共十几条，不值得为此加一个后端查询参数
+  transform: ({ list }) => {
+    const kw = keyword.value.trim();
+    const filtered = kw ? list.filter((item) => item.paramKey.includes(kw)) : list;
+    return { list: filtered, total: filtered.length };
+  },
+  errorMessage: '参数列表加载失败',
+});
 
 const formVisible = ref(false);
 const isNew = ref(true);
 const paramForm = reactive<{ paramKey: string; paramValue: string }>({ paramKey: '', paramValue: '' });
-
-async function load(): Promise<void> {
-  loading.value = true;
-  try {
-    const list = await unwrap(systemApi.params());
-    rows.value = keyword.value
-      ? (list ?? []).filter((item) => item.paramKey.includes(keyword.value.trim()))
-      : (list ?? []);
-  } catch (error) {
-    rows.value = [];
-    ElMessage.error((error as Error)?.message || '参数列表加载失败');
-  } finally {
-    loading.value = false;
-  }
-}
 
 function openCreate(): void {
   isNew.value = true;
@@ -132,5 +120,4 @@ async function submit(): Promise<void> {
   }
 }
 
-onMounted(() => { void load(); });
 </script>

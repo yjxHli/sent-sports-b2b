@@ -95,7 +95,7 @@
  * 退款审核（P6-43）：列表 / 审核均走管理端真实端点（/admin/refunds）；
  * 审核通过是危险操作，必须 openConfirm('REFUND_APPROVE') 换 X-Confirm-Token 并在提交前复查过期。
  */
-import { onMounted, ref } from 'vue';
+import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { unwrap } from '@/utils/http';
@@ -103,7 +103,7 @@ import { financeApi } from '@/api';
 import { fileApi } from '@/api/file';
 import { RefundStatus, fmtDateTime, fmtMoney, statusLabel } from '@sent/shared';
 import { openConfirm } from '@/utils/confirm';
-import { usePagination } from '@/composables/usePagination';
+import { useTable } from '@/composables/useTable';
 import { useBatchDelete } from '@/composables/useBatchDelete';
 import SentTable from '@/components/SentTable.vue';
 import StatusTag from '@/components/StatusTag.vue';
@@ -121,39 +121,19 @@ const columns: TableColumn[] = [
   { prop: 'createdAt', label: '申请时间', width: 150, formatter: (_r, v) => fmtDateTime(v) },
 ];
 
-const rows = ref<any[]>([]);
-const { deleteMode, selected, onDeleted } = useBatchDelete(load);
-const total = ref(0);
 const router = useRouter();
-const { page, size } = usePagination();
-const loading = ref(false);
 const status = ref<string>('');
 /** 退款单号 / 订单号模糊搜索（两者都匹配，客服拿到哪个号都能定位） */
 const keyword = ref('');
-
-async function load(): Promise<void> {
-  loading.value = true;
-  try {
-    const data = await unwrap(financeApi.refunds({
-      page: page.value,
-      size: size.value,
-      status: status.value || undefined,
-      keyword: keyword.value.trim() || undefined,
-    }));
-    rows.value = data?.list ?? [];
-    total.value = data?.total ?? 0;
-  } catch (error) {
-    rows.value = [];
-    total.value = 0;
-    ElMessage.error((error as Error)?.message || '退款单加载失败');
-  } finally {
-    loading.value = false;
-  }
-}
-
-function onSearch(): void { page.value = 1; void load(); }
-function onPage(value: number): void { page.value = value; void load(); }
-function onSize(value: number): void { size.value = value; page.value = 1; void load(); }
+const { rows, total, loading, page, size, load, onPage, onSize, onSearch } = useTable<any>({
+  fetch: (params) => unwrap(financeApi.refunds({
+    ...params,
+    status: status.value || undefined,
+    keyword: keyword.value.trim() || undefined,
+  })),
+  errorMessage: '退款单加载失败',
+});
+const { deleteMode, selected, onDeleted } = useBatchDelete(load);
 
 /** 进入单笔独立审核页：订单信息、凭证图片、商品明细、审核动作都在那一页完成。 */
 function openDetail(row: any): void {
@@ -199,7 +179,6 @@ async function reject(row: any): Promise<void> {
   }
 }
 
-onMounted(() => { void load(); });
 </script>
 
 <style scoped>

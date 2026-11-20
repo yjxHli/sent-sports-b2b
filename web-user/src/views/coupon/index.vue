@@ -25,7 +25,7 @@
       >
         <div class="coupon-card__amount">
           <template v-if="c.discountType === 'PERCENT'">{{ rateText(c) }}</template>
-          <template v-else><span class="coupon-card__symbol">¥</span>{{ yuan(c.amountCent) }}</template>
+          <template v-else><span class="coupon-card__symbol">¥</span>{{ fmtCent(c.amountCent) }}</template>
         </div>
         <div class="coupon-card__info">
           <b>{{ c.name }}</b>
@@ -47,7 +47,7 @@
  * 券数据走 /api/coupons/mine，不在前端判断过期——过期态由服务端按 expire_at 派生。
  */
 import { computed, onMounted, ref } from 'vue';
-import { fmtDateTime } from '@sent/shared';
+import { fmtCent, fmtDateTime, statusLabel } from '@sent/shared';
 import { unwrap } from '@/utils/http';
 import { couponApi, type CouponVO } from '@/api/coupon';
 
@@ -70,21 +70,14 @@ const counts = computed<Record<TabKey, number>>(() => ({
 const visible = computed(() => coupons.value.filter((c) => c.status === active.value));
 const tabLabel = computed(() => tabs.find((t) => t.key === active.value)?.label ?? '');
 
-function yuan(cent: number | string): string {
-  const n = Number(cent ?? 0);
-  return Number.isInteger(n / 100) ? String(n / 100) : (n / 100).toFixed(2);
-}
 function thresholdText(cent: number | string): string {
   const n = Number(cent ?? 0);
-  return n > 0 ? `满 ${yuan(n)} 元可用` : '无门槛';
+  return n > 0 ? `满 ${fmtCent(n)} 元可用` : '无门槛';
 }
 /** 折扣券按「支付比例」存，90 → 9折、88 → 8.8折 */
 function rateText(c: CouponVO): string {
   const zhe = Number(c.discountRate ?? 100) / 10;
   return `${Number.isInteger(zhe) ? zhe : zhe.toFixed(1)}折`;
-}
-function statusLabel(status: string): string {
-  return status === 'USED' ? '已使用' : status === 'EXPIRED' ? '已过期' : '待使用';
 }
 
 onMounted(async () => {

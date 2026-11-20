@@ -23,14 +23,22 @@
         <p class="forgot-hint">请输入注册手机号，获取短信验证码后即可重置登录密码。</p>
         <el-form label-position="top" @submit.prevent>
           <el-form-item label="手机号">
+            <el-input
+              v-model="phone"
+              maxlength="11"
+              clearable
+              placeholder="请输入11位手机号"
+              data-testid="forgot-phone"
+            />
+          </el-form-item>
+          <el-form-item label="验证码">
             <div class="forgot-code-row">
               <el-input
-                v-model="phone"
-                maxlength="11"
-                clearable
-                placeholder="请输入11位手机号"
-                data-testid="forgot-phone"
-                @keyup.enter="sendCode"
+                v-model="code"
+                maxlength="6"
+                placeholder="请输入验证码"
+                data-testid="forgot-code"
+                @keyup.enter="nextStep"
               />
               <el-button
                 class="forgot-code-btn"
@@ -42,10 +50,11 @@
             </div>
           </el-form-item>
         </el-form>
-        <p class="forgot-demo">演示环境验证码：<b>123456</b></p>
+        <p class="forgot-demo">演示环境：验证码将打印到浏览器控制台（60 秒内有效）</p>
         <el-button
           type="primary"
           class="forgot-btn"
+          :loading="verifying"
           data-testid="forgot-next"
           @click="nextStep"
         >下一步</el-button>
@@ -56,15 +65,6 @@
         <h1>设置新密码</h1>
         <p class="forgot-hint">手机号 {{ maskedPhone }} 已通过验证，请设置 6~20 位新密码。</p>
         <el-form label-position="top" @submit.prevent>
-          <el-form-item label="短信验证码">
-            <el-input
-              v-model="code"
-              maxlength="6"
-              placeholder="请输入6位验证码"
-              data-testid="forgot-code"
-              @keyup.enter="submit"
-            />
-          </el-form-item>
           <el-form-item label="新密码">
             <el-input
               v-model="password"
@@ -117,22 +117,17 @@
 
 <script setup lang="ts">
 /**
- * 找回密码（2026-11-18 用户要求：先把前端页面搭起来）。
- *
- * 当前后端 /api/auth 尚未提供「发送重置验证码 / 重置密码」端点，
- * 这里用演示流程把三步表单、校验、倒计时、成功页完整落地，验证码固定 123456。
- * 后端接口就绪后，只需把 sendCode() 与 submit() 中的演示分支替换为
- * authApi.sendResetCode({ phone }) / authApi.resetPassword({ phone, code, password })，
- * UI 与 data-testid 契约保持不变。
+ * 找回密码：验证码与登录页走同一套后端机制——后端生成、进程内存储、打印控制台，
+ * 开发环境把 demoCode 回显到浏览器控制台，生产默认关闭；验证码一次性消费。
  */
 import { computed, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
+import { authApi } from '@/api/auth';
 
 const router = useRouter();
 
 const PHONE_REGEX = /^1[3-9]\d{9}$/;
-const DEMO_CODE = '123456';
 
 const step = ref(1);
 const phone = ref('');
@@ -140,11 +135,10 @@ const code = ref('');
 const password = ref('');
 const confirmPassword = ref('');
 const sending = ref(false);
+const verifying = ref(false);
 const submitting = ref(false);
 const countdown = ref(0);
 let countdownTimer: ReturnType<typeof setInterval> | undefined;
-/** 演示态的异步占位，让按钮 loading 与真实接口体验一致 */
-let demoTimer: ReturnType<typeof setTimeout> | undefined;
 
 const maskedPhone = computed(() => {
   const value = phone.value.trim();
@@ -162,41 +156,58 @@ function startCountdown(): void {
   }, 1000);
 }
 
-/** TODO(后端就绪)：替换为 authApi.sendResetCode({ phone }) */
-function sendCode(): void {
-  if (!PHONE_REGEX.test(phone.value.trim())) {
+/** 获取验证码：后端存内存并打印控制台，前端只负责倒计时与防连点 */
+async function sendCode(): Promise<void> {
+  const phoneNo = phone.value.trim();
+  if (!PHONE_REGEX.test(phoneNo)) {
     ElMessage.warning('请输入正确的手机号');
     return;
   }
   if (countdown.value > 0 || sending.value) return;
   sending.value = true;
-  demoTimer = setTimeout(() => {
-    sending.value = false;
+  try {
+    const res = await authApi.sendResetCode({ phone: phoneNo });
+    // 与登录页一致：仅开发环境打印；后端 prod 默认不回显 demoCode，双重保护。
+    if (import.meta.env.DEV && res.data?.demoCode) {
+      console.info(`[森特演示] 找回密码验证码：${phoneNo} 的验证码 ${res.data.demoCode}（60 秒内有效）`);
+    }
+    ElMessage.success('验证码已发送，可在浏览器控制台查看');
     startCountdown();
-    ElMessage.success(`验证码已发送，演示验证码 ${DEMO_CODE}`);
-  }, 400);
+  } catch (e) {
+    ElMessage.error((e as Error).message || '验证码发送失败');
+  } finally {
+    sending.value = false;
+  }
 }
 
-function nextStep(): void {
-  if (!PHONE_REGEX.test(phone.value.trim())) {
+/** 第一步：校验手机号 + 验证码（后端只校验不消费），通过后才进入设置新密码 */
+async function nextStep(): Promise<void> {
+  const phoneNo = phone.value.trim();
+  const codeNo = code.value.trim();
+  if (!PHONE_REGEX.test(phoneNo)) {
     ElMessage.warning('请输入正确的手机号');
     return;
   }
-  if (!code.value.trim()) {
-    ElMessage.warning('请先获取并填写验证码');
+  if (!/^\d{6}$/.test(codeNo)) {
+    ElMessage.warning('请输入 6 位验证码');
     return;
   }
-  if (code.value.trim() !== DEMO_CODE) {
-    ElMessage.error('验证码不正确，请重新输入');
-    return;
+  if (verifying.value) return;
+  verifying.value = true;
+  try {
+    await authApi.verifyResetCode({ phone: phoneNo, code: codeNo });
+    step.value = 2;
+  } catch (e) {
+    ElMessage.error((e as Error).message || '验证码校验失败，请重新获取');
+  } finally {
+    verifying.value = false;
   }
-  step.value = 2;
 }
 
-/** TODO(后端就绪)：替换为 authApi.resetPassword({ phone, code, password }) */
-function submit(): void {
-  if (code.value.trim() !== DEMO_CODE) {
-    ElMessage.error('验证码不正确，请返回上一步重新获取');
+/** 确认重置：后端校验并消费验证码，成功后新密码即时生效 */
+async function submit(): Promise<void> {
+  if (!/^\d{6}$/.test(code.value.trim())) {
+    ElMessage.error('请输入 6 位验证码');
     return;
   }
   if (password.value.length < 6 || password.value.length > 20) {
@@ -208,16 +219,24 @@ function submit(): void {
     return;
   }
   submitting.value = true;
-  demoTimer = setTimeout(() => {
-    submitting.value = false;
+  try {
+    await authApi.resetPassword({
+      phone: phone.value.trim(),
+      code: code.value.trim(),
+      password: password.value,
+      confirmPassword: confirmPassword.value,
+    });
     step.value = 3;
-    ElMessage.success('演示环境：密码校验通过，尚未实际修改服务端密码');
-  }, 500);
+    ElMessage.success('密码重置成功，请使用新密码登录');
+  } catch (e) {
+    ElMessage.error((e as Error).message || '重置失败，请稍后再试');
+  } finally {
+    submitting.value = false;
+  }
 }
 
 onUnmounted(() => {
   if (countdownTimer) clearInterval(countdownTimer);
-  if (demoTimer) clearTimeout(demoTimer);
 });
 </script>
 

@@ -28,10 +28,20 @@
           <h4 class="sub-title">回款记录</h4>
           <div class="sent-form-row">
             <el-button size="small" :loading="loadingRecords" @click="loadRecords()">刷新列表</el-button>
+            <el-button size="small" :loading="exportingRecords" @click="exportRecords">导出 CSV</el-button>
             <el-checkbox v-model="onlyCurrentCustomer" @change="onFilterChange">仅看当前客户</el-checkbox>
+            <BatchDeleteButton
+              v-model:active="recordDeleteMode"
+              :ids="selectedRecords.map((r: any) => String(r.paymentNo))"
+              :summary="`已选择 ${selectedRecords.length} 笔回款`"
+              :delete-fn="(ids, config) => unwrap(financeApi.batchDeletePaymentRecords(ids, config))"
+              @done="onRecordsDeleted"
+            />
             <span class="sent-hint">共 {{ totalRecords }} 笔回款，分页查看</span>
           </div>
-          <el-table :data="records" border size="small" highlight-current-row @current-change="onSelectRecord">
+          <el-table :data="records" border size="small" highlight-current-row @current-change="onSelectRecord"
+                    @selection-change="selectedRecords = $event">
+            <el-table-column v-if="recordDeleteMode" type="selection" width="44" />
             <el-table-column prop="paymentNo" label="回款单号" min-width="160" />
             <el-table-column label="金额" width="120" align="right">
               <template #default="scope">{{ fmtMoney(scope.row.amountCent) }}</template>
@@ -148,9 +158,50 @@
             </div>
             <p class="sent-hint">核销与冲销均为危险操作：需按提示输入确认短语换取一次性令牌，提交前复查过期。</p>
           </div>
+
         </div>
       </el-col>
     </el-row>
+
+    <div class="sent-panel">
+      <h3 class="section-title">核销与冲销明细</h3>
+      <SentTable
+        :columns="writeOffColumns"
+        :rows="writeOffRows"
+        :total="writeOffTotal"
+        :page="writeOffPage"
+        :size="writeOffSize"
+        :loading="loadingWriteOffs"
+        :selectable="writeOffDeleteMode"
+        row-key="id"
+        exportable
+        export-name="核销与冲销明细"
+        :export-rows="exportAllWriteOffs"
+        @selection-change="selectedWriteOffs = $event"
+        @update:page="onWriteOffPage"
+        @update:size="onWriteOffSize"
+        @refresh="loadWriteOffs"
+      >
+        <template #toolbar-actions>
+          <BatchDeleteButton
+            v-model:active="writeOffDeleteMode"
+            :ids="selectedWriteOffs.map((r: any) => String(r.id))"
+            :summary="`已选择 ${selectedWriteOffs.length} 条核销明细`"
+            :delete-fn="(ids, config) => unwrap(financeApi.batchDeleteWriteOffs(ids, config))"
+            @done="onWriteOffsDeleted"
+          />
+        </template>
+        <template #toolbar>
+          <span class="sent-hint">
+            {{ recordForm.customerId ? `仅看客户 ${recordForm.customerId} 的明细` : '全部客户的核销明细' }}
+          </span>
+        </template>
+        <template #col-amountCent="{ row }">{{ fmtMoney(row.amountCent) }}</template>
+        <template #col-createdAtMillis="{ row }">
+          {{ row.createdAtMillis ? fmtDateTime(row.createdAtMillis) : '—' }}
+        </template>
+      </SentTable>
+    </div>
   </div>
 </template>
 
@@ -166,12 +217,17 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'v
 import { useRoute } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { unwrap } from '@/utils/http';
-import { financeApi, type PaymentRecordVO } from '@/api';
-import { fmtMoney, yuanToCent } from '@sent/shared';
+import { financeApi, type PaymentRecordVO, type WriteOffRow } from '@/api';
+import { fmtDateTime, fmtMoney, yuanToCent } from '@sent/shared';
+import { downloadCsv } from '@/utils/exportCsv';
 import { openConfirm } from '@/utils/confirm';
 import { useIdempotencyKey } from '@/utils/idempotent';
-import { usePagination } from '@/composables/usePagination';
+import { useTable } from '@/composables/useTable';
 import StatusTag from '@/components/StatusTag.vue';
+import SentTable from '@/components/SentTable.vue';
+import BatchDeleteButton from '@/components/BatchDeleteButton.vue';
+import { useBatchDelete } from '@/composables/useBatchDelete';
+import type { TableColumn } from '@/components/types';
 
 const route = useRoute();
 const idem = useIdempotencyKey('payment_record');
@@ -183,15 +239,85 @@ const recordForm = reactive({
   serialNo: '',
   remark: '',
 });
-const records = ref<PaymentRecordVO[]>([]);
+const { deleteMode: recordDeleteMode, selected: selectedRecords,
+  onDeleted: onRecordsDeleted } = useBatchDelete(() => loadRecords());
+const exportingRecords = ref(false);
+
+async function exportRecords(): Promise<void> {
+  exportingRecords.value = true;
+  try {
+    // 整表导出由门面用同一套筛选条件拉全，不再手抄一遍翻页循环
+    const all = await fetchAllRecords();
+    downloadCsv('回款记录', [
+      { label: '回款单号', value: (r) => r.paymentNo },
+      { label: '客户ID', value: (r) => r.customerId },
+      { label: '金额(分)', value: (r) => r.amountCent },
+      { label: '已核销(分)', value: (r) => r.writtenOffCent },
+      { label: '流水号', value: (r) => r.serialNo },
+      { label: '状态', value: (r) => r.status },
+      { label: '备注', value: (r) => r.remark ?? '' },
+    ], all);
+  } finally {
+    exportingRecords.value = false;
+  }
+}
+
+const writeOffColumns: TableColumn[] = [
+  { prop: 'id', label: '明细 ID', width: 100 },
+  { prop: 'writeOffNo', label: '核销单号', minWidth: 160 },
+  { prop: 'paymentRecordNo', label: '回款单号', minWidth: 160 },
+  { prop: 'customerId', label: '客户 ID', width: 110 },
+  { prop: 'receivableId', label: '应收 ID', width: 110 },
+  { prop: 'amountCent', label: '核销金额', width: 130, align: 'right' },
+  { prop: 'createdAtMillis', label: '核销时间', width: 170 },
+];
+/**
+ * 核销明细表：同页第二张表，页码不落 sessionStorage（避免与回款主表抢同一个记忆键）。
+ * 失败只展示空表，不弹错。
+ */
+const { rows: writeOffRows, total: writeOffTotal, loading: loadingWriteOffs,
+  page: writeOffPage, size: writeOffSize, load: loadWriteOffs,
+  onPage: onWriteOffPage, onSize: onWriteOffSize,
+  fetchAll: exportAllWriteOffs } = useTable<WriteOffRow>({
+  fetch: (params) => unwrap(financeApi.writeOffs({
+    ...params,
+    customerId: Number(recordForm.customerId) || undefined,
+  })),
+  defaultSize: 10,
+  paginationKey: 'payment-record/write-offs',
+  rememberPagination: false,
+  errorMessage: '',
+  immediate: false,
+});
+const { deleteMode: writeOffDeleteMode, selected: selectedWriteOffs,
+  onDeleted: onWriteOffsDeleted } = useBatchDelete(loadWriteOffs);
+
 const activeRecord = ref<PaymentRecordVO | null>(null);
-const totalRecords = ref(0);
 const onlyCurrentCustomer = ref(false);
+/** 登记成功后要「刷新后停在刚建的那一笔」，由 onLoaded 消费后清空 */
+let preferPaymentNo: string | undefined;
 /** 回款记录分页：真库 483 笔，必须翻页查看；页码/每页条数按路由记忆。 */
-const { page, size } = usePagination({ defaultSize: 10 });
+const { rows: records, total: totalRecords, loading: loadingRecords,
+  page, size, load: loadRecords, onPage: onPageChange, onSize: onSizeChange,
+  onSearch: onFilterChange, fetchAll: fetchAllRecords } = useTable<PaymentRecordVO>({
+  fetch: (params) => unwrap(financeApi.paymentRecords({
+    ...params,
+    customerId: onlyCurrentCustomer.value ? Number(recordForm.customerId) || undefined : undefined,
+  })),
+  defaultSize: 10,
+  errorMessage: '回款列表加载失败',
+  onLoaded: (list) => {
+    const target = preferPaymentNo ?? activeRecord.value?.paymentNo;
+    preferPaymentNo = undefined;
+    activeRecord.value = list.find((item) => item.paymentNo === target)
+      ?? list[0] ?? null;
+  },
+  // 回款记录落地后卡片高度才算定型，这时再量应收表格的可用高度
+  onSettled: () => armFit(),
+  immediate: false,
+});
 const recording = ref(false);
 const submitting = ref(false);
-const loadingRecords = ref(false);
 const loadingReceivables = ref(false);
 
 const receivables = ref<any[]>([]);
@@ -305,49 +431,6 @@ function onSelectRecord(row: PaymentRecordVO | null): void {
   activeRecord.value = row;
 }
 
-/** 真库回款列表：刷新后尽量保持当前选中行（登记/核销/冲销后状态会变）。 */
-async function loadRecords(preferPaymentNo?: string): Promise<void> {
-  loadingRecords.value = true;
-  try {
-    const data = await unwrap(financeApi.paymentRecords({
-      page: page.value,
-      size: size.value,
-      customerId: onlyCurrentCustomer.value ? Number(recordForm.customerId) || undefined : undefined,
-    }));
-    records.value = data?.list ?? [];
-    // Jackson 把 Long 序列化成字符串，分页器只收 Number
-    totalRecords.value = Number(data?.total ?? 0);
-    const target = preferPaymentNo ?? activeRecord.value?.paymentNo;
-    activeRecord.value = records.value.find((item) => item.paymentNo === target)
-      ?? records.value[0] ?? null;
-  } catch (error) {
-    records.value = [];
-    totalRecords.value = 0;
-    ElMessage.error((error as Error)?.message || '回款列表加载失败');
-  } finally {
-    loadingRecords.value = false;
-    // 回款记录落地后卡片高度才算定型，这时再量应收表格的可用高度
-    armFit();
-  }
-}
-
-/** 切客户过滤条件要回到第 1 页，否则会停在「新结果集里不存在的页码」上显示空表。 */
-function onFilterChange(): void {
-  page.value = 1;
-  void loadRecords();
-}
-
-function onPageChange(value: number): void {
-  page.value = value;
-  void loadRecords();
-}
-
-function onSizeChange(value: number): void {
-  size.value = value;
-  page.value = 1;
-  void loadRecords();
-}
-
 async function submitRecord(): Promise<void> {
   const amountCent = yuanToCent(recordForm.amountYuan);
   if (amountCent === null || amountCent <= 0) {
@@ -373,7 +456,8 @@ async function submitRecord(): Promise<void> {
     recordForm.amountYuan = '';
     recordForm.serialNo = '';
     ElMessage.success(`回款登记成功：${vo?.paymentNo ?? ''}`);
-    await loadRecords(vo?.paymentNo);
+    preferPaymentNo = vo?.paymentNo;
+    await loadRecords();
     await loadReceivables();
   } catch (error) {
     ElMessage.error((error as Error)?.message || '登记失败，可直接重试（幂等键已保留）');
@@ -503,6 +587,7 @@ async function writeOff(): Promise<void> {
     ElMessage.success(`核销完成，已关闭 ${vo?.closedReceivableIds?.length ?? 0} 笔应收`);
     await loadRecords();
     await loadReceivables();
+    await loadWriteOffs();
   } catch (error) {
     ElMessage.error((error as Error)?.message || '核销失败');
   } finally {
@@ -537,6 +622,7 @@ async function reverse(): Promise<void> {
     ElMessage.success('回款已冲销');
     await loadRecords();
     await loadReceivables();
+    await loadWriteOffs();
   } catch (error) {
     ElMessage.error((error as Error)?.message || '冲销失败');
   } finally {
@@ -558,6 +644,7 @@ onMounted(() => {
   });
 
   void loadRecords();
+  void loadWriteOffs();
   const fromQuery = String(route.query.receivableId ?? '');
   if (fromQuery) ElMessage.info(`来自应收台账：应收 ${fromQuery}，请先登记该客户的回款`);
 });

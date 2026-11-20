@@ -25,6 +25,13 @@ interface PaginationState {
 export interface PaginationOption {
   /** 无缓存时使用的每页条数，默认 20（商品列表等可传 10）。 */
   defaultSize?: number;
+  /**
+   * 自定义记忆键（默认按 `route.path`）。
+   * 同一路由下有多张表时必须各自指定，否则两张表共用一个键、互相覆盖页码。
+   */
+  key?: string;
+  /** false = 不读也不写 sessionStorage（同页的次要表格用，避免污染主表的记忆） */
+  remember?: boolean;
 }
 
 function readState(key: string): PaginationState | null {
@@ -48,9 +55,10 @@ export function usePagination(options: PaginationOption = {}): {
   size: Ref<number>;
 } {
   const route = useRoute();
-  const key = `${STORAGE_PREFIX}${route.path}`;
+  const key = `${STORAGE_PREFIX}${options.key || route.path}`;
+  const remember = options.remember !== false;
   const defaultSize = options.defaultSize ?? 20;
-  const saved = readState(key);
+  const saved = remember ? readState(key) : null;
 
   const page = ref(saved?.page ?? 1);
   const size = ref(saved?.size ?? defaultSize);
@@ -58,7 +66,7 @@ export function usePagination(options: PaginationOption = {}): {
   watch(
     [page, size],
     ([p, s]) => {
-      if (typeof window === 'undefined') return;
+      if (!remember || typeof window === 'undefined') return;
       try {
         window.sessionStorage.setItem(key, JSON.stringify({ page: p, size: s }));
       } catch {

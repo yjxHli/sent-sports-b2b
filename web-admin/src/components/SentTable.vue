@@ -221,4 +221,15 @@ async function exportCsv(): Promise<void> {
 }
 .sent-table-actions { display: flex; gap: 8px; }
 .sent-table-pager { display: flex; justify-content: flex-end; margin-top: 14px; }
+/**
+ * 左右分栏的窄卡片（企业审核与授信）里，分页器「共 N 条 / 条每页 / 页码 / 前往」一行放不下时，
+ * flex 会把靠左的「条/页」挤出容器左侧、甚至压到侧边栏下面，用户点都点不到。
+ * 允许换行后所有控件始终在可视区内，宽屏下布局与原来一致（只有放不下才折行）。
+ */
+.sent-table-pager :deep(.el-pagination) {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  row-gap: 6px;
+  max-width: 100%;
+}
 </style>

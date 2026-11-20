@@ -41,6 +41,9 @@
             <div class="promo-main__badge">会员日</div>
             <div class="promo-main__title">领券中心</div>
             <p class="promo-main__sub">5 元无门槛 / 满 20 减 10 / 满 80 减 50</p>
+            <p v-if="!isMemberDay" class="promo-main__next" data-testid="member-day-next">
+              下次会员日：{{ nextMemberDayText }}
+            </p>
             <div class="promo-main__cupons">
               <span>¥5</span><span>¥10</span><span>¥50</span>
             </div>
@@ -150,7 +153,7 @@
  */
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { statusLabel, type UserMeVO } from '@sent/shared';
+import { statusLabel, isMemberDay as checkMemberDay, nextMemberDayAt, type UserMeVO } from '@sent/shared';
 import { unwrap } from '@/utils/http';
 import { productApi, type CategoryVO, type CatalogProductVO } from '@/api/product';
 import { profileApi } from '@/api/profile';
@@ -177,9 +180,14 @@ let observer: IntersectionObserver | undefined;
 
 const cartCount = computed(() => cart.totalQty);
 /** 周三(3)/周四(4) 是会员日：顶部大促横幅只在这两天出现 */
-const isMemberDay = computed(() => {
-  const day = new Date().getDay();
-  return day === 3 || day === 4;
+/** 会员日判断走 shared 纯函数（与后端 MemberDayPolicy 同口径），now 每秒刷新保证跨零点自动切换 */
+const now = ref(new Date());
+const isMemberDay = computed(() => checkMemberDay(now.value));
+const nextMemberDayText = computed(() => {
+  const d = nextMemberDayAt(now.value);
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  const week = ['日', '一', '二', '三', '四', '五', '六'][d.getDay()];
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日（周${week}）${pad(d.getHours())}:${pad(d.getMinutes())}`;
 });
 
 /**
@@ -255,10 +263,11 @@ const countdown = ref('00:00:00');
 let clockTimer: ReturnType<typeof setInterval> | undefined;
 
 function tick(): void {
-  const now = new Date();
-  const end = new Date(now);
+  now.value = new Date();
+  const nowDate = now.value;
+  const end = new Date(nowDate);
   end.setHours(23, 59, 59, 999);
-  const diff = Math.max(0, end.getTime() - now.getTime());
+  const diff = Math.max(0, end.getTime() - nowDate.getTime());
   const h = Math.floor(diff / 3_600_000);
   const m = Math.floor((diff % 3_600_000) / 60_000);
   const s = Math.floor((diff % 60_000) / 1000);
@@ -604,6 +613,16 @@ onUnmounted(() => {
   margin: 6px 0 10px;
   font-size: 12px;
   opacity: 0.92;
+}
+.promo-main__next {
+  margin: -4px 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 4px;
+  padding: 4px 6px;
+  line-height: 1.4;
 }
 .promo-main__cupons {
   display: flex;

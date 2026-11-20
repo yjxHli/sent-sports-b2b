@@ -57,12 +57,11 @@
 
 <script setup lang="ts">
 /** 库存列表（P6-29）：四口径 + 可用量 + 安全库存，低于安全库存整行标红 */
-import { onMounted, ref } from 'vue';
+import { ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { ElMessage } from 'element-plus';
 import { unwrap } from '@/utils/http';
 import { stockApi } from '@/api';
-import { usePagination } from '@/composables/usePagination';
+import { useTable } from '@/composables/useTable';
 import { useBatchDelete } from '@/composables/useBatchDelete';
 import SentTable from '@/components/SentTable.vue';
 import StatusTag from '@/components/StatusTag.vue';
@@ -82,42 +81,24 @@ const columns: TableColumn[] = [
   { prop: 'warning', label: '预警', width: 86, align: 'center' },
 ];
 
-const rows = ref<any[]>([]);
-const { deleteMode, selected, onDeleted } = useBatchDelete(load);
-const total = ref(0);
-const { page, size } = usePagination();
-const loading = ref(false);
 const skuKeyword = ref('');
+const { rows, total, loading, page, size, load, onPage, onSize, onSearch } = useTable<any>({
+  fetch: (params) => {
+    const skuId = skuKeyword.value ? Number(skuKeyword.value) : undefined;
+    return unwrap(stockApi.list({
+      ...params,
+      skuId: Number.isFinite(skuId) ? skuId : undefined,
+    }));
+  },
+  errorMessage: '库存台账加载失败',
+});
+const { deleteMode, selected, onDeleted } = useBatchDelete(load);
 
 function isWarning(row: any): boolean {
   return Number(row.availableQty) <= Number(row.safeQty);
 }
 
-async function load(): Promise<void> {
-  loading.value = true;
-  try {
-    const skuId = skuKeyword.value ? Number(skuKeyword.value) : undefined;
-    const data = await unwrap(stockApi.list({
-      page: page.value,
-      size: size.value,
-      skuId: Number.isFinite(skuId) ? skuId : undefined,
-    }));
-    rows.value = data?.list ?? [];
-    total.value = data?.total ?? 0;
-  } catch (error) {
-    rows.value = [];
-    total.value = 0;
-    ElMessage.error((error as Error)?.message || '库存台账加载失败');
-  } finally {
-    loading.value = false;
-  }
-}
 
-function onSearch(): void { page.value = 1; void load(); }
-function onPage(value: number): void { page.value = value; void load(); }
-function onSize(value: number): void { size.value = value; page.value = 1; void load(); }
-
-onMounted(() => { void load(); });
 </script>
 
 <style scoped>

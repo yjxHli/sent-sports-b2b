@@ -9,13 +9,26 @@
         :page="page"
         :size="size"
         :loading="loading"
+        :selectable="deleteMode"
+        row-key="receivableId"
         exportable
         export-name="应收台账"
+        :export-rows="exportAll"
         :operation-width="120"
+        @selection-change="selected = $event"
         @update:page="onPage"
         @update:size="onSize"
         @refresh="load"
       >
+        <template #toolbar-actions>
+          <BatchDeleteButton
+            v-model:active="deleteMode"
+            :ids="selected.map((r: any) => String(r.receivableId))"
+            :summary="`已选择 ${selected.length} 条应收记录`"
+            :delete-fn="(ids, config) => unwrap(financeApi.batchDeleteReceivables(ids, config))"
+            @done="onDeleted"
+          />
+        </template>
         <template #toolbar>
           <el-input-number
             v-model="customerId"
@@ -63,15 +76,16 @@
  * 应收台账（P6-44）：四列金额口径 + 逾期天数标红；核销动作统一跳到回款页完成，
  * 避免在台账页重复实现核销分配逻辑（后端 WriteOffAllocator 才是唯一真源）。
  */
-import { onMounted, ref } from 'vue';
+import { ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { ElMessage } from 'element-plus';
 import { unwrap } from '@/utils/http';
 import { financeApi } from '@/api';
 import { ReceivableStatus, fmtDate, fmtMoney, statusLabel } from '@sent/shared';
-import { usePagination } from '@/composables/usePagination';
+import { useTable } from '@/composables/useTable';
 import SentTable from '@/components/SentTable.vue';
 import StatusTag from '@/components/StatusTag.vue';
+import BatchDeleteButton from '@/components/BatchDeleteButton.vue';
+import { useBatchDelete } from '@/composables/useBatchDelete';
 import type { TableColumn } from '@/components/types';
 
 const router = useRouter();
@@ -90,36 +104,27 @@ const columns: TableColumn[] = [
   { prop: 'status', label: '状态', width: 120, align: 'center' },
 ];
 
-const rows = ref<any[]>([]);
-const total = ref(0);
-const { page, size } = usePagination();
-const loading = ref(false);
 const customerId = ref<number | undefined>(undefined);
 const status = ref<string>('');
 /** 订单号模糊搜索：台账动辄几百行，必须下推 SQL 收敛 */
 const orderNo = ref('');
-
-async function load(): Promise<void> {
-  loading.value = true;
-  try {
-    const data = await unwrap(financeApi.receivables({
-      page: page.value,
-      size: size.value,
-      customerId: customerId.value,
-      status: status.value || undefined,
-      orderNo: orderNo.value.trim() || undefined,
-    }));
-    const list = data?.list ?? [];
-    rows.value = status.value ? list.filter((item: any) => item.status === status.value) : list;
-    total.value = status.value ? rows.value.length : (data?.total ?? 0);
-  } catch (error) {
-    rows.value = [];
-    total.value = 0;
-    ElMessage.error((error as Error)?.message || '应收台账加载失败');
-  } finally {
-    loading.value = false;
-  }
-}
+const { rows, total, loading, page, size, load, onPage, onSize, onSearch,
+  fetchAll: exportAll } = useTable<any>({
+  fetch: (params) => unwrap(financeApi.receivables({
+    ...params,
+    customerId: customerId.value,
+    status: status.value || undefined,
+    orderNo: orderNo.value.trim() || undefined,
+  })),
+  // 状态已由后端按 status 过滤，这里只兜底剔除服务端漏掉的异常行（保持行数与 total 一致）
+  transform: ({ list, total: count }) => {
+    if (!status.value) return { list, total: count };
+    const filtered = list.filter((item: any) => item.status === status.value);
+    return { list: filtered, total: filtered.length };
+  },
+  errorMessage: '应收台账加载失败',
+});
+const { deleteMode, selected, onDeleted } = useBatchDelete(load);
 
 function goWriteOff(row: any): void {
   void router.push({
@@ -127,12 +132,6 @@ function goWriteOff(row: any): void {
     query: { customerId: String(row.customerId), receivableId: String(row.receivableId) },
   });
 }
-
-function onSearch(): void { page.value = 1; void load(); }
-function onPage(value: number): void { page.value = value; void load(); }
-function onSize(value: number): void { size.value = value; page.value = 1; void load(); }
-
-onMounted(() => { void load(); });
 </script>
 
 <style scoped>

@@ -22,6 +22,8 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
     'customer:read', 'customer:audit', 'customer:transfer', 'customer:grant', 'customer:adjust',
     'member:config', 'member:grant', 'member:adjust',
   ] },
+  // 券模板管理与发券分属两域（R15）：建券需要独立权限点，发券仍归 customer:grant
+  { label: '优惠券', codes: ['coupon:template:manage'] },
   { label: '客服', codes: [
     'chat:serve', 'chat:presence', 'chat:assign', 'chat:transfer', 'chat:close',
     'chat:create', 'chat:send', 'chat:note', 'chat:audit',
