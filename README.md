@@ -6,9 +6,9 @@
 
 [![Build](https://img.shields.io/badge/build-passing-brightgreen?style=flat-square)](#-测试与质量)
 [![Coverage](https://img.shields.io/badge/coverage-80%25%2B-brightgreen?style=flat-square)](#-测试与质量)
-[![Unit Tests](https://img.shields.io/badge/unit_tests-1022_passed-success?style=flat-square)](#-测试与质量)
-[![Integration](https://img.shields.io/badge/integration-55_(Testcontainers)-blue?style=flat-square)](#-测试与质量)
-[![E2E](https://img.shields.io/badge/E2E-117_passed-success?style=flat-square)](#-测试与质量)
+[![Unit Tests](https://img.shields.io/badge/unit_tests-1233_passed-success?style=flat-square)](#-测试与质量)
+[![Integration](https://img.shields.io/badge/integration-66_(Testcontainers)-blue?style=flat-square)](#-测试与质量)
+[![E2E](https://img.shields.io/badge/E2E-123_passed-success?style=flat-square)](#-测试与质量)
 [![Java](https://img.shields.io/badge/Java-17-orange?style=flat-square&logo=openjdk)](#-技术栈)
 [![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.2.5-6DB33F?style=flat-square&logo=springboot)](#-技术栈)
 [![Vue](https://img.shields.io/badge/Vue-3.4-42b883?style=flat-square&logo=vuedotjs)](#-技术栈)
@@ -27,16 +27,16 @@
 
 ## 📖 项目简介
 
-森特体育用品管理系统是一个**模块化单体（Modular Monolith）**架构的 B2B 电商与经营管理中台：企业客户认证与授信、阶梯价 / 一客一价、购物车与下单、模拟支付与退款、定制图稿多版本审核、库存与部分发货、应收核销与发票 PDF、**四类券型的优惠券营销体系**、会员积分、收藏与足迹、站内信、带图实时客服与质检、批量软删除，以及配套的管理后台与商城前台。
+森特体育用品管理系统是一个**模块化单体（Modular Monolith）**架构的 B2B 电商与经营管理中台：企业客户认证与授信、验证码登录与找回密码、阶梯价 / 一客一价、购物车与下单、模拟支付与退款、定制图稿多版本审核、库存与部分发货、应收核销与发票 PDF、**四类券型的优惠券营销体系（含会员日门禁）**、会员积分抵扣闭环、收藏与足迹、站内信、带图实时客服与质检、违禁词风控、批量软删除，以及配套的管理后台与商城前台。
 
 后端按业务域拆成 **20 个模块包**（`auth / customer / member / product / stock / cart / order / payment / refund / customize / coupon / finance / chat / notify / report / file / job / system / common / web`），跨模块只允许经由对方 `service` 接口调用 —— 这条边界由 **ArchUnit 规则**在构建期强制守住，不必等到运行期才发现依赖腐化。
 
 | 维度 | 规模 |
 |---|---|
-| 后端源码 | 645 个 Java 文件 / 20 个业务模块 / 180 个 REST 端点 / 1 个 WebSocket 端点 |
-| 数据模型 | 44 个 Flyway 迁移（V1 → V44）/ 62 张表 / 44 个具名唯一索引 |
-| 前端 | 双端 81 个 `.vue` + 65 个 `.ts`，商城 **28 个路由**、管理端 **35 个路由** |
-| 测试 | 1022 单元测试 + 55 集成测试（15 个 `*IT`）+ 117 条 Playwright E2E 用例（66 个 spec） |
+| 后端源码 | 701 个 Java 文件 / 20 个业务模块 / 203 个 REST 端点 / 1 个 WebSocket 端点 |
+| 数据模型 | 49 个 Flyway 迁移（V1 → V49）/ 63 张表 / 46 个具名唯一索引 |
+| 前端 | 双端 84 个 `.vue` + 68 个 `.ts`，商城 **24 个业务路由**、管理端 **37 个业务路由** |
+| 测试 | 1233 单元测试 + 66 集成测试（19 个 `*IT`）+ 123 条 Playwright E2E 用例（70 个 spec） |
 
 ---
 
@@ -47,14 +47,15 @@
 ```
 ┌─ ① 客户端层 ──────────────────────────────────────────────
 │  商城端  web-user  :5173        管理端  web-admin  :5174 /admin/
-│  首页 · 分类/搜索 · 商品详情 · 领券中心 · 购物车 · 结算 · 订单 · 售后
+│  首页 · 分类/搜索 · 商品详情 · 领券中心(会员日) · 购物车 · 结算 · 订单 · 售后
 │  收藏夹 · 足迹 · 会员中心 · 我的券 · 站内信 · 在线客服(WS) · 团购专区
-│  工作台 · 商品 · 库存 · 订单 · 财务 · 定制审核 · 客服 · 券管理 · 报表 · 系统
+│  登录引导/注册 · 验证码登录 · 忘记密码 · 企业自助注册/审核进度
+│  工作台 · 商品 · 库存 · 订单 · 财务 · 定制审核 · 客服 · 券管理 · 报表 · 系统（含违禁词库）
 └──────────────────────────────────────────────────────────
                         │  /api/**   +   /ws/chat
                         ▼
 ┌─ ② 接入层 ────────────────────────────────────────────────
-│  AuthFilter（双 Token）· DataScope（数据权限）· RateLimit · 幂等拦截 · 二次确认
+│  AuthFilter（双 Token）· DataScope（数据权限）· RateLimit · 幂等拦截 · 二次确认 · 短信验证码
 └──────────────────────────────────────────────────────────
                         ▼
 ┌─ ③ 业务域（模块化单体，跨模块只走 service 接口）─────────────
@@ -65,7 +66,7 @@
 │  横切：file(内容寻址) · job(10 个定时任务) · report(报表) · common
 └──────────────────────────────────────────────────────────
                         ▼
-      MySQL 8.0（62 表 / Flyway V1→V44） + 本地内容寻址文件库
+      MySQL 8.0（63 表 / Flyway V1→V49） + 本地内容寻址文件库
 ```
 
 **一条主链路的完整生命周期**：
@@ -172,6 +173,24 @@ Files.write(target, content, CREATE_NEW, WRITE);              // 绝非「覆盖
 ```
 
 > `ChatMsgType` 还有一个 `ORDER` 类型：消息体里存订单摘要 JSON（订单号/状态/应付金额），双方渲染成**订单卡片**，点开跳订单详情 —— 订单本体仍只在 `orders` 表里，聊天记录里不会留着过期快照。
+
+> **敏感词风控（2026-11-19）**：聊天消息在 `SendMessageUseCase`（REST 兜底）与
+> `ChatWebSocketHandler`（MSG 帧）**两处同口径**拦截 —— 命中即 `BizException(40003)`，
+> 不落库、不推送、不消耗会话序号。客户端收到 `code=40003` 的 ACK 后撤回乐观气泡，
+> **把原文还回输入框**让用户自己改（不做 `**` 打码，否则用户不知道哪几个字犯了规）。
+> 匹配用 `common/util/SensitiveWordFilter`：把词库编译成前缀树（DFA）后整棵替换，
+> 复杂度 O(文本长度 × 最长词长)，与词库规模无关；词库**只收完整词组**（不收「操」这种单字），
+> 避免「操作」「操场」被误杀。昵称/登录名同受管控（注册、改资料、建员工账号 → `400`，
+> 文案「昵称/用户名包含违禁词，请修改后重试」）。`TEXT` 之外的消息（`IMAGE` 的 fileId、
+> `ORDER` 的 JSON）不做文本匹配，避免误杀正常业务消息。
+>
+> **词库在管理端维护（V46）**：`系统管理 → 违禁词库`（`/system/sensitive-words`）支持按
+> 词/备注搜索、按分类（辱骂脏话 / 广告导流 / 违法违禁 / 其他）与启停筛选、增删改与启停开关。
+> 词表落 `sys_sensitive_word`（唯一键 `word`，物理删除），**每次写操作后重建前缀树**，
+> 保存即生效、不需要重启；启动时由 `SensitiveWordBootstrap` 用 DB 启用词整体覆盖 classpath 兜底词库
+> （`sensitive_words.txt` 仅作为首次建库的种子与单测样本）。权限点 `system:sensitive:manage`。
+> 因为 `SensitiveWordFilter` 用 `volatile` 持有不可变词树，换词是**原子替换引用**，
+> 读线程不会读到「删了一半」的中间态。
 
 ---
 
@@ -300,6 +319,30 @@ public long discountFor(long eligibleCent) {
 - **可用性判定要带商品**：`GET /api/coupons/usable?skuIds=...`，否则品类券永远「看起来可用」。
 - **用户券是模板快照**：改模板不影响已领取的券，历史订单不因运营改价而错乱。
 - **管理端两条入口**：`/customer/coupon-template` 建券（可限定 SPU/SKU，商品从公开目录搜索）+ `/customer/coupon` 发放与核销记录，两处都带分页、批量软删除与全量导出。
+- **会员日门禁**：会员日 = **每周三、周四**，仅会员日可从领券中心领券；门禁在原子扣库存**之前**，非会员日领券直接拒绝并在前端显示下次会员日倒计时。有效期唯一真源是 `MemberDayPolicy.claimValidDays`（¥5 无门槛 3 天 / 其他无门槛 7 天 / 满减 15 天 / 其余沿用模板），前端 `shared/format` 用同口径，不在 UI 复制规则。
+
+#### 3.7 积分抵扣闭环：试算 / 实扣 / 退回 / 幂等
+
+```
+结算试算 checkout-preview → 展示可抵扣上限（积分余额 与 应付额 30% 双重约束）
+   → 下单只记抵扣额（不动余额）→ 支付成功真实扣减（余额「刚好」减少抵扣额，多扣少扣都算 bug）
+   → 整单退款退回积分 → 积分流水按「客户+来源类型+来源单号」唯一键去重（V47）
+```
+
+- **上限口径**：积分抵扣 ≤ min(可用积分余额, 订单应付额 × 30%)，30% 上限由 `PointFacade → PointDeduction` 唯一给出；结算页展示、下单落库、订单详情三处金额逐字一致。
+- **幂等**：积分流水落 `uk_point_source(customer_id, source_type, source_id)`（V47），由 `INSERT IGNORE` 承担幂等，支付回调重放 / 退款重试不会重复入账或重复退分；手工调整流水不带来源（NULL 不冲突）。
+- **闭环修复**：自动确认收货、超时关闭、整单退款三条链路都走用例层，确保积分与成长值**发得出也退得回**（E2E `point-deduct-ui-flow` / `RefundPointsIT` / `RefundReturnPointsIT` 锁死）。
+
+#### 3.8 短信验证码登录 / 找回密码：按用途隔离的一次性码
+
+```
+发送短信 → SmsCodeStore 键 = scope:phone（LOGIN / RESET 互不覆盖、互不通用）
+   → verify() 只校验不消费（找回密码第一步）→ verifyAndConsume() 校验并删除（登录/重置）
+```
+
+- 登录码与找回密码码**按用途隔离**：同一手机号同时请求两种码，互不覆盖、互不通用。
+- 验证码**一次性消费**，60s 倒计时防连点；dev 环境复用 `app.sms.expose-demo-code` 回显到控制台，无需真实短信通道。
+- 未注册手机号统一返回 `PHONE_NOT_REGISTERED`，登录页据此跳注册引导并回填手机号；企业账号即便验证码正确仍需审核通过，避免绕过企业门禁。
 
 ---
 
@@ -307,21 +350,21 @@ public long discountFor(long eligibleCent) {
 
 | 域 | 已交付能力 |
 |---|---|
-| 认证与权限 | 双令牌登录 / 刷新 / 登出、`token_version` 强制下线、角色-权限点矩阵、员工登录名（与工号分离）、数据权限（`DataScope`）、二次确认令牌（`X-Confirm-Token`，用后即焚）、接口限流 |
-| 客户 | 企业认证自助注册与审核、授信额度与占用、客户档案、连续登录失败锁定、收货地址簿（默认地址唯一） |
+| 认证与权限 | 双令牌登录 / 刷新 / 登出、验证码登录 / 找回密码（按用途隔离的一次性码）、登录引导与自助注册、`token_version` 强制下线、角色-权限点矩阵、员工登录名（与工号分离）、数据权限（`DataScope`）、二次确认令牌（`X-Confirm-Token`，用后即焚）、接口限流 |
+| 客户 | 企业认证自助注册与审核、审核进度查询、授信额度与占用、客户档案、连续登录失败锁定、收货地址簿（默认地址唯一） |
 | 商品 | SPU/SKU、分类、上下架、**五级取价策略链**（一客一价 / 协议 / 阶梯 / 会员 / 零售）、收藏、足迹、搜索与筛选 |
 | 库存 | 预占/释放/出库、入库单、报损单、盘点单、库存流水、安全库存预警 |
 | 交易 | 购物车、结算取价（策略链 + 券抵扣 + 积分抵扣 + 运费）、下单幂等、部分发货、确认收货、超时取消、自动确认收货 |
-| 营销 | **优惠券四类券型**、领券中心、结算逐行抵扣、发放记录、券模板管理（限定 SPU/SKU）、注册自动发券、批量软删除与全量导出 |
-| 支付退款 | Mock 支付网关与回调验签、部分/整单退款、退款审核（含凭证图片与申诉次数）、可退额度溢出校验（`REFUND_OVERFLOW` 40940） |
-| 定制 | 图稿多版本上传与审核（`uk_review_once` 防重复审核）、生产流转、定制费用（10 元/件）并入订单 |
+| 营销 | **优惠券四类券型**、领券中心（会员日门禁 + 倒计时）、结算逐行抵扣、发放记录、券模板管理（限定 SPU/SKU）、注册自动发券、批量软删除与全量导出 |
+| 支付退款 | Mock 支付网关与回调验签、部分/整单退款、退款审核（含凭证图片与申诉次数）、**退款单状态机**（审核 / 申诉 / 退款成败）、可退额度溢出校验（`REFUND_OVERFLOW` 40940） |
+| 定制 | 图稿多版本上传与审核（`uk_review_once` 防重复审核）、生产流转、定制费用（10 元/件，单一计费引擎 `CustomFeeFacade`，yml 调价）并入订单 |
 | 财务 | 应收台账与核销、合同与到期提醒、付款记录、发票申请与 **PDF 现场渲染** |
-| 会员 | 积分获取/扣减/过期、等级与有效期、会员中心聚合页 |
+| 会员 | 积分获取/扣减/过期、结算积分抵扣（30% 上限 + 支付实扣 + 退款退回 + 流水幂等）、等级与有效期、会员中心聚合页 |
 | 客服 | 会话创建/分配/转接/关闭、排队补位、在线状态、带图对话、订单卡片、SLA 提醒、会话质检与审计、满意度评价、坐席绩效指标、空闲超时自动结束 |
 | 通知 | 站内信（未读红点单一真源）、业务事件通知 |
 | 报表 | 经营看板、销售趋势、销售排行、库存预警 |
 | 运维 | 10 个定时任务（超时取消 / 自动收货 / 积分过期 / 合同提醒 / 应收逾期 / SLA / 库存预警 / WS 心跳 / 在线回收 / 会话超时）、操作日志、批量软删除（订单 / 退款 / 发票 / 合同 / 定制 / 库存 / 券） |
-| 系统 | 员工与角色、业务参数（9 项）、操作日志、接口与权限点配置 |
+| 系统 | 员工与角色、业务参数（9 项）、操作日志、接口与权限点配置、**违禁词库管理**（分类 / 启停 / 即时生效，DFA 前缀树） |
 
 ---
 
@@ -337,14 +380,14 @@ sent-sports-b2b/
 │   │   └── common/                  # 领域基座：error/idempotent/ratelimit/storage/interceptor
 │   ├── src/main/resources/
 │   │   ├── application{,-dev,-test,-prod}.yml
-│   │   └── db/migration/            # Flyway V1 → V44（62 张表）
-│   └── src/test/java/               # 单元测试 + integration/*IT（Testcontainers，15 个）
+│   │   └── db/migration/            # Flyway V1 → V49（63 张表）
+│   └── src/test/java/               # 单元测试 + integration/*IT（Testcontainers，19 个）
 ├── web-admin/                       # 管理端 Vue3（dev :5174，base /admin/）
 ├── web-user/                        # 商城端 Vue3（dev :5173，base /）
 ├── packages/shared/                 # 双端共享 HTTP 内核 / TokenStorage / 类型 / 格式化
-├── e2e/                             # Playwright 用例（66 个 spec / 117 条用例）
+├── e2e/                             # Playwright 用例（70 个 spec / 123 条用例）
 ├── docker/                          # docker-compose.yml + nginx.conf
-├── docs/                            # DEPLOYMENT.md、prod-deploy-checklist.md
+├── docs/                            # DEPLOYMENT.md、prod-deploy-checklist.md、设计模式审计报告
 ├── specs/                           # 设计与任务文档（历史快照，实现以代码为准）
 ├── .env.example                     # 环境变量模板（仅占位值，可安全提交）
 └── .github/workflows/ci.yml         # CI：后端单测 + 双端构建
@@ -382,7 +425,7 @@ curl -s http://127.0.0.1:8088/actuator/health      # {"status":"UP"}
 | 管理端 | `http://localhost/admin/` |
 | 后端 API | `http://localhost:8088/api/**`（经 Nginx 反代对外） |
 
-> 后端固定 **8088**（8080 常被 Steam 等软件抢占）。首次启动由 Flyway 自动建表（V1 → V44）；`APP_ENV=prod` 下未注入 `JWT_SECRET` / `PAY_MOCK_SECRET` 时会**拒绝启动**，这是刻意的 fail-closed 设计。
+> 后端固定 **8088**（8080 常被 Steam 等软件抢占）。首次启动由 Flyway 自动建表（V1 → V49）；`APP_ENV=prod` 下未注入 `JWT_SECRET` / `PAY_MOCK_SECRET` 时会**拒绝启动**，这是刻意的 fail-closed 设计。
 
 ### 路线 B：本地开发（改代码用）
 
@@ -442,6 +485,9 @@ curl -s http://127.0.0.1:8088/actuator/health                                # {
 | `CHAT_IDLE_MINUTES` | `10` | 客服会话空闲超时（分钟），客户无消息即自动结束 —— **唯一真源** |
 | `APP_CORS_ORIGINS` | 本机两个 dev server | 跨域白名单，逗号分隔；生产必须改成真实域名 |
 | `UPLOAD_BASE_DIR` | `./data/upload` | 文件服务根目录（内容寻址落盘位置） |
+| `APP_SENSITIVE_WORDS_FILE` | `sensitive_words.txt` | 违禁词库 classpath 文件；词库缺失即启动失败（风控静默失效比启动失败更危险） |
+| `CUSTOM_FEE_SINGLE_CENT` | `1000` | UV 定制服务费单价（分/件，单面）；购物车试算与下单共用同一引擎，调价只改这里 |
+| `app.sms.expose-demo-code` | `false`（dev 为 `true`） | 验证码回显开关，仅 dev 开启；prod 恒 false，验证码绝不回显 |
 | `REDIS_*` | 空 | Redis 可选；本地不启用不影响主流程 |
 | `JOB_*_MS` | `60000` | 各定时任务间隔（详见 `application.yml`） |
 | `INVOICE_*` | 虚构演示值 | 发票销售方信息，**禁止用于真实开票** |
@@ -463,6 +509,8 @@ curl -s http://127.0.0.1:8088/actuator/health                                # {
 
 登录请求体：`{ "username": "...", "password": "...", "aud": "admin|user", "deviceId": "..." }` —— 用户端必须 `aud=user`，否则返回 `50001`。
 
+验证码登录（仅商城客户）：`POST /api/auth/sms-code`（获取码）→ `POST /api/auth/login/by-code`（`{phone, code, deviceId}`）；找回密码走 `POST /api/auth/reset/sms-code` → `/reset/verify-code`（只校验不消费）→ `/reset/password`（消费）。dev 下验证码回显在后端控制台与 `/auth/sms-code` 响应里，prod 不回显。
+
 > 口令目前是**明文占位实现**，上线前必须替换为 BCrypt。
 
 ---
@@ -472,16 +520,16 @@ curl -s http://127.0.0.1:8088/actuator/health                                # {
 ```
     ┌─ Backend   ─  mvn -o clean verify          →  单测 + IT + ArchUnit + JaCoCo
     ├─ Frontend  ─  vue-tsc -b && vite build     →  两端 0 error
-    └─ E2E       ─  npx playwright test          →  117 passed
+    └─ E2E       ─  npx playwright test          →  123 passed
 ```
 
 | 层级 | 数量 | 说明 |
 |---|---:|---|
-| 单元测试（Surefire） | **1022** | JUnit 5 + Mockito + AssertJ，0 失败 0 跳过 |
-| 集成测试（Failsafe） | **55** | 15 个 `*IT`，Testcontainers 拉起真 MySQL |
+| 单元测试（Surefire） | **1233** | JUnit 5 + Mockito + AssertJ，0 失败 0 跳过 |
+| 集成测试（Failsafe） | **66** | 19 个 `*IT`，Testcontainers 拉起真 MySQL |
 | 架构约束（ArchUnit） | **4** | 分层与依赖边界，违反即构建失败 |
-| E2E（Playwright） | **117** | 66 个 spec，全绿，单 worker 稳定串行（约 10 分钟） |
-| 行覆盖率（JaCoCo） | **80.1%** | 域层 + `common/util` 口径 **93.8%** |
+| E2E（Playwright） | **123** | 70 个 spec，全绿，单 worker 稳定串行（约 10 分钟） |
+| 行覆盖率（JaCoCo） | **81.2%** | 域层 + `common/util` 口径 **94.2%** |
 
 ```bash
 # 后端全量门禁：单测 + IT(Testcontainers) + ArchUnit + JaCoCo check
@@ -513,7 +561,7 @@ cd e2e && npx playwright test --output runs/$(date +%Y%m%d-%H%M)
 - 手机号使用 `1380000900x` / `1390000910x` / `13800138000` 等示例号段；邮箱使用保留域 `.test` / `example.com`。
 - 统一社会信用代码、发票代码、银行账号均含 `XXXXXXXX` / `DEMO-` / 全零等占位特征，**不可用于真实开票或结算**；发票销售方信息可经 `INVOICE_SELLER_*` 覆盖。
 - 商品图片使用占位图源；支付通道为可复现的 Mock 网关，不连接任何真实支付机构。
-- 种子数据位于 `server/src/main/resources/db/migration/V11`~`V15`、`V29`、`V42`~`V44` 与 `DemoDataGenerator`。
+- 种子数据位于 `server/src/main/resources/db/migration/V11`~`V15`、`V29`、`V42`~`V49` 与 `seed/DemoDataGenerator`。
 
 **已完成的加固**
 
@@ -557,7 +605,7 @@ git ls-files | grep -Ei '(^|/)(target|node_modules|dist|logs)/|\.log$|\.pem$|\.k
 1. Fork → 建分支（`feat/xxx`、`fix/xxx`、`docs/xxx`）。
 2. 提交前必须过门禁：`mvn -o clean verify` + 双端 `build` + `npx playwright test`。
 3. 遵循既有边界：新增跨模块调用必须走 `service` 接口，否则 ArchUnit 会拦下你的 PR。
-4. 新增表结构只能**追加** Flyway 迁移（当前最新 `V44`，下一个是 `V45__xxx.sql`），不得修改历史迁移（会破坏 `sent_test` 校验和）。
+4. 新增表结构只能**追加** Flyway 迁移（当前最新 `V49`，下一个是 `V50__xxx.sql`），不得修改历史迁移（会破坏 `sent_test` 校验和）。
 5. Commit 信息用中文或英文均可，但需说明「改了什么 + 为什么」。
 
 ---
