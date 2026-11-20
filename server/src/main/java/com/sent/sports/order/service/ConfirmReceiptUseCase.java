@@ -6,15 +6,13 @@ import com.sent.sports.common.error.ErrorCode;
 import com.sent.sports.finance.service.OrderSettlementService;
 import com.sent.sports.member.service.MemberRewardService;
 import com.sent.sports.order.domain.Order;
+import com.sent.sports.order.domain.OrderAction;
 import com.sent.sports.order.domain.OrderItem;
-import com.sent.sports.order.domain.OrderStatus;
 import com.sent.sports.order.repository.OrderRepository;
 import com.sent.sports.order.service.dto.ConfirmReceiptCmd;
 import com.sent.sports.order.service.dto.ConfirmReceiptResult;
 import com.sent.sports.order.service.dto.ReceiveLineCmd;
 
-import java.util.List;
-import java.util.Optional;
 import org.springframework.stereotype.Service;
 
 /**
@@ -24,8 +22,6 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class ConfirmReceiptUseCase {
-
-    private static final List<OrderStatus> RECEIVABLE = List.of(OrderStatus.WAIT_RECEIVE);
 
     private final OrderRepository orderRepository;
     private final MemberRewardService memberRewardService;
@@ -42,7 +38,8 @@ public class ConfirmReceiptUseCase {
     public ConfirmReceiptResult confirm(ConfirmReceiptCmd cmd) {
         Order order = orderRepository.findByOrderNo(cmd.orderNo())
                 .orElseThrow(() -> new BizException(ErrorCode.PARAM_INVALID, "订单不存在"));
-        if (!RECEIVABLE.contains(order.getStatus())) {
+        // 准入由状态机单一裁决：WAIT_RECEIVE / PART_SHIPPED 可确认，其余一律 40901
+        if (!order.canTransit(OrderAction.CONFIRM_RECEIVE)) {
             throw new BizException(ErrorCode.STATE_CONFLICT, "订单当前状态不可确认收货");
         }
 
@@ -67,7 +64,7 @@ public class ConfirmReceiptUseCase {
 
         boolean allReceived = order.getItems().stream().allMatch(OrderItem::isFullyReceived);
         if (allReceived) {
-            order.setStatus(OrderStatus.COMPLETED);
+            order.transit(OrderAction.CONFIRM_RECEIVE);
             // 成长值流水 / 客户余额经 member → customer 门面真实落账
             memberRewardService.grantOrderCompleted(order.getCustomerId(),
                     order.getOrderNo(), order.getPayableCent());

@@ -12,6 +12,7 @@ import com.sent.sports.coupon.mapper.po.CouponTemplatePO;
 import com.sent.sports.coupon.mapper.po.CustomerCouponPO;
 import com.sent.sports.coupon.service.CouponAssembler;
 import com.sent.sports.coupon.service.CouponQueryService;
+import com.sent.sports.coupon.service.MemberDayPolicy;
 import com.sent.sports.customer.service.CustomerQueryService;
 import com.sent.sports.product.service.ProductQueryService;
 import org.springframework.stereotype.Service;
@@ -22,11 +23,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 @Service
 public class CouponQueryServiceImpl implements CouponQueryService {
-
-    private static final String CUSTOMER_ENTERPRISE = "ENTERPRISE";
 
     private final CouponMapper couponMapper;
     private final CouponTemplateMapper templateMapper;
@@ -58,36 +58,37 @@ public class CouponQueryServiceImpl implements CouponQueryService {
     @Override
     public List<CouponDtos.CouponVO> listUsable(long customerId, long goodsCent, List<Long> skuIds) {
         LocalDateTime now = LocalDateTime.now();
+        String customerType = customerQueryService.typeOf(customerId);
         List<Long> skus = skuIds == null ? List.of() : skuIds.stream()
                 .filter(id -> id != null && id > 0L).distinct().toList();
+        // SPU 映射懒查：券列表里只要没有「按 SPU 限定」的券，就一次商品库都不用打
+        AtomicReference<Map<Long, Long>> spuCache = new AtomicReference<>();
         return couponMapper.selectByCustomer(customerId).stream()
                 .filter(po -> {
                     Coupon coupon = CouponAssembler.toDomain(po);
-                    if (coupon.isEnterpriseOnly()
-                            && !CUSTOMER_ENTERPRISE.equals(customerQueryService.typeOf(customerId))) {
-                        return false;
-                    }
-                    if (!coupon.usableFor(goodsCent, now)) {
-                        return false;
-                    }
-                    return inScope(coupon, skus);
+                    // 只判可用性，行金额传 0：门槛按整单 goodsCent 判（与前端入参同口径）
+                    List<Coupon.Line> rows = skus.stream()
+                            .map(skuId -> new Coupon.Line(skuId,
+                                    spuIdsFor(coupon, skus, spuCache).get(skuId), 0L))
+                            .toList();
+                    return coupon.applicability(customerType, goodsCent, rows, now).usable();
                 })
                 .map(po -> toVO(po, now))
                 .toList();
     }
 
-    /**
-     * 品类券的可用性：购物车里有命中 SPU/SKU 的商品才算可用。
-     * 没有传 SKU（老调用方）时不做范围判断，保持历史行为。
-     */
-    private boolean inScope(Coupon coupon, List<Long> skus) {
-        if (skus.isEmpty() || Coupon.SCOPE_ALL.equals(coupon.scopeType())) {
-            return true;
+    /** SPU 映射按请求懒加载一次：品类券之外不查，且同一次列表请求内只查一次。 */
+    private Map<Long, Long> spuIdsFor(Coupon coupon, List<Long> skus,
+                                      AtomicReference<Map<Long, Long>> cache) {
+        if (!Coupon.SCOPE_SPU.equals(coupon.scopeType())) {
+            return Map.of();
         }
-        Map<Long, Long> spuIds = Coupon.SCOPE_SPU.equals(coupon.scopeType())
-                ? productQueryService.spuIdsOfSkus(skus)
-                : Map.of();
-        return skus.stream().anyMatch(skuId -> coupon.matchesSku(skuId, spuIds.get(skuId)));
+        Map<Long, Long> loaded = cache.get();
+        if (loaded == null) {
+            loaded = productQueryService.spuIdsOfSkus(skus);
+            cache.set(loaded);
+        }
+        return loaded;
     }
 
     @Override
@@ -113,7 +114,7 @@ public class CouponQueryServiceImpl implements CouponQueryService {
 
     @Override
     public List<CouponDtos.ClaimableVO> listClaimable(long customerId) {
-        boolean enterprise = CUSTOMER_ENTERPRISE.equals(customerQueryService.typeOf(customerId));
+        boolean enterprise = Coupon.CUSTOMER_ENTERPRISE.equals(customerQueryService.typeOf(customerId));
         Set<Long> claimed = customerId <= 0L ? Set.of()
                 : new HashSet<>(couponMapper.selectClaimedTemplateIds(customerId));
         return templateMapper.selectClaimable().stream()
@@ -123,7 +124,9 @@ public class CouponQueryServiceImpl implements CouponQueryService {
                         po.getThresholdCent(), po.getCouponType(), po.getDiscountType(),
                         po.getDiscountRate(), po.getScopeType(), po.getScopeIds(),
                         po.getCustomerScope(), po.getValidDays(), remainQty(po),
-                        claimed.contains(po.getId())))
+                        claimed.contains(po.getId()),
+                        MemberDayPolicy.claimValidDays(po.getCouponType(), po.getAmountCent(),
+                                po.getValidDays())))
                 .toList();
     }
 

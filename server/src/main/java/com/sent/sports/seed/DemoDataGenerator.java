@@ -1,6 +1,6 @@
-package com.sent.sports.job.seed;
+package com.sent.sports.seed;
 
-import com.sent.sports.common.storage.LocalFileStorage;
+import com.sent.sports.common.storage.Storage;
 import com.sent.sports.common.util.IdGen;
 import com.sent.sports.customer.mapper.CustomerMapper;
 import com.sent.sports.customer.mapper.po.CustomerPO;
@@ -67,8 +67,10 @@ import java.util.UUID;
  * <p><b>时间分布</b>：所有业务时间落在 {@code [now-180d, now]}，且用三次方偏置让「近期更密集」，
  * 以贴合真实运营曲线。历史时间直接写进 {@code created_at/updated_at}（MetaObjectHandler 仅对 null 字段回填，故手动赋值即生效）。</p>
  *
- * <p><b>架构合规</b>：本类位于 {@code job.seed} 包，受 ArchUnit 规则 4 豁免（规则 4 仅约束
- * controller/service/event 跨模块依赖），因此可直接注入各模块 Mapper 做批量落库。</p>
+ * <p><b>架构合规</b>：本类是开发期夹具（{@link CommandLineRunner}），不是定时业务任务，
+ * 独立放在 {@code com.sent.sports.seed} 包，故不进入 {@code ..job..} 的跨模块约束。
+ * 它按原始 PO 批量灌库，只服务演示环境（{@code @Profile("!prod")} + 配置开关），
+ * 不承载任何业务动作；真实业务动作仍只能走各模块用例。</p>
  */
 @Component
 @Profile("!prod")
@@ -101,7 +103,7 @@ public class DemoDataGenerator implements CommandLineRunner {
     private final ContractMapper contractMapper;
     private final IdGen idGen;
     /** 演示图稿要落真实文件：审核台按 fileId 拼 /api/files/{fileId} 渲染缩略图，假 ID 会 404 破图。 */
-    private final LocalFileStorage fileStorage;
+    private final Storage fileStorage;
 
     @Autowired
     public DemoDataGenerator(CustomerMapper customerMapper, ProductMapper productMapper, SkuMapper skuMapper,
@@ -113,7 +115,7 @@ public class DemoDataGenerator implements CommandLineRunner {
                              EnterpriseProfileMapper enterpriseProfileMapper, StaffMapper staffMapper,
                              CatalogMapper catalogMapper, StockMapper stockMapper,
                              RefundOrderMapper refundOrderMapper, ContractMapper contractMapper,
-                             IdGen idGen, LocalFileStorage fileStorage) {
+                             IdGen idGen, Storage fileStorage) {
         this.customerMapper = customerMapper;
         this.productMapper = productMapper;
         this.skuMapper = skuMapper;

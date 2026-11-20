@@ -8,13 +8,13 @@ package com.sent.sports.member.domain;
 public class Member {
 
     private final long customerId;
-    private MemberLevel level;
+    private MemberTier level;
     private long growthValue;
     private long availablePoints;
     private long levelValidToMillis;
     private String lastGrantReason;
 
-    public Member(long customerId, MemberLevel level, long growthValue, long availablePoints) {
+    public Member(long customerId, MemberTier level, long growthValue, long availablePoints) {
         this.customerId = customerId;
         this.level = level;
         this.growthValue = growthValue;
@@ -24,7 +24,7 @@ public class Member {
     }
 
     /** 人工授级：写入目标等级、有效期与原因（原因非空由用例层校验）。 */
-    public void grantLevel(MemberLevel target, long validToMillis, String reason) {
+    public void grantLevel(MemberTier target, long validToMillis, String reason) {
         this.level = target;
         this.levelValidToMillis = validToMillis;
         this.lastGrantReason = reason;
@@ -33,7 +33,7 @@ public class Member {
     /** 授级到期回落：若过了有效期，按当前成长值重算等级并清除授级标记（唯一降级路径）。 */
     public void expireGrantIfNeeded(long nowMillis) {
         if (levelValidToMillis > 0 && nowMillis > levelValidToMillis) {
-            this.level = LevelCalculator.calcLevel(growthValue);
+            this.level = MemberTier.calc(growthValue);
             this.levelValidToMillis = 0L;
             this.lastGrantReason = null;
         }
@@ -47,17 +47,14 @@ public class Member {
     /** 累计成长值：仅当新等级高于当前时升级（等级只升不降）。 */
     public void addGrowth(long growth) {
         this.growthValue += growth;
-        MemberLevel up = LevelCalculator.calcLevel(growthValue);
-        if (up.ordinal() > level.ordinal()) {
-            this.level = up;
-        }
+        this.level = MemberTier.max(level, MemberTier.calc(growthValue));
     }
 
     public long getCustomerId() {
         return customerId;
     }
 
-    public MemberLevel getLevel() {
+    public MemberTier getLevel() {
         return level;
     }
 

@@ -140,4 +140,16 @@ public final class AdminFinanceDtos {
     /** 企业认证审核响应：回显落库后的档案状态，前端据此即时刷新标签。 */
     public record EnterpriseAuditVO(long customerId, String status, boolean approved) {
     }
+
+    /** 企业审核列表行：基本信息可直接看，详情弹窗再展示营业执照与全部字段。 */
+    /** 核销与冲销明细列表行（每个用户的分摊记录）。 */
+    public record WriteOffRow(long id, String writeOffNo, String paymentRecordNo, long customerId,
+                              long receivableId, long amountCent, Long createdAtMillis) {
+    }
+
+    public record EnterpriseAuditRow(long customerId, String customerNo, String phone,
+                                     String companyName, String creditCode, String licenseFileId,
+                                     String status, String auditRemark, Long auditedAtMillis,
+                                     Long submittedAtMillis, long creditLimitCent, long creditUsedCent) {
+    }
 }

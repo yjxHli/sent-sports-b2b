@@ -9,7 +9,13 @@ import java.util.Map;
  */
 public interface PayGateway {
 
-    /** 发起支付，返回通道侧交易号与前端拉起支付所需的报文。 */
+    /**
+     * 发起支付：返回通道流水号与「渠道侧已签名的异步通知参数」。
+     *
+     * <p>为什么要把签名参数交出去：演示环境没有真实渠道，由前端延迟触发异步通知，
+     * 它必须原样回放通道签过名的那组参数，后端才认。签名密钥始终只在后端，
+     * 因此前端无法为任意订单 / 任意金额伪造一份「已支付」通知。</p>
+     */
     PayTicket create(String txnNo, String orderNo, long amountCent, String channel);
 
     /** 校验回调报文的签名与完整性（不可信即拒绝，不做任何业务变更）。 */
@@ -28,10 +34,10 @@ public interface PayGateway {
     /**
      * 发起支付的结果。
      *
-     * @param txnNo  通道交易号（对应 {@code payment_txn.txn_no}）
-     * @param payload 前端拉起支付所需的报文（模拟通道为可复现 JSON）
-     * @param sign   报文签名
+     * @param txnNo        通道交易号（对应 {@code payment_txn.txn_no}）
+     * @param notifyParams 渠道侧已签名的异步通知参数（值为字符串，按 key 字典序参与签名）
+     * @param sign         上述参数的签名
      */
-    record PayTicket(String txnNo, String payload, String sign) {
+    record PayTicket(String txnNo, Map<String, String> notifyParams, String sign) {
     }
 }

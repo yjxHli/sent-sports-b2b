@@ -10,8 +10,6 @@ import com.sent.sports.customer.mapper.po.CustomerPO;
 import com.sent.sports.customer.service.CustomerOperationService;
 import org.springframework.stereotype.Service;
 
-import java.util.Set;
-
 /**
  * 客户运营命令真库实现。
  *
@@ -21,9 +19,6 @@ import java.util.Set;
  */
 @Service
 public class CustomerOperationServiceImpl implements CustomerOperationService {
-
-    /** 与 customer.level_code 真实值域对齐（V3 种子：NORMAL / LV1 / LV2 / LV3）。 */
-    private static final Set<String> LEVEL_CODES = Set.of("NORMAL", "LV1", "LV2", "LV3");
 
     /** P5 绑定当前用户前的阶段占位；不写进 staff_id（0 不是真实员工）。 */
     private static final Long OPERATOR_PLACEHOLDER = null;
@@ -60,11 +55,12 @@ public class CustomerOperationServiceImpl implements CustomerOperationService {
                                                 long validToMillis, String reason) {
         requireReason(reason);
         String normalized = level == null ? "" : level.trim().toUpperCase();
-        // 旧前端下发 SILVER/GOLD/PLATINUM/VIP，后端 MemberLevel.valueOf 会抛异常 → 50001。
-        // 这里显式收敛为参数错误，避免把「选错等级」升级成系统异常。
-        if (!LEVEL_CODES.contains(normalized)) {
+        // 旧前端下发 SILVER/GOLD/PLATINUM/VIP 时显式收敛为参数错误，避免升级成 50001。
+        // 白名单从 MemberTier 派生，不再维护第三份字面量（R12）。
+        if (!AdminCustomerDtos.levelCodes().contains(normalized)) {
             throw new BizException(ErrorCode.PARAM_INVALID,
-                    "等级码不合法：" + level + "（可选 NORMAL / LV1 / LV2 / LV3）");
+                    "等级码不合法：" + level + "（可选 "
+                            + String.join(" / ", AdminCustomerDtos.levelCodes()) + "）");
         }
         CustomerPO po = requireCustomer(customerId);
         String before = po.getLevelCode() == null ? "NORMAL" : po.getLevelCode();

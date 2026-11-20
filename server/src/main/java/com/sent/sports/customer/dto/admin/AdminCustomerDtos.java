@@ -1,18 +1,31 @@
 package com.sent.sports.customer.dto.admin;
 
-import com.sent.sports.member.domain.MemberLevel;
+import com.sent.sports.member.domain.MemberTier;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+
+import java.util.Arrays;
+import java.util.List;
 
 /**
  * 客户与会员管理接口 Web 层 DTO（P4-45）。
  * 请求体承载外部入参并带校验注解；响应体暴露给前端。
- * <p>授级目标等级在 Web 层由字符串映射为 {@link MemberLevel}（member 域枚举），
+ * <p>授级目标等级在 Web 层由字符串映射为 {@link MemberTier}（member 域唯一等级枚举），
  * 避免在 controller 直接依赖其他模块 domain（ArchUnit 规则 4：跨模块只走 service）。</p>
  */
 public final class AdminCustomerDtos {
 
+    /** 等级码白名单的唯一真源：从 MemberTier 派生，不再另写一份字符串 Set。 */
+    private static final List<String> LEVEL_CODES = Arrays.stream(MemberTier.values())
+            .map(MemberTier::getCode)
+            .toList();
+
     private AdminCustomerDtos() {
+    }
+
+    /** 供客户授级入参校验使用（NORMAL / LV1 / LV2 / LV3，枚举顺序）。 */
+    public static List<String> levelCodes() {
+        return LEVEL_CODES;
     }
 
     /** 改派请求：目标归属 + 原因。 */
@@ -28,8 +41,8 @@ public final class AdminCustomerDtos {
             @NotBlank(message = "授级原因不能为空") String reason) {
 
         /** 将等级码映射为 member 域枚举（转换发生在 Web 层，controller 不触碰其他模块 domain）。 */
-        public MemberLevel toTargetLevel() {
-            return MemberLevel.valueOf(level);
+        public MemberTier toTargetLevel() {
+            return MemberTier.of(level);
         }
     }
 
@@ -82,7 +95,7 @@ public final class AdminCustomerDtos {
     /** 授级响应。 */
     public record LevelVO(long customerId, String level, long validToMillis) {
 
-        /** 由授级结果构造 VO（在 Web 层完成 MemberLevel→String 映射，controller 不触碰其他模块 domain）。 */
+        /** 由授级结果构造 VO（在 Web 层完成 MemberTier→String 映射，controller 不触碰其他模块 domain）。 */
         public static LevelVO from(com.sent.sports.member.service.dto.GrantLevelResult r) {
             return new LevelVO(r.customerId(), r.level().name(), r.validToMillis());
         }

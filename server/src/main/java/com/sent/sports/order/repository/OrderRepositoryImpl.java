@@ -149,14 +149,15 @@ public class OrderRepositoryImpl implements OrderRepository {
     }
 
     private Order toDomain(OrderPO po, List<OrderItem> items) {
+        // 仓储重建：通过专用构造器把库里的主状态装回聚合，不调用 setStatus（业务流转只走状态机）
         Order order = new Order(po.getOrderNo(), po.getCustomerId(), po.getIdemKey(), items,
                 po.getGoodsAmountCent(), po.getCustomFeeCent(), po.getDiscountCent(), po.getFreightCent(),
-                po.getPointDeductCent(), po.getPayableCent(), toMillis(po.getCreatedAt()));
+                po.getPointDeductCent(), po.getPayableCent(), toMillis(po.getCreatedAt()),
+                OrderStatus.valueOf(po.getStatus()));
         order.setPaidCent(po.getPaidCent());
         order.setReceivedCent(po.getReceivedCent());
         order.setPaidAtMillis(toMillis(po.getPaidAt()));
         order.setVersion(po.getVersion().intValue());
-        order.setStatus(OrderStatus.valueOf(po.getStatus()));
         order.setPayStatus(PayStatus.valueOf(po.getPayStatus()));
         order.setAddressSnapshotJson(po.getAddressSnapshotJson());
         order.setExpireAtMillis(toMillis(po.getExpireAt()));

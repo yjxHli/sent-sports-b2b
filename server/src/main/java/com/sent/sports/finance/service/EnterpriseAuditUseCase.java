@@ -7,6 +7,8 @@ import com.sent.sports.finance.mapper.EnterpriseProfileMapper;
 import com.sent.sports.finance.service.dto.EnterpriseAuditResult;
 import org.springframework.stereotype.Service;
 
+import java.time.Clock;
+
 /**
  * 企业认证审核用例：把「审核通过 / 驳回」落成 {@code enterprise_profile.status}。
  * <p>背景：管理端「企业审核与授信」的两个按钮此前直接打一个不存在的端点，
@@ -22,9 +24,11 @@ public class EnterpriseAuditUseCase {
     public static final String STATUS_REJECTED = "REJECTED";
 
     private final EnterpriseProfileMapper enterpriseProfileMapper;
+    private final Clock clock;
 
-    public EnterpriseAuditUseCase(EnterpriseProfileMapper enterpriseProfileMapper) {
+    public EnterpriseAuditUseCase(EnterpriseProfileMapper enterpriseProfileMapper, Clock clock) {
         this.enterpriseProfileMapper = enterpriseProfileMapper;
+        this.clock = clock;
     }
 
     /**
@@ -32,15 +36,20 @@ public class EnterpriseAuditUseCase {
      *
      * @param customerId 企业客户号
      * @param approved   true=通过，false=驳回
-     * @param remark     审核意见（当前只做留痕入口，不写库，审计日志由 system 模块统一承担）
+     * @param remark     审核意见；驳回时必填，会落库并在用户端审核进度页展示
      */
     @UseCase
     public EnterpriseAuditResult audit(long customerId, boolean approved, String remark) {
         if (customerId <= 0) {
             throw new BizException(ErrorCode.PARAM_INVALID, "企业客户ID不合法");
         }
+        if (!approved && (remark == null || remark.isBlank())) {
+            throw new BizException(ErrorCode.PARAM_INVALID, "驳回必须填写具体原因");
+        }
         String status = approved ? STATUS_ACTIVE : STATUS_REJECTED;
-        if (enterpriseProfileMapper.updateStatus(customerId, status) == 0) {
+        String normalizedRemark = remark == null ? "" : remark.trim();
+        long auditedAt = clock.millis();
+        if (enterpriseProfileMapper.updateAudit(customerId, status, normalizedRemark, auditedAt) == 0) {
             throw new BizException(ErrorCode.NOT_FOUND, "未找到该企业的认证档案，无法审核");
         }
         return new EnterpriseAuditResult(customerId, status, approved);

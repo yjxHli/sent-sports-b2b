@@ -38,12 +38,13 @@ public interface RefundOrderMapper extends BaseMapper<RefundOrderPO> {
      */
     @Insert("INSERT INTO refund_order (refund_no, order_id, type, amount_cent, point_refund, status, "
             + "reason_code, remark, applicant_type, refunded_at, created_at, updated_at) "
-            + "VALUES (#{refundNo}, #{orderId}, 'ONLY_REFUND', #{amountCent}, 0, 'REFUNDED', "
+            + "VALUES (#{refundNo}, #{orderId}, 'ONLY_REFUND', #{amountCent}, #{pointRefund}, 'REFUNDED', "
             + "'ADMIN_CLOSE', #{reason}, 'STAFF', NOW(3), NOW(3), NOW(3))")
     int insertCloseRefund(@Param("refundNo") String refundNo,
                           @Param("orderId") long orderId,
                           @Param("amountCent") long amountCent,
-                          @Param("reason") String reason);
+                          @Param("reason") String reason,
+                          @Param("pointRefund") long pointRefund);
 
     /**
      * 订单维度「在途 + 已退」金额合计：PENDING / REFUNDING / REFUNDED 均计入占用，
@@ -217,11 +218,13 @@ public interface RefundOrderMapper extends BaseMapper<RefundOrderPO> {
      */
     @Update("UPDATE refund_order SET status = #{status}, appeal_count = #{appealCount}, "
             + "refunded_at = CASE WHEN #{refundedAt} IS NULL THEN refunded_at ELSE #{refundedAt} END, "
-            + "audit_remark = CASE WHEN #{auditRemark} IS NULL THEN audit_remark ELSE #{auditRemark} END "
+            + "audit_remark = CASE WHEN #{auditRemark} IS NULL THEN audit_remark ELSE #{auditRemark} END, "
+            + "point_refund = CASE WHEN #{pointRefund} IS NULL THEN point_refund ELSE #{pointRefund} END "
             + "WHERE refund_no = #{refundNo}")
     int updateRefundState(@Param("refundNo") String refundNo,
                           @Param("status") String status,
                           @Param("appealCount") int appealCount,
                           @Param("refundedAt") LocalDateTime refundedAt,
-                          @Param("auditRemark") String auditRemark);
+                          @Param("auditRemark") String auditRemark,
+                          @Param("pointRefund") Long pointRefund);
 }

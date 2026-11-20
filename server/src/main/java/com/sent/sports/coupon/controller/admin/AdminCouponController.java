@@ -26,6 +26,10 @@ import java.util.List;
 /**
  * 管理端「客户与会员」的优惠券接口：券模板（创建 / 分页 / 发放下拉）、发放、发放记录。
  * Controller 只读 Service 端口，不直接碰 mapper / PO（ArchUnit 规则 1）。
+ *
+ * <p>权限按语义拆两域（R15）：券模板的「分页 / 新建」要 {@code coupon:template:manage}，
+ * 发券与发券下拉要 {@code customer:grant}。原先六个端点共用 {@code customer:grant}，
+ * 等于「能授信客户的人可以自建券模板并全量发券」。</p>
  */
 @RestController
 @RequestMapping("/api/admin/coupons")
@@ -43,16 +47,20 @@ public class AdminCouponController {
         this.templateAdminUseCase = templateAdminUseCase;
     }
 
-    /** 发放下拉用：全部可用券档位（含自建券，软删的不出现）。 */
+    /**
+     * 发放下拉用：全部可用券档位（含自建券，软删的不出现）。
+     * <p>归属发券流程（{@code customer:grant}），不并入券模板管理权限：
+     * 有权发券的人需要看到可选券，但不等于有权新建/删除券模板。</p>
+     */
     @GetMapping("/templates")
     @RequirePerm("customer:grant")
     public R<List<CouponDtos.TemplateVO>> templates() {
         return R.ok(couponQueryService.listTemplates());
     }
 
-    /** 券模板分页列表：券号 / 券型 / 创建人 / 创建时间。 */
+    /** 券模板分页列表：券号 / 券型 / 创建人 / 创建时间（券模板管理域）。 */
     @GetMapping("/templates/page")
-    @RequirePerm("customer:grant")
+    @RequirePerm("coupon:template:manage")
     public R<PageResult<CouponDtos.TemplatePageVO>> templatePage(
             @ModelAttribute PageQuery pageQuery,
             @RequestParam(required = false) String couponType,
@@ -60,9 +68,13 @@ public class AdminCouponController {
         return R.ok(couponQueryService.listTemplatePage(pageQuery, couponType, keyword));
     }
 
-    /** 新建券模板（可指定 SPU/SKU，实现「特定商品」的券）。 */
+    /**
+     * 新建券模板（可指定 SPU/SKU，实现「特定商品」的券）。
+     * <p>独立权限点（R15）：原先复用 {@code customer:grant}，导致「能授信客户的人」顺带能造券并全量发券；
+     * 现在建模板与发券彻底分开，权限矩阵可按岗授予。</p>
+     */
     @PostMapping("/templates")
-    @RequirePerm("customer:grant")
+    @RequirePerm("coupon:template:manage")
     public R<CouponDtos.CreateTemplateResult> createTemplate(
             @Valid @RequestBody CreateCouponTemplateCmd cmd,
             @RequestAttribute(value = CurrentUser.ATTR, required = false) CurrentUser user) {

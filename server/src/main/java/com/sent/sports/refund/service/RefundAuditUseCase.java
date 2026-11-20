@@ -6,12 +6,13 @@ import com.sent.sports.common.error.ErrorCode;
 import com.sent.sports.notify.service.MessageSendService;
 import com.sent.sports.notify.service.dto.InboxMessage;
 import com.sent.sports.order.service.OrderRefundViewService;
+import com.sent.sports.refund.domain.RefundAction;
 import com.sent.sports.refund.domain.RefundOrder;
-import com.sent.sports.refund.domain.RefundStatus;
 import com.sent.sports.refund.repository.RefundRepository;
 import com.sent.sports.refund.service.dto.AuditRefundCmd;
 import com.sent.sports.refund.service.dto.AuditRefundResult;
 
+import java.util.Map;
 import java.util.Optional;
 import org.springframework.stereotype.Service;
 
@@ -32,6 +33,13 @@ public class RefundAuditUseCase {
     private final RefundCallbackService refundCallbackService;
     private final OrderRefundViewService orderRefundViewService;
     private final MessageSendService messageSendService;
+    /** 动作 → 差异副作用；状态变更本身统一由各 handler 内的 order.transit 完成。 */
+    private final Map<RefundAction, AuditHandler> handlers;
+
+    @FunctionalInterface
+    private interface AuditHandler {
+        void handle(RefundOrder order, String reason);
+    }
 
     public RefundAuditUseCase(RefundRepository refundRepository,
                               RefundCallbackService refundCallbackService,
@@ -41,38 +49,37 @@ public class RefundAuditUseCase {
         this.refundCallbackService = refundCallbackService;
         this.orderRefundViewService = orderRefundViewService;
         this.messageSendService = messageSendService;
+        this.handlers = Map.of(
+                RefundAction.APPROVE, (order, reason) -> approve(order),
+                RefundAction.REJECT, this::reject,
+                RefundAction.APPEAL, (order, reason) -> appeal(order));
     }
 
     @UseCase
     public AuditRefundResult audit(AuditRefundCmd cmd) {
         RefundOrder order = refundRepository.findByRefundNo(cmd.refundNo())
                 .orElseThrow(() -> new BizException(ErrorCode.PARAM_INVALID, "退款单不存在"));
-        switch (cmd.action()) {
-            case "APPROVE" -> approve(order);
-            case "REJECT" -> reject(order, cmd.reason());
-            case "APPEAL" -> appeal(order);
-            default -> throw new BizException(ErrorCode.PARAM_INVALID, "未知的审核动作");
+        RefundAction action = RefundAction.of(cmd.action());
+        AuditHandler handler = handlers.get(action);
+        if (handler == null) {
+            throw new BizException(ErrorCode.PARAM_INVALID, "未知的审核动作");
         }
+        handler.handle(order, cmd.reason());
         refundRepository.save(order);
         return new AuditRefundResult(cmd.refundNo(), order.getStatus().name());
     }
 
     private void approve(RefundOrder order) {
-        if (order.getStatus() != RefundStatus.PENDING) {
-            throw new BizException(ErrorCode.STATE_CONFLICT, "仅待审核退款单可批准");
-        }
-        order.setStatus(RefundStatus.REFUNDING);
+        order.transit(RefundAction.APPROVE); // 仅 PENDING → REFUNDING，其他状态统一 40901
         refundCallbackService.process(order);
     }
 
     private void reject(RefundOrder order, String reason) {
-        if (order.getStatus() != RefundStatus.PENDING) {
-            throw new BizException(ErrorCode.STATE_CONFLICT, "仅待审核退款单可驳回");
-        }
         if (reason == null || reason.isBlank()) {
             throw new BizException(ErrorCode.PARAM_INVALID, "驳回必须填写原因");
         }
-        order.setStatus(RefundStatus.CLOSED);
+        order.transit(RefundAction.REJECT); // 仅 PENDING → CLOSED
+
         // 驳回原因必须留痕：管理端列表的 reason 列取 COALESCE(audit_remark, remark, reason_code)，
         // 不写这一列的话客服复核/用户申诉时只能看到当初的申请理由，看不到为什么被驳回。
         order.setAuditRemark(reason.trim());
@@ -98,13 +105,13 @@ public class RefundAuditUseCase {
     }
 
     private void appeal(RefundOrder order) {
-        if (order.getStatus() != RefundStatus.CLOSED) {
+        if (!order.canTransit(RefundAction.APPEAL)) {
             throw new BizException(ErrorCode.STATE_CONFLICT, "仅被驳回的退款单可申诉");
         }
         if (order.getAppealCount() >= MAX_APPEAL) {
             throw new BizException(ErrorCode.STATE_CONFLICT, "申诉次数已达上限");
         }
         order.setAppealCount(order.getAppealCount() + 1);
-        order.setStatus(RefundStatus.PENDING);
+        order.transit(RefundAction.APPEAL); // CLOSED → PENDING
     }
 }

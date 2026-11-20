@@ -17,17 +17,11 @@ import java.util.Map;
  * 避免「预览便宜、实付贵」。券无效时返回 0 而不抛错：前端已按可用券列表过滤，
  * 这里只是服务端兜底防篡改。
  *
- * <p>四类券型的差异只体现在「哪些行金额计入门槛分母」：</p>
- * <ul>
- *   <li>无门槛 / 满减：全部行金额计入；</li>
- *   <li>品类券：只有命中 SPU/SKU 的行金额计入；</li>
- *   <li>企业专属券：非企业客户直接 0，企业客户按全部行金额计入。</li>
- * </ul>
+ * <p>「能不能用、能抵多少」全部交给 {@link Coupon#applicability}（R9 唯一真源），
+ * 本类只负责三件工程事：查 PO 转领域对象、按需补 SPU 映射、把行金额规整成领域行。</p>
  */
 @Service
 public class CouponUseCase implements CouponDeduction {
-
-    private static final String CUSTOMER_ENTERPRISE = "ENTERPRISE";
 
     private final CouponMapper couponMapper;
     private final CustomerQueryService customerQueryService;
@@ -43,24 +37,24 @@ public class CouponUseCase implements CouponDeduction {
 
     @Override
     public long discountFor(long couponId, long customerId, List<CouponLine> lines) {
-        if (couponId <= 0L || lines == null || lines.isEmpty()) return 0L;
-        CustomerCouponPO po = couponMapper.selectByIdAndCustomer(couponId, customerId);
-        if (po == null) return 0L;
-        Coupon coupon = CouponAssembler.toDomain(po);
-        if (coupon.isEnterpriseOnly()
-                && !CUSTOMER_ENTERPRISE.equals(customerQueryService.typeOf(customerId))) {
+        if (couponId <= 0L || lines == null || lines.isEmpty()) {
             return 0L;
         }
+        CustomerCouponPO po = couponMapper.selectByIdAndCustomer(couponId, customerId);
+        if (po == null) {
+            return 0L;
+        }
+        Coupon coupon = CouponAssembler.toDomain(po);
+        // SPU 映射只在品类券按 SPU 限定时才查：多打一次商品库查询换不来任何信息
         Map<Long, Long> spuIds = Coupon.SCOPE_SPU.equals(coupon.scopeType())
                 ? productQueryService.spuIdsOfSkus(lines.stream().map(CouponLine::skuId).toList())
                 : Map.of();
-        long eligible = 0L;
-        for (CouponLine line : lines) {
-            if (coupon.matchesSku(line.skuId(), spuIds.get(line.skuId()))) {
-                eligible += Math.max(0L, line.amountCent());
-            }
-        }
-        return coupon.usableFor(eligible, LocalDateTime.now()) ? coupon.discountFor(eligible) : 0L;
+        List<Coupon.Line> rows = lines.stream()
+                .map(line -> new Coupon.Line(line.skuId(), spuIds.get(line.skuId()), line.amountCent()))
+                .toList();
+        long goodsCent = lines.stream().mapToLong(line -> Math.max(0L, line.amountCent())).sum();
+        return coupon.applicability(customerQueryService.typeOf(customerId), goodsCent, rows,
+                LocalDateTime.now()).discountCent();
     }
 
     /** SQL 带 status='UNUSED' 条件，重复核销影响行数为 0（按幂等成功处理）。 */

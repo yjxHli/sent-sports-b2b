@@ -10,7 +10,7 @@ import com.sent.sports.order.domain.OrderStateMachine;
 import com.sent.sports.order.repository.OrderRepository;
 import com.sent.sports.order.service.dto.CancelOrderCmd;
 import com.sent.sports.order.service.dto.CancelOrderResult;
-import com.sent.sports.stock.repository.StockRepository;
+import com.sent.sports.stock.service.StockService;
 
 import java.util.Optional;
 import org.springframework.stereotype.Service;
@@ -18,17 +18,17 @@ import org.springframework.stereotype.Service;
 /**
  * 取消订单用例（P3-09）：仅待付款（WAIT_PAY）可取消，释放预占库存并置为 CANCELLED。
  * 已支付 / 已取消 / 其他状态迁移非法，抛 STATE_CONFLICT(40901)。
- * 依赖 order / stock 仓储端口，不直接依赖其他模块领域类型（ArchUnit 规则 4）。
+ * 依赖 order 仓储端口与 stock 服务接口，不直连其他模块仓储或领域类型（ArchUnit 规则 4/6）。
  */
 @Service
 public class CancelOrderUseCase {
 
     private final OrderRepository orderRepository;
-    private final StockRepository stockRepository;
+    private final StockService stockService;
 
-    public CancelOrderUseCase(OrderRepository orderRepository, StockRepository stockRepository) {
+    public CancelOrderUseCase(OrderRepository orderRepository, StockService stockService) {
         this.orderRepository = orderRepository;
-        this.stockRepository = stockRepository;
+        this.stockService = stockService;
     }
 
     @UseCase
@@ -43,7 +43,7 @@ public class CancelOrderUseCase {
 
         // 待付款整单未发货，按行全量释放预占库存
         for (OrderItem item : order.getItems()) {
-            stockRepository.release(item.getSkuId(), item.getQty());
+            stockService.release(item.getSkuId(), item.getQty());
         }
 
         order.transit(OrderAction.USER_CANCEL); // WAIT_PAY -> CANCELLED

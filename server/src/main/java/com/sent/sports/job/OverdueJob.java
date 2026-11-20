@@ -1,8 +1,7 @@
 package com.sent.sports.job;
 
 import com.sent.sports.common.error.BizException;
-import com.sent.sports.finance.mapper.ReceivableMapper;
-import com.sent.sports.finance.mapper.po.ReceivablePO;
+import com.sent.sports.finance.service.ReceivableJobService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -23,13 +22,11 @@ import java.util.List;
 public class OverdueJob {
 
     private static final Logger log = LoggerFactory.getLogger(OverdueJob.class);
-    private static final String OVERDUE = "OVERDUE";
-
-    private final ReceivableMapper receivableMapper;
+    private final ReceivableJobService receivableJobService;
     private final Clock clock;
 
-    public OverdueJob(ReceivableMapper receivableMapper, Clock clock) {
-        this.receivableMapper = receivableMapper;
+    public OverdueJob(ReceivableJobService receivableJobService, Clock clock) {
+        this.receivableJobService = receivableJobService;
         this.clock = clock;
     }
 
@@ -44,19 +41,16 @@ public class OverdueJob {
 
     /** 执行一轮逾期重算，返回成功更新的应收笔数（便于单测断言）。 */
     public int runOnce() {
-        List<ReceivablePO> receivables = receivableMapper.selectOverdue(LocalDate.now(clock));
+        // 已置 OVERDUE 的行由 finance 服务过滤，任务只负责逐笔触发
+        List<Long> receivableIds = receivableJobService.findOverdueIds(LocalDate.now(clock));
         int updated = 0;
-        for (ReceivablePO receivable : receivables) {
-            if (OVERDUE.equals(receivable.getStatus())) {
-                // 已置过：跳过，保证重复执行不产生额外写入
-                continue;
-            }
+        for (Long receivableId : receivableIds) {
             try {
-                if (receivableMapper.updateStatus(receivable.getId(), OVERDUE) > 0) {
+                if (receivableJobService.markOverdue(receivableId) > 0) {
                     updated++;
                 }
             } catch (BizException e) {
-                log.debug("跳过应收 {}：{}", receivable.getId(), e.getMessage());
+                log.debug("跳过应收 {}：{}", receivableId, e.getMessage());
             }
         }
         return updated;

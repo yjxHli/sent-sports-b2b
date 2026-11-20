@@ -15,7 +15,7 @@ import com.sent.sports.order.mapper.po.OrderPO;
 import com.sent.sports.order.service.dto.CloseOrderCmd;
 import com.sent.sports.order.service.dto.CloseOrderResult;
 import com.sent.sports.refund.service.RefundService;
-import com.sent.sports.stock.repository.StockRepository;
+import com.sent.sports.stock.service.StockService;
 import com.sent.sports.system.service.SystemService;
 import org.springframework.stereotype.Service;
 
@@ -30,25 +30,25 @@ import org.springframework.stereotype.Service;
  * 任一步抛异常（含模拟退款网关拒绝）全部 DB 写入一起回滚；
  * 并发重复关单靠 {@code closeOnAdminRefund} 的「旧状态 + 旧支付状态」条件更新挡住。</p>
  *
- * <p><b>模块边界</b>：跨模块只依赖对方的 service 接口（refund / finance / system）与仓储端口
- * （stock），不碰对方 mapper / domain / controller，满足 ArchUnit 规则 4。</p>
+ * <p><b>模块边界</b>：跨模块只依赖对方的 service 接口（refund / finance / system / stock），
+ * 不碰对方 mapper / repository / domain / controller，满足 ArchUnit 规则 4/6。</p>
  */
 @Service
 public class CloseOrderUseCase {
 
     private final OrderMapper orderMapper;
-    private final StockRepository stockRepository;
+    private final StockService stockService;
     private final RefundService refundService;
     private final CreditFacade creditFacade;
     private final SystemService systemService;
 
     public CloseOrderUseCase(OrderMapper orderMapper,
-                             StockRepository stockRepository,
+                             StockService stockService,
                              RefundService refundService,
                              CreditFacade creditFacade,
                              SystemService systemService) {
         this.orderMapper = orderMapper;
-        this.stockRepository = stockRepository;
+        this.stockService = stockService;
         this.refundService = refundService;
         this.creditFacade = creditFacade;
         this.systemService = systemService;
@@ -99,7 +99,7 @@ public class CloseOrderUseCase {
         boolean stockReleased = status == OrderStatus.WAIT_SHIP;
         if (stockReleased) {
             // uk_flow_biz 唯一索引保证幂等；重复释放不会减两次 locked_qty。
-            stockRepository.releaseByOrderNo(orderNo);
+            stockService.releaseByOrderNo(orderNo);
         }
         // 授信只在「确认收货→生成应收」时占用，门面内部按应收记录判断是否需要回冲。
         creditFacade.releaseCreditForOrder(orderNo);

@@ -12,6 +12,7 @@ import com.sent.sports.coupon.service.CouponDeduction;
 import com.sent.sports.coupon.service.dto.CouponLine;
 import com.sent.sports.customer.service.AddressService;
 import com.sent.sports.customer.service.dto.AddressVO;
+import com.sent.sports.customize.service.CustomFeeFacade;
 import com.sent.sports.customize.service.CustomizeShipGateway;
 import com.sent.sports.finance.service.CreditFacade;
 import com.sent.sports.member.service.PointFacade;
@@ -25,7 +26,7 @@ import com.sent.sports.order.service.dto.OrderLineCmd;
 import com.sent.sports.product.service.PricingServiceFacade;
 import com.sent.sports.product.service.dto.LinePrice;
 import com.sent.sports.product.service.dto.PriceRequest;
-import com.sent.sports.stock.repository.StockRepository;
+import com.sent.sports.stock.service.StockService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -43,7 +44,7 @@ import org.springframework.stereotype.Service;
  * 2) 预占失败整单回滚（释放已锁库存后原样抛出）；
  * 3) 价格快照随订单固化；
  * 4) 订单号由 IdGen 生成，初始状态 WAIT_PAY / UNPAID。
- * 依赖门面 / 仓储端口，不直接依赖其他模块领域类型，符合 ArchUnit 规则 4。
+ * 依赖门面 / 本模块仓储 / stock 服务接口，不直连其他模块仓储或领域类型，符合 ArchUnit 规则 4/6。
  */
 @Service
 public class CreateOrderUseCase {
@@ -51,12 +52,9 @@ public class CreateOrderUseCase {
     /** 待付款订单的支付时限：下单后 5 分钟未支付，由 OrderTimeoutJob 自动取消并释放库存。 */
     public static final int PAY_TIMEOUT_MINUTES = 5;
 
-    /** UV 定制件加收 10 元/件（2026-11-17 用户要求）。 */
-    public static final long CUSTOM_FEE_PER_UNIT_CENT = 1000L;
-
     private final PricingServiceFacade pricingFacade;
     private final PointFacade pointFacade;
-    private final StockRepository stockRepository;
+    private final StockService stockService;
     private final OrderRepository orderRepository;
     private final IdGen idGen;
     private final DomainEventPublisher eventPublisher;
@@ -65,19 +63,22 @@ public class CreateOrderUseCase {
     /** 收货地址来源：只经 customer 的 service 接口读取，不碰对方 mapper（ArchUnit 规则 4）。 */
     private final AddressService addressService;
     private final CouponDeduction couponDeduction;
+    /** 定制服务费唯一计费入口（与购物车试算共用同一引擎与配置）。 */
+    private final CustomFeeFacade customFeeFacade;
     private final Clock clock;
 
     /** 快照落库用：字段少、结构固定，静态实例足够，不必注入 Spring 的 ObjectMapper。 */
     private static final ObjectMapper SNAPSHOT_MAPPER = new ObjectMapper();
 
     public CreateOrderUseCase(PricingServiceFacade pricingFacade, PointFacade pointFacade,
-                             StockRepository stockRepository, OrderRepository orderRepository,
+                             StockService stockService, OrderRepository orderRepository,
                              IdGen idGen, DomainEventPublisher eventPublisher,
                              CustomizeShipGateway customizeShipGateway, CreditFacade creditFacade,
-                             AddressService addressService, CouponDeduction couponDeduction, Clock clock) {
+                             AddressService addressService, CouponDeduction couponDeduction,
+                             CustomFeeFacade customFeeFacade, Clock clock) {
         this.pricingFacade = pricingFacade;
         this.pointFacade = pointFacade;
-        this.stockRepository = stockRepository;
+        this.stockService = stockService;
         this.orderRepository = orderRepository;
         this.idGen = idGen;
         this.eventPublisher = eventPublisher;
@@ -85,6 +86,7 @@ public class CreateOrderUseCase {
         this.creditFacade = creditFacade;
         this.addressService = addressService;
         this.couponDeduction = couponDeduction;
+        this.customFeeFacade = customFeeFacade;
         this.clock = clock;
     }
 
@@ -112,22 +114,26 @@ public class CreateOrderUseCase {
                 long lineTotal = lp.unitPriceCent() * item.qty();
                 goodsAmount += lineTotal;
                 long lineCustomFee = Boolean.TRUE.equals(item.customFlag())
-                        ? CUSTOM_FEE_PER_UNIT_CENT * item.qty() : 0L;
+                        ? customFeeFacade.feeCent(item.qty()) : 0L;
                 customFee += lineCustomFee;
                 lines.add(new OrderItem(item.skuId(), item.qty(), lp.unitPriceCent(), lp.sourceCode(),
                         lineTotal, Boolean.TRUE.equals(item.customFlag()), lineCustomFee));
                 couponLines.add(new CouponLine(item.skuId(), lineTotal + lineCustomFee));
-                stockRepository.lock(item.skuId(), item.qty());
+                stockService.lock(item.skuId(), item.qty());
                 locked.add(new long[]{item.skuId(), item.qty()});
             }
 
             // 3) 运费 + 积分抵扣 + 应付
             long freight = FreightCalculator.calcFreight(goodsAmount, cmd.freightFreeThresholdCent(), cmd.freightFeeCent());
-            long pointDeduct = pointFacade.maxDeductibleCent(cmd.availablePoints(), goodsAmount);
+            long payableBase = goodsAmount + customFee + freight;
             long couponId = cmd.couponId() == null ? 0L : cmd.couponId();
             // 与 CartQuoteUseCase 同式：券在积分后抵扣，门槛看商品额+定制费（不含运费）
             long couponDiscount = couponDeduction.discountFor(couponId, cmd.customerId(), couponLines);
-            long payable = Math.max(0L, goodsAmount + customFee + freight - pointDeduct - couponDiscount);
+            // 30% 上限仍由 PointFacade → PointDeduction 唯一给出；再按券后剩余应付基数收口，
+            // 保证 orders.point_deduct_cent 是实际生效抵扣额，不会被 payable 的 Math.max(0,…) 截断成虚高值。
+            long pointCap = pointFacade.maxDeductibleCent(cmd.availablePoints(), goodsAmount);
+            long pointDeduct = Math.min(pointCap, Math.max(0L, payableBase - couponDiscount));
+            long payable = Math.max(0L, payableBase - pointDeduct - couponDiscount);
             // 券抵扣按行金额比例分摊：退款读侧用 amount_cent − discount_alloc_cent 算行实付，
             // 不写这一列的话用了券的订单按原价退款，等于平台倒贴券面额。
             allocateCouponDiscount(lines, couponDiscount);
@@ -161,7 +167,7 @@ public class CreateOrderUseCase {
             return new CreateOrderResult(orderNo, order.getStatus().name(), payable, goodsAmount, freight, pointDeduct);
         } catch (RuntimeException e) {
             for (long[] l : locked) {
-                stockRepository.release(l[0], (int) l[1]);
+                stockService.release(l[0], (int) l[1]);
             }
             throw e;
         }

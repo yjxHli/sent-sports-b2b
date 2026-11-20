@@ -5,8 +5,8 @@ import java.util.Locale;
 /**
  * 真库等级档位（TDD 绿）：{@code customer.level_code} 的真实值域，门槛 0 / 1000 / 5000 / 20000。
  *
- * <p>与早期内存档位 {@link MemberLevel}（NORMAL/VIP1/VIP2，门槛 0/2000/10000）不是同一套，
- * 真实业务一律以本枚举为准。规则（spec §6.3.1）：取「门槛 ≤ 成长值」的最高档；
+ * <p>全系统唯一的会员等级模型（R12）：早期内存档位 MemberLevel（0/2000/10000）已删除，
+ * 规则（spec §6.3.1）统一在这里——取「门槛 ≤ 成长值」的最高档；
  * 等级只升不降，唯一回落路径是人工授级到期（{@code level_valid_to} 过期后按成长值重算）。</p>
  *
  * <p>放在 domain 包内，是纯 POJO 级逻辑（无 Spring 依赖），member 模块的写入链路

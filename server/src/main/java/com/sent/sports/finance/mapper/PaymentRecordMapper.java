@@ -7,6 +7,9 @@ import com.sent.sports.finance.mapper.po.PaymentRecordPO;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
+
+import java.util.List;
 
 /**
  * 回款单 Mapper（P5-21）：唯一性校验（银行流水号）放在数据库侧，避免应用层「先查再插」的并发漏判。
@@ -31,7 +34,8 @@ public interface PaymentRecordMapper extends BaseMapper<PaymentRecordPO> {
             + "received_date AS receivedDate, bank_serial AS bankSerial, remark, status, "
             + "reversed_reason AS reversedReason, operator_id AS operatorId, created_at AS createdAt "
             + "FROM payment_record "
-            + "WHERE (#{customerId} IS NULL OR customer_id = #{customerId}) "
+            + "WHERE deleted = 0 "
+            + "AND (#{customerId} IS NULL OR customer_id = #{customerId}) "
             + "AND (#{status} IS NULL OR #{status} = '' OR status = #{status}) "
             + "ORDER BY id DESC")
     IPage<PaymentRecordPO> selectPaymentRecordPage(Page<PaymentRecordPO> page,
@@ -40,8 +44,15 @@ public interface PaymentRecordMapper extends BaseMapper<PaymentRecordPO> {
 
     /** 与 selectPaymentRecordPage 同一过滤条件的独立总数。 */
     @Select("SELECT COUNT(*) FROM payment_record "
-            + "WHERE (#{customerId} IS NULL OR customer_id = #{customerId}) "
+            + "WHERE deleted = 0 "
+            + "AND (#{customerId} IS NULL OR customer_id = #{customerId}) "
             + "AND (#{status} IS NULL OR #{status} = '' OR status = #{status})")
     long countPaymentRecord(@Param("customerId") Long customerId,
                             @Param("status") String status);
+
+    /** 管理端批量软删回款记录：按 record_no，核销明细另外管理。 */
+    @Update({"<script>", "UPDATE payment_record SET deleted = 1 WHERE deleted = 0 AND record_no IN ",
+            "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach>",
+            "</script>"})
+    int batchMarkDeleted(@Param("ids") List<String> ids);
 }

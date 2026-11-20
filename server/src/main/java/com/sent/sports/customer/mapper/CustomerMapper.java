@@ -11,6 +11,7 @@ import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 客户 Mapper：映射 V3 的 {@code customer} 表。
@@ -63,6 +64,12 @@ public interface CustomerMapper extends BaseMapper<CustomerPO> {
                                       @Param("level") String level,
                                       @Param("type") String type);
 
+    /** 管理端批量软删客户：只打标记，不删企业档案与历史订单。 */
+    @Update({"<script>", "UPDATE customer SET deleted = 1 WHERE deleted = 0 AND id IN ",
+            "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach>",
+            "</script>"})
+    int batchMarkDeleted(@Param("ids") List<Long> ids);
+
     // ---- 客户运营动作（P6 收口）：条件更新 + 落流水，全部命中真库 customer 表 ----
 
     /** 改派归属：条件更新，返回受影响行数；软删客户不会被改派。 */
@@ -74,6 +81,50 @@ public interface CustomerMapper extends BaseMapper<CustomerPO> {
     @Update("UPDATE customer SET points_balance = points_balance + #{delta} "
             + "WHERE id = #{customerId} AND deleted = 0")
     int addPoints(@Param("customerId") long customerId, @Param("delta") long delta);
+
+    /**
+     * 支付成功扣减积分：<b>条件更新</b>，余额不够时返回 0 行。
+     *
+     * <p>并发防超扣的唯一手段就是 {@code AND points_balance >= #{points}}：
+     * 两个订单同时扣同一批积分时，后到的那个在拿到行锁后会重新判定条件并拿到 0 行，
+     * 而不是把余额扣成负数。不做「先查后写」（读到 100 再扣 300 的经典竞态），
+     * 也不引入分布式锁。</p>
+     *
+     * @return 1 = 扣减成功；0 = 余额不足或客户不存在/已软删（调用方必须按失败处理）
+     */
+    @Update("UPDATE customer SET points_balance = points_balance - #{points} "
+            + "WHERE id = #{customerId} AND deleted = 0 AND points_balance >= #{points}")
+    int deductPoints(@Param("customerId") long customerId, @Param("points") long points);
+
+    /** 客户当前积分余额（扣减后回填流水 {@code balance_after} 用；客户不存在返回 null）。 */
+    @Select("SELECT points_balance FROM customer WHERE id = #{customerId}")
+    Long pointsBalanceOf(@Param("customerId") long customerId);
+
+    /**
+     * 某来源已扣减的积分数（退款退积分的真源）：
+     * 只看负向流水，返回其绝对值之和；没扣过返回 0。
+     *
+     * <p>退款为什么按这里而不是 {@code orders.point_deduct_cent}：订单头字段是下单时的快照，
+     * 未支付 / 已取消的订单也可能带着非 0 抵扣额（下单即算），照它退等于凭空发积分。</p>
+     */
+    @Select("SELECT COALESCE(-SUM(change_value), 0) FROM point_log "
+            + "WHERE customer_id = #{customerId} AND source_type = #{sourceType} "
+            + "AND source_id = #{sourceId} AND change_value < 0")
+    Long deductedPointsOf(@Param("customerId") long customerId,
+                          @Param("sourceType") String sourceType,
+                          @Param("sourceId") String sourceId);
+
+    /**
+     * 回填扣减流水的余额快照。
+     * <p>扣减要先抢 {@code uk_point_source} 名额再改余额（否则重放会重复扣），
+     * 所以插入时 {@code balance_after} 只能先写占位值，扣完才回填真实余额。</p>
+     */
+    @Update("UPDATE point_log SET balance_after = #{balanceAfter} "
+            + "WHERE customer_id = #{customerId} AND source_type = #{sourceType} AND source_id = #{sourceId}")
+    int updatePointLogBalance(@Param("customerId") long customerId,
+                              @Param("sourceType") String sourceType,
+                              @Param("sourceId") String sourceId,
+                              @Param("balanceAfter") long balanceAfter);
 
     /** 人工授级：等级码与有效期一起写（有效期 NULL = 长期有效），历史订单/专享价快照不受影响。 */
     @Update("UPDATE customer SET level_code = #{level}, level_valid_to = #{levelValidTo} "
@@ -102,6 +153,18 @@ public interface CustomerMapper extends BaseMapper<CustomerPO> {
             + "VALUES (#{customerId}, #{delta}, #{balanceAfter}, #{type}, "
             + "#{sourceType}, #{sourceId}, #{operatorId})")
     int insertPointLog(PointLogRow row);
+
+    /**
+     * 系统来源的积分流水（订单完成发放 / 退款扣回）：幂等交给 V47 的
+     * {@code uk_point_source(customer_id, source_type, source_id)}。
+     *
+     * @return 1 = 本次首次入账；0 = 该来源已记过流水（重放）
+     */
+    @Insert("INSERT IGNORE INTO point_log "
+            + "(customer_id, change_value, balance_after, type, source_type, source_id, created_by) "
+            + "VALUES (#{customerId}, #{delta}, #{balanceAfter}, #{type}, "
+            + "#{sourceType}, #{sourceId}, #{operatorId})")
+    int insertPointLogIfAbsent(PointLogRow row);
 
     /** 改派 / 授级操作流水（sys_operation_log；after_json 记录变更前后与授级有效期）。 */
     record OperationLogRow(Long staffId, String module, String action, String targetType,

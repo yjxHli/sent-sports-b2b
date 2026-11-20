@@ -5,6 +5,7 @@ import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.time.Clock;
+import java.util.Collections;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -28,6 +29,8 @@ public class MockPayGateway implements PayGateway {
     private static final String SIGN_FIELD = "sign";
     private static final String STATUS_PAID = "PAID";
     private static final String STATUS_FAILED = "FAILED";
+    /** 模拟渠道交易号前缀：真实通道由渠道生成，这里按流水号可复现地派生。 */
+    private static final String CHANNEL_TRADE_PREFIX = "MOCK-";
 
     private final String secret;
     private final Clock clock;
@@ -42,14 +45,16 @@ public class MockPayGateway implements PayGateway {
 
     @Override
     public PayTicket create(String txnNo, String orderNo, long amountCent, String channel) {
-        Map<String, String> payload = new LinkedHashMap<>();
-        payload.put("txnNo", txnNo);
-        payload.put("orderNo", orderNo);
-        payload.put("amountCent", String.valueOf(amountCent));
-        payload.put("channel", channel);
-        payload.put("timestamp", String.valueOf(clock.millis()));
-        String sign = sign(payload);
-        return new PayTicket(txnNo, toJson(payload), sign);
+        // 这组参数就是「渠道受理回执」：与真实通道一样带渠道交易号与受理时间，
+        // 前端（演示环境里的渠道替身）原样回放即可通过 verify。
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("txnNo", txnNo);
+        params.put("orderNo", orderNo);
+        params.put("amountCent", String.valueOf(amountCent));
+        params.put("channel", channel);
+        params.put("payChannelTradeNo", CHANNEL_TRADE_PREFIX + txnNo);
+        params.put("paidAtMillis", String.valueOf(clock.millis()));
+        return new PayTicket(txnNo, Collections.unmodifiableMap(params), sign(params));
     }
 
     @Override
@@ -127,16 +132,5 @@ public class MockPayGateway implements PayGateway {
             diff |= a[i] ^ b[i];
         }
         return diff == 0;
-    }
-
-    private String toJson(Map<String, String> payload) {
-        StringBuilder json = new StringBuilder("{");
-        payload.forEach((key, value) -> {
-            if (json.length() > 1) {
-                json.append(',');
-            }
-            json.append('"').append(key).append("\":\"").append(value).append('"');
-        });
-        return json.append('}').toString();
     }
 }

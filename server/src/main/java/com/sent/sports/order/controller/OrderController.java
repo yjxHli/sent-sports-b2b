@@ -1,12 +1,12 @@
 package com.sent.sports.order.controller;
 
 import com.sent.sports.common.anno.RequirePerm;
-import com.sent.sports.common.util.MoneyUtil;
 import com.sent.sports.common.web.PageQuery;
 import com.sent.sports.common.web.PageResult;
 import com.sent.sports.common.web.CurrentUser;
 import com.sent.sports.common.web.R;
 import com.sent.sports.order.dto.OrderDtos;
+import com.sent.sports.order.dto.OrderVOAssembler;
 import com.sent.sports.order.service.CancelOrderUseCase;
 import com.sent.sports.order.service.ConfirmReceiptUseCase;
 import com.sent.sports.order.service.CreateOrderUseCase;
@@ -96,8 +96,10 @@ public class OrderController {
         ConfirmReceiptCmd c = new ConfirmReceiptCmd(orderNo,
                 cmd.lines().stream().map(l -> new ReceiveLineCmd(l.skuId(), l.qty())).toList());
         ConfirmReceiptResult r = confirmReceiptUseCase.confirm(c);
-        return R.ok(new OrderDtos.OrderVO(r.orderNo(), r.status(), null, null, null,
-                null, null, null, null, null, null, null, null));
+        return R.ok(OrderVOAssembler.builder()
+                .orderNo(r.orderNo())
+                .status(r.status())
+                .build());
     }
 
     /**
@@ -122,10 +124,13 @@ public class OrderController {
     }
 
     private OrderDtos.OrderVO toVo(CreateOrderResult r) {
-        return new OrderDtos.OrderVO(r.orderNo(), r.status(), null, null, null,
-                r.payableCent(), MoneyUtil.toYuan(r.payableCent()),
-                r.goodsAmountCent(), MoneyUtil.toYuan(r.goodsAmountCent()),
-                r.freightCent(), MoneyUtil.toYuan(r.freightCent()),
-                r.pointDeductCent(), MoneyUtil.toYuan(r.pointDeductCent()));
+        return OrderVOAssembler.builder()
+                .orderNo(r.orderNo())
+                .status(r.status())
+                .payable(r.payableCent())
+                .goodsAmount(r.goodsAmountCent())
+                .freight(r.freightCent())
+                .pointDeduct(r.pointDeductCent())
+                .build();
     }
 }

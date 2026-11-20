@@ -1,10 +1,16 @@
 package com.sent.sports.finance.mapper;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.sent.sports.finance.dto.admin.AdminFinanceDtos;
+import com.sent.sports.finance.service.EnterpriseProfileQueryService;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
+
+import java.util.List;
 
 /**
  * 企业授信档案 Mapper（验收缺口补齐）：把 {@code enterprise_profile.credit_used_cent}
@@ -64,9 +70,27 @@ public interface EnterpriseProfileMapper {
      * <p>返回 0 说明没有该企业的认证档案——调用方据此抛 40401，
      * 而不是让它变成「系统异常」。</p>
      */
-    @Update("UPDATE enterprise_profile SET status = #{status}, updated_at = CURRENT_TIMESTAMP(3) "
+    @Update("UPDATE enterprise_profile SET status = #{status}, audit_remark = #{remark}, "
+            + "audited_at = FROM_UNIXTIME(#{auditedAtMillis} / 1000), updated_at = CURRENT_TIMESTAMP(3) "
             + "WHERE customer_id = #{customerId}")
-    int updateStatus(@Param("customerId") long customerId, @Param("status") String status);
+    int updateAudit(@Param("customerId") long customerId, @Param("status") String status,
+                    @Param("remark") String remark, @Param("auditedAtMillis") long auditedAtMillis);
+
+    /** 用户端审核进度：手机号 + 验证码通过后查询，只返回未软删档案。 */
+    @Select("SELECT p.customer_id AS customerId, c.phone AS phone, p.company_name AS companyName, "
+            + "p.license_no AS creditCode, p.license_url AS licenseFileId, p.status AS status, "
+            + "p.audit_remark AS auditRemark, UNIX_TIMESTAMP(p.audited_at) * 1000 AS auditedAtMillis, "
+            + "UNIX_TIMESTAMP(p.created_at) * 1000 AS submittedAtMillis "
+            + "FROM enterprise_profile p JOIN customer c ON c.id = p.customer_id "
+            + "WHERE c.phone = #{phone} AND p.deleted = 0 LIMIT 1")
+    EnterpriseProfileQueryService.AuditProgress selectAuditProgressByPhone(@Param("phone") String phone);
+
+    /** 管理端企业审核列表批量软删：只打标记，不动授信额度与状态。 */
+    @Update({"<script>",
+            "UPDATE enterprise_profile SET deleted = 1 WHERE deleted = 0 AND customer_id IN ",
+            "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach>",
+            "</script>"})
+    int batchMarkDeleted(@Param("ids") List<Long> ids);
 
     /**
      * 授信额度落库（已有档案）：额度 / 账期 / 到期时间一次写全，已用额度保持不变。
@@ -92,4 +116,40 @@ public interface EnterpriseProfileMapper {
                      @Param("limitCent") long limitCent,
                      @Param("termDays") long termDays,
                      @Param("expireAtMillis") long expireAtMillis);
+
+    /** 管理端企业审核列表：企业基本信息 + 审核意见，列表与 count 共用同一 WHERE。 */
+    @Select("<script>"
+            + "SELECT p.customer_id AS customerId, c.customer_no AS customerNo, c.phone AS phone, "
+            + "p.company_name AS companyName, p.license_no AS creditCode, p.license_url AS licenseFileId, "
+            + "p.status AS status, p.audit_remark AS auditRemark, "
+            + "UNIX_TIMESTAMP(p.audited_at) * 1000 AS auditedAtMillis, "
+            + "UNIX_TIMESTAMP(p.created_at) * 1000 AS submittedAtMillis, "
+            + "p.credit_limit_cent AS creditLimitCent, p.credit_used_cent AS creditUsedCent "
+            + "FROM enterprise_profile p JOIN customer c ON c.id = p.customer_id "
+            + "WHERE p.deleted = 0 AND c.deleted = 0 "
+            + "<if test=\"keyword != null and keyword != ''\">"
+            + " AND (p.company_name LIKE CONCAT('%', #{keyword}, '%')"
+            + " OR p.license_no LIKE CONCAT('%', #{keyword}, '%')"
+            + " OR c.phone LIKE CONCAT('%', #{keyword}, '%')"
+            + " OR CAST(p.customer_id AS CHAR) LIKE CONCAT('%', #{keyword}, '%'))"
+            + "</if> "
+            + "<if test=\"status != null and status != ''\"> AND p.status = #{status} </if> "
+            + "ORDER BY p.customer_id DESC"
+            + "</script>")
+    IPage<AdminFinanceDtos.EnterpriseAuditRow> selectAuditPage(Page<AdminFinanceDtos.EnterpriseAuditRow> page,
+                                                               @Param("keyword") String keyword,
+                                                               @Param("status") String status);
+
+    @Select("<script>"
+            + "SELECT COUNT(*) FROM enterprise_profile p JOIN customer c ON c.id = p.customer_id "
+            + "WHERE p.deleted = 0 AND c.deleted = 0 "
+            + "<if test=\"keyword != null and keyword != ''\">"
+            + " AND (p.company_name LIKE CONCAT('%', #{keyword}, '%')"
+            + " OR p.license_no LIKE CONCAT('%', #{keyword}, '%')"
+            + " OR c.phone LIKE CONCAT('%', #{keyword}, '%')"
+            + " OR CAST(p.customer_id AS CHAR) LIKE CONCAT('%', #{keyword}, '%'))"
+            + "</if> "
+            + "<if test=\"status != null and status != ''\"> AND p.status = #{status} </if> "
+            + "</script>")
+    long countAudit(@Param("keyword") String keyword, @Param("status") String status);
 }

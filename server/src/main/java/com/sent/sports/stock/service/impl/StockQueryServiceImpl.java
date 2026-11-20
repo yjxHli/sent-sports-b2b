@@ -2,6 +2,9 @@ package com.sent.sports.stock.service.impl;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sent.sports.common.web.PageQuery;
 import com.sent.sports.common.web.PageResult;
 import com.sent.sports.stock.dto.admin.AdminStockDtos;
@@ -13,10 +16,10 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.StringJoiner;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * 库存查询实现（收口阶段）：列表与流水从空桩换成真分页。
@@ -110,31 +113,45 @@ public class StockQueryServiceImpl implements StockQueryService {
         return name.toString();
     }
 
-    /** 规格 JSON 的键值对：只取字符串值，跳过键名与转义引号。 */
-    private static final Pattern SPEC_VALUE = Pattern.compile(
-            "\"(?:[^\"\\\\]|\\\\.)*\"\\s*:\\s*(\"(?:[^\"\\\\]|\\\\.)*\"|[^,}\\s]+)");
+    /** 与 CreateOrderUseCase 同款静态 mapper：快照/规格是纯数据，不必注入 Spring 的 ObjectMapper。 */
+    private static final ObjectMapper SPEC_MAPPER = new ObjectMapper();
+    private static final TypeReference<LinkedHashMap<String, Object>> SPEC_MAP_TYPE =
+            new TypeReference<LinkedHashMap<String, Object>>() {
+            };
 
     /**
-     * 把 spec_json 拼成可读规格文本。
-     * <p>老实现只切第一个冒号后面的整段，多键规格（如 {@code {"size":"XL","color":"红"}}）
-     * 会把 {@code XL", "color": "红} 这种半截 JSON 拼进商品名。这里逐个取值用「 / 」连接；
-     * 单键规格仍返回原值（与既有列表口径一致），不是对象 JSON 时原样兜底。</p>
+     * 把 spec_json 拼成可读规格文本（R16）。
+     * <p>JSON 是递归文法，正则只能覆盖「扁平字符串值」：嵌套对象会拼出半个 {@code {"color":}、
+     * 数组会拼出半个 {@code [}，null 会被当成字符串「null」。这里按 JSON 类型递归取值，
+     * 用「 / 」连接；单键规格仍返回原值，非对象 JSON（历史脏串）原样兜底。</p>
      */
     private static String plainSpec(String json) {
         if (json == null || json.isBlank()) return "";
-        Matcher matcher = SPEC_VALUE.matcher(json);
-        StringJoiner parts = new StringJoiner(" / ");
-        while (matcher.find()) {
-            String value = matcher.group(1).trim();
-            if (value.length() >= 2 && value.startsWith("\"") && value.endsWith("\"")) {
-                value = value.substring(1, value.length() - 1);
-            }
-            value = value.replace("\\\"", "\"").replace("\\\\", "\\").trim();
-            if (!value.isEmpty()) {
-                parts.add(value);
+        try {
+            Map<String, Object> spec = SPEC_MAPPER.readValue(json, SPEC_MAP_TYPE);
+            StringJoiner parts = new StringJoiner(" / ");
+            spec.values().forEach(value -> appendSpecValue(parts, value));
+            return parts.length() == 0 ? json.trim() : parts.toString();
+        } catch (JsonProcessingException e) {
+            return json.trim();
+        }
+    }
+
+    /** 标量直接拼；嵌套 Map / List 保持键的声明顺序递归展开；null 跳过。 */
+    private static void appendSpecValue(StringJoiner parts, Object value) {
+        if (value == null) {
+            return;
+        }
+        if (value instanceof Map<?, ?> nested) {
+            nested.values().forEach(v -> appendSpecValue(parts, v));
+        } else if (value instanceof List<?> list) {
+            list.forEach(v -> appendSpecValue(parts, v));
+        } else {
+            String text = String.valueOf(value).trim();
+            if (!text.isEmpty()) {
+                parts.add(text);
             }
         }
-        return parts.length() == 0 ? json.trim() : parts.toString();
     }
 
     private static int nvl(Integer value) {

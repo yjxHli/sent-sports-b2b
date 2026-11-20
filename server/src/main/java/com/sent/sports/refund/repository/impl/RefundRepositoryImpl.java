@@ -40,8 +40,10 @@ public class RefundRepositoryImpl implements RefundRepository {
         }
         // 已存在：仅推进会随业务变化的字段。退款完成（REFUNDED）落账时间，其余保持不变。
         LocalDateTime refundedAt = order.getStatus() == RefundStatus.REFUNDED ? LocalDateTime.now() : null;
+        // 退回积分数只在真的退了才覆盖（0 视为「本单没有积分动作」，不冲掉历史值）
+        Long pointRefund = order.getPointRefund() > 0L ? order.getPointRefund() : null;
         mapper.updateRefundState(order.getRefundNo(), order.getStatus().name(), order.getAppealCount(),
-                refundedAt, order.getAuditRemark());
+                refundedAt, order.getAuditRemark(), pointRefund);
     }
 
     @Override
@@ -55,6 +57,7 @@ public class RefundRepositoryImpl implements RefundRepository {
         po.setOrderId(order.getOrderId());
         po.setType(order.getType());
         po.setAmountCent(order.getAmountCent());
+        po.setPointRefund(order.getPointRefund());
         po.setStatus(order.getStatus().name());
         // 用户申请的自由文本原因落 remark；ONLY_REFUND（迟到支付）归 SYSTEM，其余归 CUSTOMER。
         boolean onlyRefund = "ONLY_REFUND".equals(order.getType());
@@ -79,6 +82,7 @@ public class RefundRepositoryImpl implements RefundRepository {
                 RefundStatus.valueOf(po.getStatus()),
                 createdAt);
         order.setAppealCount(po.getAppealCount() == null ? 0 : po.getAppealCount().intValue());
+        order.setPointRefund(po.getPointRefund() == null ? 0L : po.getPointRefund());
         order.setImages(ImageJsonCodec.decode(po.getImagesJson()));
         return order;
     }

@@ -21,6 +21,12 @@ public class RefundOrder {
     private List<String> images = List.of();
     /** 审核结论备注（驳回原因等）；落 refund_order.audit_remark，用户申诉时客服要据此复盘。 */
     private String auditRemark;
+    /**
+     * 本单退回给用户的抵扣积分数（0 = 没退）。
+     * <p>落 {@code refund_order.point_refund}：退款完成后积分的去向必须可追溯，
+     * 否则「钱退了、积分到底退没退」只能去翻流水。</p>
+     */
+    private long pointRefund;
 
     public RefundOrder(String refundNo, String orderNo, long orderId, long amountCent, String type, String reason,
                       RefundStatus status, long createdAtMillis) {
@@ -67,6 +73,16 @@ public class RefundOrder {
         this.status = status;
     }
 
+    /** 状态迁移统一入口：非法迁移抛 STATE_CONFLICT(40901)。 */
+    public void transit(RefundAction action) {
+        this.status = RefundStateMachine.transit(this.status, action);
+    }
+
+    /** 状态准入只读判断（不另写状态白名单）。 */
+    public boolean canTransit(RefundAction action) {
+        return RefundStateMachine.canTransit(this.status, action);
+    }
+
     public long getCreatedAtMillis() {
         return createdAtMillis;
     }
@@ -94,5 +110,13 @@ public class RefundOrder {
 
     public void setAuditRemark(String auditRemark) {
         this.auditRemark = auditRemark;
+    }
+
+    public long getPointRefund() {
+        return pointRefund;
+    }
+
+    public void setPointRefund(long pointRefund) {
+        this.pointRefund = Math.max(0L, pointRefund);
     }
 }

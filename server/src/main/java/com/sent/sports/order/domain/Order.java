@@ -50,6 +50,19 @@ public class Order {
         this.payStatus = PayStatus.UNPAID;
     }
 
+    /**
+     * 仓储重建专用构造器：从持久化快照还原一个已有主状态的聚合。
+     * 业务代码只能用上面的构造器创建「待付款」新订单；业务状态变更一律走 {@link #transit(OrderAction)}，
+     * 不允许在聚合外部直接改写状态。
+     */
+    public Order(String orderNo, long customerId, String idemKey, List<OrderItem> items,
+                 long goodsAmountCent, long customFeeCent, long discountCent, long freightCent,
+                 long pointDeductCent, long payableCent, long createdAtMillis, OrderStatus persistedStatus) {
+        this(orderNo, customerId, idemKey, items, goodsAmountCent, customFeeCent, discountCent,
+                freightCent, pointDeductCent, payableCent, createdAtMillis);
+        this.status = persistedStatus;
+    }
+
     public String getOrderNo() {
         return orderNo;
     }
@@ -143,7 +156,8 @@ public class Order {
         this.version = version;
     }
 
-    public void setStatus(OrderStatus status) {
+    /** 仅 domain 包内（当前仅本聚合）可直写；仓储重建走专用构造器，业务流转走 {@link #transit}。 */
+    void setStatus(OrderStatus status) {
         this.status = status;
     }
 
@@ -154,6 +168,11 @@ public class Order {
     /** 状态迁移（集中，非法迁移抛 STATE_CONFLICT）。 */
     public void transit(OrderAction action) {
         this.status = OrderStateMachine.transit(this.status, action);
+    }
+
+    /** 状态准入只读判断：用例用它做前置校验，不另写状态白名单。 */
+    public boolean canTransit(OrderAction action) {
+        return OrderStateMachine.canTransit(this.status, action);
     }
 
     /**

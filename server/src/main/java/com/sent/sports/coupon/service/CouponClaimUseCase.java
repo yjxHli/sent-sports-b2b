@@ -12,6 +12,8 @@ import com.sent.sports.customer.service.CustomerQueryService;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
+import java.time.Clock;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 /**
@@ -32,12 +34,14 @@ public class CouponClaimUseCase {
     private final CouponTemplateMapper templateMapper;
     private final CouponMapper couponMapper;
     private final CustomerQueryService customerQueryService;
+    private final Clock clock;
 
     public CouponClaimUseCase(CouponTemplateMapper templateMapper, CouponMapper couponMapper,
-                              CustomerQueryService customerQueryService) {
+                              CustomerQueryService customerQueryService, Clock clock) {
         this.templateMapper = templateMapper;
         this.couponMapper = couponMapper;
         this.customerQueryService = customerQueryService;
+        this.clock = clock;
     }
 
     /** @return 领取到的券号 */
@@ -52,11 +56,17 @@ public class CouponClaimUseCase {
             throw new BizException(ErrorCode.FORBIDDEN,
                     "该券为企业专属券，仅企业客户可领取");
         }
+        LocalDateTime now = LocalDateTime.now(clock);
+        // 会员日门禁：仅周三/周四可从领券中心领券。必须放在扣库存之前，
+        // 否则非会员日请求会白白扣掉库存却领不到券。
+        if (!MemberDayPolicy.isMemberDay(now.toLocalDate())) {
+            throw new BizException(ErrorCode.BIZ_REJECT,
+                    "仅会员日（每周三、周四）可领取优惠券，请使用会员日当天领取");
+        }
         // 原子扣减：影响行数 0 表示已领完（并发下也只有一个请求能拿到 1）
         if (templateMapper.increaseClaimed(templateId) == 0) {
             throw new BizException(ErrorCode.BIZ_REJECT, "该优惠券已领完");
         }
-        LocalDateTime now = LocalDateTime.now();
         CustomerCouponPO po = new CustomerCouponPO();
         po.setCustomerId(customerId);
         po.setTemplateId(templateId);
@@ -74,8 +84,9 @@ public class CouponClaimUseCase {
         po.setStatus(Coupon.UNUSED);
         po.setSource(SOURCE_CLAIM);
         po.setReason(null);
-        po.setExpireAt(now.plusDays(template.getValidDays() > 0
-                ? template.getValidDays() : DEFAULT_VALID_DAYS));
+        int validDays = MemberDayPolicy.claimValidDays(
+                template.getCouponType(), template.getAmountCent(), template.getValidDays());
+        po.setExpireAt(now.plusDays(validDays > 0 ? validDays : DEFAULT_VALID_DAYS));
         try {
             couponMapper.insert(po);
         } catch (DuplicateKeyException e) {

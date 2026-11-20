@@ -2,6 +2,7 @@ package com.sent.sports.coupon.domain;
 
 import java.time.LocalDateTime;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -12,7 +13,8 @@ import java.util.stream.Collectors;
  * 品类券支持按 SPU/SKU 限定范围，并支持按折扣率（如 9 折）计算；其余券型按面额封顶。</p>
  *
  * <p>{@link #discountFor(long)} 的入参是「已按券范围筛过的可抵扣金额」，
- * 范围匹配由 {@link #matchesSku(long, Long)} 在应用层逐行完成。</p>
+ * 范围匹配由 {@link #matchesSku(long, Long)} 完成；「到底能不能用、能抵多少」的完整判定
+ * 统一走 {@link #applicability(String, long, List, LocalDateTime)}（R9），调用方不得自己拼条件。
  */
 public class Coupon {
 
@@ -94,6 +96,40 @@ public class Coupon {
         return UNUSED.equals(status)
                 && expireAt != null && !expireAt.isBefore(now)
                 && eligibleCent >= thresholdCent;
+    }
+
+    /**
+     * 券对「该客户 + 该笔订单」的完整适用性（R9 唯一真源）：客户域 → 券范围 → 门槛 → 抵扣额。
+     *
+     * <p>为什么必须收敛在这里：可用券列表与下单抵扣原先是两份实现（一份按 {@code goodsCent}、
+     * 一份按逐行金额），口径漂移的典型症状就是「列表说这张券能用，结算却抵 0 元」。
+     * 两侧现在都只调本方法，列表取 {@link Eligibility#usable()}，下单取 {@link Eligibility#discountCent()}。</p>
+     *
+     * <p>门槛按整单商品额（{@code goodsCent}，与 {@code /coupons/usable} 入参同口径）判定，
+     * 抵扣额按「命中范围的行金额」计算——品类券只对命中 SPU/SKU 的行打折，这与运营对券的描述一致。</p>
+     *
+     * @param customerType 客户类型（{@code PERSON} / {@code ENTERPRISE}），企业券据此排除个人客户
+     * @param goodsCent    整单商品额（含定制费、不含运费）
+     * @param lines        订单行；为空表示「只判总额、不判范围」的老调用方。
+     *                     <b>要拿到准确抵扣额必须带每行金额</b>，只判可用性时可以传 0
+     * @param now          判定时刻，过期与否以它为准
+     */
+    public Eligibility applicability(String customerType, long goodsCent, List<Line> lines, LocalDateTime now) {
+        if (isEnterpriseOnly() && !CUSTOMER_ENTERPRISE.equals(customerType)) {
+            return Eligibility.UNAVAILABLE;
+        }
+        List<Line> rows = lines == null ? List.of() : lines;
+        if (!rows.isEmpty() && rows.stream().noneMatch(line -> matchesSku(line.skuId(), line.spuId()))) {
+            return Eligibility.UNAVAILABLE;
+        }
+        if (!usableFor(goodsCent, now)) {
+            return Eligibility.UNAVAILABLE;
+        }
+        long eligible = rows.isEmpty()
+                ? Math.max(0L, goodsCent)
+                : rows.stream().filter(line -> matchesSku(line.skuId(), line.spuId()))
+                        .mapToLong(line -> Math.max(0L, line.amountCent())).sum();
+        return new Eligibility(true, eligible, discountFor(eligible));
     }
 
     /**
@@ -216,5 +252,22 @@ public class Coupon {
 
     public String orderNo() {
         return orderNo;
+    }
+
+    /**
+     * 参与适用性判定的订单行：SKU 主键 + 所属 SPU（SKU 券可为空）+ 行金额（分）。
+     * <p>SPU 由调用方查好后传入：领域对象不该反向依赖商品模块的查询服务。</p>
+     */
+    public record Line(long skuId, Long spuId, long amountCent) {
+    }
+
+    /**
+     * 适用性结论：是否可用、可抵扣基数、实际抵扣额（分）。
+     * <p>{@code eligibleCent} 只在行金额真实传入时才有意义（下单侧）；列表侧只读 {@code usable}。</p>
+     */
+    public record Eligibility(boolean usable, long eligibleCent, long discountCent) {
+
+        /** 不可用（客户域不符 / 范围不命中 / 已用已过期 / 未达门槛）的统一取值。 */
+        public static final Eligibility UNAVAILABLE = new Eligibility(false, 0L, 0L);
     }
 }

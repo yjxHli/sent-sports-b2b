@@ -7,6 +7,7 @@ import com.sent.sports.stock.mapper.po.StockFlowPO;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 
 import java.util.List;
 
@@ -32,7 +33,7 @@ public interface StockFlowMapper extends BaseMapper<StockFlowPO> {
 
     /** 管理端流水分页：按 SKU 与业务类型收窄，最新的在前。 */
     @Select("<script>"
-            + "SELECT * FROM stock_flow WHERE 1 = 1 "
+            + "SELECT * FROM stock_flow WHERE deleted = 0 "
             + "<if test=\"skuId != null\"> AND sku_id = #{skuId}</if> "
             + "<if test=\"bizType != null and bizType != ''\"> AND biz_type = #{bizType}</if> "
             + "ORDER BY id DESC"
@@ -40,4 +41,10 @@ public interface StockFlowMapper extends BaseMapper<StockFlowPO> {
     IPage<StockFlowPO> selectFlowPage(Page<StockFlowPO> page,
                                      @Param("skuId") Long skuId,
                                      @Param("bizType") String bizType);
+
+    /** 管理端批量软删流水：只隐藏展示，库存数量与 before/after 快照不动。 */
+    @Update({"<script>", "UPDATE stock_flow SET deleted = 1 WHERE deleted = 0 AND id IN ",
+            "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach>",
+            "</script>"})
+    int batchMarkDeleted(@Param("ids") List<Long> ids);
 }

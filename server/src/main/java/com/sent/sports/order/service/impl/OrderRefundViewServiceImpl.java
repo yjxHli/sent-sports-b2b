@@ -35,7 +35,8 @@ public class OrderRefundViewServiceImpl implements OrderRefundViewService {
                     .map(i -> new RefundLineView(i.getSkuId(), i.getLineTotalCent(), 0L))
                     .toList();
             boolean shipped = o.getItems().stream().anyMatch(i -> i.getShippedQty() > 0);
-            return new OrderRefundView(o.getOrderNo(), o.getCustomerId(), orderId, items, o.getFreightCent(), shipped);
+            return new OrderRefundView(o.getOrderNo(), o.getCustomerId(), orderId, items,
+                    o.getFreightCent(), shipped, o.getPayableCent());
         });
     }
 }

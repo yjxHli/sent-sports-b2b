@@ -24,11 +24,12 @@ public final class CouponDtos {
                              String customerScope) {
     }
 
-    /** 领券中心卡片：remainQty 为 -1 表示不限量，0 表示已领完。 */
+    /** 领券中心卡片：remainQty 为 -1 表示不限量，0 表示已领完。
+     *  claimValidDays 是会员日领取后的实际有效天数（由 MemberDayPolicy 统一算出）。 */
     public record ClaimableVO(long templateId, String name, long amountCent, long thresholdCent,
                               String couponType, String discountType, int discountRate,
                               String scopeType, String scopeIds, String customerScope,
-                              int validDays, int remainQty, boolean claimed) {
+                              int validDays, int remainQty, boolean claimed, int claimValidDays) {
     }
 
     public record IssueVO(long couponId, long customerId, String couponNo, String name,

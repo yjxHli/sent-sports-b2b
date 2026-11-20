@@ -11,6 +11,7 @@ import com.sent.sports.order.domain.Order;
 import com.sent.sports.order.domain.OrderStatus;
 import com.sent.sports.order.domain.PayStatus;
 import com.sent.sports.order.dto.OrderDtos;
+import com.sent.sports.order.dto.OrderVOAssembler;
 import com.sent.sports.order.mapper.OrderMapper;
 import com.sent.sports.order.mapper.ShipmentMapper;
 import com.sent.sports.order.mapper.po.OrderItemListRow;
@@ -85,23 +86,11 @@ public class OrderQueryServiceImpl implements OrderQueryService {
                         o.getPayableCent(), MoneyUtil.toYuan(nonNull(o.getPayableCent())),
                         toMillis(o.getCreatedAt()),
                         itemsByOrder.getOrDefault(o.getId(), List.of()).stream()
-                                .map(OrderQueryServiceImpl::toItemLine)
+                                .map(OrderVOAssembler::toItemLine)
                                 .toList(),
                         toMillis(o.getExpireAt())))
                 .toList();
         return PageResult.of(list, rows.getTotal(), pageQuery.getPage(), pageQuery.getSize());
-    }
-
-    /** 行投影 → 前端商品行：金额一律「分 + 元」，行实付用于退款行上限。 */
-    private static OrderDtos.OrderItemLine toItemLine(OrderItemListRow i) {
-        return new OrderDtos.OrderItemLine(
-                i.getSkuId() == null ? null : String.valueOf(i.getSkuId()),
-                i.getProductId() == null ? null : String.valueOf(i.getProductId()),
-                i.getTitle(), i.getSpec(), i.getQty(),
-                i.getUnitPriceCent(),
-                MoneyUtil.toYuan(i.getUnitPriceCent() == null ? 0L : i.getUnitPriceCent()),
-                i.getLinePaidCent(),
-                MoneyUtil.toYuan(i.getLinePaidCent() == null ? 0L : i.getLinePaidCent()));
     }
 
     /** 下单时间按系统时区转毫秒（前端统一按毫秒渲染，`JacksonConfig` 会把 Long 序列化成字符串）。 */
@@ -125,27 +114,9 @@ public class OrderQueryServiceImpl implements OrderQueryService {
                 : shipmentMapper.selectLatestByOrderId(o.getId());
         // 支付方式 / 交易号：未发起支付时为空，前端按「未支付」空态渲染
         PaymentSummaryDto payment = paymentQueryService.findSummary(o.getOrderNo()).orElse(null);
-        return new OrderDtos.OrderVO(
-                o.getOrderNo(), o.getStatus(), o.getPayStatus(), null, o.getAfterSaleStatus(),
-                o.getPayableCent(), MoneyUtil.toYuan(nonNull(o.getPayableCent())),
-                o.getGoodsAmountCent(), MoneyUtil.toYuan(nonNull(o.getGoodsAmountCent())),
-                o.getFreightCent(), MoneyUtil.toYuan(nonNull(o.getFreightCent())),
-                o.getPointDeductCent(), MoneyUtil.toYuan(nonNull(o.getPointDeductCent())),
-                itemRows.stream().map(OrderQueryServiceImpl::toItemLine).toList(),
-                toMillis(o.getCreatedAt()),
-                toMillis(o.getPaidAt()),
-                toMillis(o.getCompletedAt()),
-                o.getDiscountCent(),
-                o.getCustomFeeCent(),
-                o.getAddressSnapshotJson(),
-                shipment == null ? null : shipment.getCarrier(),
-                shipment == null ? null : shipment.getTrackingNo(),
-                shipment == null ? null : toMillis(shipment.getShippedAt()),
-                payment == null ? null : payment.channel(),
-                payment == null ? null : payment.txnNo(),
-                payment == null ? null : payment.tradeNo(),
-                // 商城端 5 分钟倒计时的唯一时间源（与 OrderTimeoutJob 同一个 expire_at）
-                toMillis(o.getExpireAt()));
+        // 商城端 5 分钟倒计时的时间源与 OrderTimeoutJob 一致（同一个 orders.expire_at），
+        // 换算与字段映射统一交给 Assembler，避免 27 个位置参数错位。
+        return OrderVOAssembler.fromDetail(o, itemRows, shipment, payment);
     }
 
     private long nonNull(Long value) {

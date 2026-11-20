@@ -1,9 +1,8 @@
 package com.sent.sports.job;
 
 import com.sent.sports.common.error.BizException;
-import com.sent.sports.order.mapper.OrderMapper;
-import com.sent.sports.order.mapper.po.OrderPO;
 import com.sent.sports.order.service.CancelOrderUseCase;
+import com.sent.sports.order.service.OrderJobQueryService;
 import com.sent.sports.order.service.dto.CancelOrderCmd;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -28,12 +27,13 @@ public class OrderTimeoutJob {
     private static final Logger log = LoggerFactory.getLogger(OrderTimeoutJob.class);
     private static final int BATCH_SIZE = 200;
 
-    private final OrderMapper orderMapper;
+    private final OrderJobQueryService orderJobQueryService;
     private final CancelOrderUseCase cancelOrderUseCase;
     private final Clock clock;
 
-    public OrderTimeoutJob(OrderMapper orderMapper, CancelOrderUseCase cancelOrderUseCase, Clock clock) {
-        this.orderMapper = orderMapper;
+    public OrderTimeoutJob(OrderJobQueryService orderJobQueryService, CancelOrderUseCase cancelOrderUseCase,
+                           Clock clock) {
+        this.orderJobQueryService = orderJobQueryService;
         this.cancelOrderUseCase = cancelOrderUseCase;
         this.clock = clock;
     }
@@ -49,15 +49,16 @@ public class OrderTimeoutJob {
 
     /** 执行一轮取消，返回成功取消的订单数（便于单测断言）。 */
     public int cancelTimeoutOrders() {
-        List<OrderPO> timeoutOrders = orderMapper.selectTimeoutUnpaid(LocalDateTime.now(clock), BATCH_SIZE);
+        List<String> timeoutOrderNos = orderJobQueryService.findTimeoutUnpaidOrderNos(
+                LocalDateTime.now(clock), BATCH_SIZE);
         int cancelled = 0;
-        for (OrderPO order : timeoutOrders) {
+        for (String orderNo : timeoutOrderNos) {
             try {
-                cancelOrderUseCase.cancel(new CancelOrderCmd(order.getOrderNo()));
+                cancelOrderUseCase.cancel(new CancelOrderCmd(orderNo));
                 cancelled++;
             } catch (BizException e) {
                 // 已被用户主动取消或支付：属于正常竞争结果，跳过
-                log.debug("跳过订单 {}：{}", order.getOrderNo(), e.getMessage());
+                log.debug("跳过订单 {}：{}", orderNo, e.getMessage());
             }
         }
         return cancelled;

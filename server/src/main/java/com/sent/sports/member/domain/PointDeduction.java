@@ -24,4 +24,15 @@ public final class PointDeduction {
     public static long remainingPoints(int availablePoints, long goodsTotalCent) {
         return (long) availablePoints - maxDeductibleCent(availablePoints, goodsTotalCent);
     }
+
+    /**
+     * 抵扣金额（分）折算成要扣减的积分数：<b>1 积分 = 1 分</b>（100 积分 = 1 元）。
+     *
+     * <p>与发放侧的 {@link PointRule#pointsForCent}（1 元 = 1 积分）<b>相差 100 倍</b>：
+     * 抵扣是「积分当钱花」，发放是「花钱攒积分」。支付成功扣积分时顺手调了发放侧的方法，
+     * 用户抵 30 元只会被扣 0.3 积分——所以这个换算必须收在领域里、只能从这一处走。</p>
+     */
+    public static long pointsForDeductCent(long deductCent) {
+        return Math.max(0L, deductCent);
+    }
 }

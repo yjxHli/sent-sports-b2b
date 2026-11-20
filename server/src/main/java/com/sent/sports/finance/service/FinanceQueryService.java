@@ -52,6 +52,13 @@ public interface FinanceQueryService {
     PageResult<AdminFinanceDtos.PaymentRecordVO> paymentRecords(PageQuery pageQuery,
                                                                 Long customerId, String status);
 
+    /** 企业审核列表：企业基本信息 + 审核意见，支持关键字与状态筛选（SQL 下推）。 */
+    PageResult<AdminFinanceDtos.EnterpriseAuditRow> enterpriseAudits(PageQuery pageQuery,
+                                                                    String keyword, String status);
+
+    /** 核销与冲销明细：按客户查询每个用户的分摊记录。 */
+    PageResult<AdminFinanceDtos.WriteOffRow> writeOffs(PageQuery pageQuery, Long customerId);
+
     /**
      * 按订单号新建开票申请并开具（财务代客开票）。
      * <p>发票管理页此前无任何申请来源、列表恒空，工具栏开票弹窗只能提交写死的 invoiceId=1 → 404。

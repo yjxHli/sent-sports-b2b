@@ -8,9 +8,11 @@ import com.sent.sports.common.web.PageQuery;
 import com.sent.sports.common.web.PageResult;
 import com.sent.sports.finance.dto.admin.AdminFinanceDtos;
 import com.sent.sports.finance.mapper.ContractMapper;
+import com.sent.sports.finance.mapper.EnterpriseProfileMapper;
 import com.sent.sports.finance.mapper.InvoiceMapper;
 import com.sent.sports.finance.mapper.PaymentRecordMapper;
 import com.sent.sports.finance.mapper.ReceivableMapper;
+import com.sent.sports.finance.mapper.WriteOffMapper;
 import com.sent.sports.finance.mapper.po.ContractListItemPO;
 import com.sent.sports.finance.mapper.po.InvoiceListItemPO;
 import com.sent.sports.finance.mapper.po.PaymentRecordPO;
@@ -37,14 +39,41 @@ public class FinanceQueryServiceImpl implements FinanceQueryService {
     private final ContractMapper contractMapper;
     private final ReceivableMapper receivableMapper;
     private final PaymentRecordMapper paymentRecordMapper;
+    private final EnterpriseProfileMapper enterpriseProfileMapper;
+    private final WriteOffMapper writeOffMapper;
 
     public FinanceQueryServiceImpl(InvoiceMapper invoiceMapper, ContractMapper contractMapper,
                                    ReceivableMapper receivableMapper,
-                                   PaymentRecordMapper paymentRecordMapper) {
+                                   PaymentRecordMapper paymentRecordMapper,
+                                   EnterpriseProfileMapper enterpriseProfileMapper,
+                                   WriteOffMapper writeOffMapper) {
         this.invoiceMapper = invoiceMapper;
         this.contractMapper = contractMapper;
         this.receivableMapper = receivableMapper;
         this.paymentRecordMapper = paymentRecordMapper;
+        this.enterpriseProfileMapper = enterpriseProfileMapper;
+        this.writeOffMapper = writeOffMapper;
+    }
+
+    @Override
+    public PageResult<AdminFinanceDtos.WriteOffRow> writeOffs(PageQuery pageQuery, Long customerId) {
+        Page<AdminFinanceDtos.WriteOffRow> page =
+                new Page<>(pageQuery.getPage(), pageQuery.getSize());
+        writeOffMapper.selectWriteOffPage(page, customerId);
+        long total = writeOffMapper.countWriteOff(customerId);
+        return PageResult.of(page.getRecords(), total, pageQuery.getPage(), pageQuery.getSize());
+    }
+
+    @Override
+    public PageResult<AdminFinanceDtos.EnterpriseAuditRow> enterpriseAudits(
+            PageQuery pageQuery, String keyword, String status) {
+        String normalizedKeyword = normalize(keyword);
+        String normalizedStatus = normalize(status);
+        Page<AdminFinanceDtos.EnterpriseAuditRow> page =
+                new Page<>(pageQuery.getPage(), pageQuery.getSize());
+        enterpriseProfileMapper.selectAuditPage(page, normalizedKeyword, normalizedStatus);
+        long total = enterpriseProfileMapper.countAudit(normalizedKeyword, normalizedStatus);
+        return PageResult.of(page.getRecords(), total, pageQuery.getPage(), pageQuery.getSize());
     }
 
     @Override

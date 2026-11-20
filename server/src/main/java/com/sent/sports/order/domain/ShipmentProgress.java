@@ -25,4 +25,16 @@ public final class ShipmentProgress {
         }
         return OrderStatus.WAIT_RECEIVE;
     }
+
+    /**
+     * 由当前主状态与本次发货进度选出迁移动作；实际准入仍由 {@link OrderStateMachine} 裁决。
+     * 非法当前状态（如 WAIT_RECEIVE / COMPLETED）不会被这里放行：算出的动作会被状态机拒绝。
+     */
+    public static OrderAction actionFor(OrderStatus current, int totalQty, int shippedQty) {
+        OrderStatus target = recalc(totalQty, shippedQty);
+        if (target == OrderStatus.WAIT_RECEIVE) {
+            return OrderAction.SHIP_FULL;
+        }
+        return current == OrderStatus.WAIT_SHIP ? OrderAction.SHIP_PARTIAL : OrderAction.SHIP_CONTINUE;
+    }
 }

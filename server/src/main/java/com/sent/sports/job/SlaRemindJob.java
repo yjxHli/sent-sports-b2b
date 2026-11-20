@@ -1,8 +1,8 @@
 package com.sent.sports.job;
 
 import com.sent.sports.common.error.BizException;
-import com.sent.sports.customize.mapper.CustomOrderMapper;
-import com.sent.sports.refund.mapper.RefundOrderMapper;
+import com.sent.sports.customize.service.CustomizeJobQueryService;
+import com.sent.sports.refund.service.RefundJobQueryService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -22,13 +22,14 @@ public class SlaRemindJob {
     private static final Logger log = LoggerFactory.getLogger(SlaRemindJob.class);
     private static final int BATCH_SIZE = 200;
 
-    private final CustomOrderMapper customOrderMapper;
-    private final RefundOrderMapper refundOrderMapper;
+    private final CustomizeJobQueryService customizeJobQueryService;
+    private final RefundJobQueryService refundJobQueryService;
     private final Clock clock;
 
-    public SlaRemindJob(CustomOrderMapper customOrderMapper, RefundOrderMapper refundOrderMapper, Clock clock) {
-        this.customOrderMapper = customOrderMapper;
-        this.refundOrderMapper = refundOrderMapper;
+    public SlaRemindJob(CustomizeJobQueryService customizeJobQueryService,
+                        RefundJobQueryService refundJobQueryService, Clock clock) {
+        this.customizeJobQueryService = customizeJobQueryService;
+        this.refundJobQueryService = refundJobQueryService;
         this.clock = clock;
     }
 
@@ -44,14 +45,14 @@ public class SlaRemindJob {
 
         int reviewTimeout = 0;
         try {
-            reviewTimeout = customOrderMapper.selectReviewTimeout(now, BATCH_SIZE).size();
+            reviewTimeout = customizeJobQueryService.countReviewTimeout(now, BATCH_SIZE);
         } catch (BizException e) {
             log.debug("审图超时查询跳过：{}", e.getMessage());
         }
 
         int pendingRefund = 0;
         try {
-            pendingRefund = refundOrderMapper.selectPending(BATCH_SIZE).size();
+            pendingRefund = refundJobQueryService.countPending(BATCH_SIZE);
         } catch (BizException e) {
             log.debug("待审退款查询跳过：{}", e.getMessage());
         }

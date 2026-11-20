@@ -92,7 +92,8 @@ public interface ReceivableMapper extends BaseMapper<ReceivablePO> {
             + "r.status AS status "
             + "FROM receivable r "
             + "LEFT JOIN orders o ON o.id = r.order_id "
-            + "WHERE (#{customerId} IS NULL OR r.customer_id = #{customerId}) "
+            + "WHERE r.deleted = 0 "
+            + "AND (#{customerId} IS NULL OR r.customer_id = #{customerId}) "
             + "AND (#{status} IS NULL OR #{status} = '' OR r.status = #{status}) "
             + "AND (#{orderNo} IS NULL OR #{orderNo} = '' "
             + "     OR o.order_no LIKE CONCAT('%', #{orderNo}, '%')) "
@@ -112,7 +113,8 @@ public interface ReceivableMapper extends BaseMapper<ReceivablePO> {
     @Select("<script>"
             + "SELECT COUNT(*) FROM receivable r "
             + "LEFT JOIN orders o ON o.id = r.order_id "
-            + "WHERE (#{customerId} IS NULL OR r.customer_id = #{customerId}) "
+            + "WHERE r.deleted = 0 "
+            + "AND (#{customerId} IS NULL OR r.customer_id = #{customerId}) "
             + "AND (#{status} IS NULL OR #{status} = '' OR r.status = #{status}) "
             + "AND (#{orderNo} IS NULL OR #{orderNo} = '' "
             + "     OR o.order_no LIKE CONCAT('%', #{orderNo}, '%')) "
@@ -120,4 +122,10 @@ public interface ReceivableMapper extends BaseMapper<ReceivablePO> {
             + "</script>")
     long countReceivable(@Param("customerId") Long customerId, @Param("status") String status,
                          @Param("openOnly") boolean openOnly, @Param("orderNo") String orderNo);
+
+    /** 管理端批量软删应收台账：金额与核销快照一概不动。 */
+    @Update({"<script>", "UPDATE receivable SET deleted = 1 WHERE deleted = 0 AND id IN ",
+            "<foreach collection='ids' item='id' open='(' separator=',' close=')'>#{id}</foreach>",
+            "</script>"})
+    int batchMarkDeleted(@Param("ids") List<Long> ids);
 }

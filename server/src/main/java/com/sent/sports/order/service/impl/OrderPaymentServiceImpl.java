@@ -37,7 +37,8 @@ public class OrderPaymentServiceImpl implements OrderPaymentService {
     @Override
     public Optional<OrderPaymentView> getView(String orderNo) {
         return orderRepository.findByOrderNo(orderNo).map(o ->
-                new OrderPaymentView(o.getOrderNo(), o.getStatus().name(), o.getPayStatus().name(), o.getPayableCent()));
+                new OrderPaymentView(o.getOrderNo(), o.getStatus().name(), o.getPayStatus().name(),
+                        o.getPayableCent(), o.getCustomerId(), o.getPointDeductCent()));
     }
 
     @Override

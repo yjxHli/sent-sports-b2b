@@ -97,33 +97,7 @@ public final class OrderDtos {
                            * 前端倒计时归零后刷新即可看到「已取消」，不会出现「倒计时结束但单子还在」。</p>
                            */
                           Long expireAtMillis) {
-
-        /** 兼容下单 / 确认收货等「只回状态不回商品行」的入口。 */
-        public OrderVO(String orderNo, String status, String payStatus, String shipStatus, String refundStatus,
-                       Long payableCent, String payableYuan,
-                       Long goodsAmountCent, String goodsAmountYuan,
-                       Long freightCent, String freightYuan,
-                       Long pointDeductCent, String pointDeductYuan) {
-            this(orderNo, status, payStatus, shipStatus, refundStatus, payableCent, payableYuan,
-                    goodsAmountCent, goodsAmountYuan, freightCent, freightYuan,
-                    pointDeductCent, pointDeductYuan, List.of(),
-                    null, null, null, null, null, null, null, null, null,
-                    null, null, null, null);
-        }
-
-        /** 兼容「带回商品行但不需要时间/物流」的调用（详情接口已改走全参构造）。 */
-        public OrderVO(String orderNo, String status, String payStatus, String shipStatus, String refundStatus,
-                       Long payableCent, String payableYuan,
-                       Long goodsAmountCent, String goodsAmountYuan,
-                       Long freightCent, String freightYuan,
-                       Long pointDeductCent, String pointDeductYuan,
-                       List<OrderItemLine> items) {
-            this(orderNo, status, payStatus, shipStatus, refundStatus, payableCent, payableYuan,
-                    goodsAmountCent, goodsAmountYuan, freightCent, freightYuan,
-                    pointDeductCent, pointDeductYuan, items,
-                    null, null, null, null, null, null, null, null, null,
-                    null, null, null, null);
-        }
+        // R13：精简入口统一走 OrderVOAssembler.builder()，不再为每个字段组合重载构造器。
     }
 
     /**

@@ -3,6 +3,7 @@ package com.sent.sports.customer.service;
 import com.sent.sports.common.anno.UseCase;
 import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
+import com.sent.sports.common.util.SensitiveWordFilter;
 import com.sent.sports.customer.dto.user.MeVO;
 import com.sent.sports.customer.mapper.CustomerMapper;
 import org.springframework.stereotype.Service;
@@ -20,11 +21,14 @@ public class UpdateProfileUseCase {
 
     private final CustomerMapper customerMapper;
     private final CustomerProfileQueryService profileQueryService;
+    private final SensitiveWordFilter sensitiveWordFilter;
 
     public UpdateProfileUseCase(CustomerMapper customerMapper,
-                                CustomerProfileQueryService profileQueryService) {
+                                CustomerProfileQueryService profileQueryService,
+                                SensitiveWordFilter sensitiveWordFilter) {
         this.customerMapper = customerMapper;
         this.profileQueryService = profileQueryService;
+        this.sensitiveWordFilter = sensitiveWordFilter;
     }
 
     @UseCase
@@ -32,6 +36,10 @@ public class UpdateProfileUseCase {
         String name = nickname == null ? "" : nickname.trim();
         if (name.isEmpty() || name.length() > NICKNAME_MAX) {
             throw new BizException(ErrorCode.PARAM_INVALID, "昵称长度需在 1~20 个字符之间");
+        }
+        // 昵称是对客展示面（客服工作台、评价卡、订单卡片都会带），命中敏感词直接拒绝保存
+        if (sensitiveWordFilter.contains(name)) {
+            throw new BizException(ErrorCode.SENSITIVE_NICKNAME);
         }
         String avatar = avatarFileId == null || avatarFileId.isBlank()
                 ? null : avatarFileId.trim();

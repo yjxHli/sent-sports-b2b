@@ -184,6 +184,25 @@ public class AdminFinanceController {
         return R.ok(new AdminFinanceDtos.ReverseVO(r.paymentNo(), r.status()));
     }
 
+    /** 核销与冲销明细：按客户查看每个用户的分摊记录。 */
+    @GetMapping("/write-offs")
+    @RequirePerm("finance:writeoff")
+    public R<PageResult<AdminFinanceDtos.WriteOffRow>> writeOffs(
+            @ModelAttribute PageQuery page,
+            @RequestParam(required = false) Long customerId) {
+        return R.ok(financeQueryService.writeOffs(page, customerId));
+    }
+
+    /** 企业审核列表：独立的档案表分页，列表与 count 同条件，软删行不可见。 */
+    @GetMapping("/enterprise/audits")
+    @RequirePerm("customer:manage")
+    public R<PageResult<AdminFinanceDtos.EnterpriseAuditRow>> enterpriseAudits(
+            @ModelAttribute PageQuery page,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String status) {
+        return R.ok(financeQueryService.enterpriseAudits(page, keyword, status));
+    }
+
     @PostMapping("/enterprise/{id}/audit")
     @RequirePerm("customer:manage")
     public R<AdminFinanceDtos.EnterpriseAuditVO> auditEnterprise(

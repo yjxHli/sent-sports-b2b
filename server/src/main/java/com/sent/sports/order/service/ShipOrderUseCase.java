@@ -7,7 +7,6 @@ import com.sent.sports.common.event.DomainEventPublisher;
 import com.sent.sports.customize.service.CustomizeShipGateway;
 import com.sent.sports.order.domain.Order;
 import com.sent.sports.order.domain.OrderItem;
-import com.sent.sports.order.domain.OrderStatus;
 import com.sent.sports.order.domain.ShipmentProgress;
 import com.sent.sports.order.event.ShipEvent;
 import com.sent.sports.order.repository.OrderRepository;
@@ -16,8 +15,6 @@ import com.sent.sports.order.service.dto.ShipOrderCmd;
 import com.sent.sports.order.service.dto.ShipOrderResult;
 
 import java.time.Clock;
-import java.util.List;
-import java.util.Optional;
 import org.springframework.stereotype.Service;
 /**
  * 发货用例（P3-15）：实现 plan §7.4 与验收项。
@@ -27,8 +24,6 @@ import org.springframework.stereotype.Service;
  */
 @Service
 public class ShipOrderUseCase {
-
-    private static final List<OrderStatus> SHIPPABLE = List.of(OrderStatus.WAIT_SHIP, OrderStatus.PART_SHIPPED);
 
     private final OrderRepository orderRepository;
     private final CustomizeShipGateway customizeShipGateway;
@@ -50,10 +45,6 @@ public class ShipOrderUseCase {
     public ShipOrderResult ship(ShipOrderCmd cmd) {
         Order order = orderRepository.findByOrderNo(cmd.orderNo())
                 .orElseThrow(() -> new BizException(ErrorCode.PARAM_INVALID, "订单不存在"));
-        if (!SHIPPABLE.contains(order.getStatus())) {
-            throw new BizException(ErrorCode.STATE_CONFLICT, "订单当前状态不可发货");
-        }
-
         for (ShipLineCmd line : cmd.lines()) {
             OrderItem item = order.getItems().stream()
                     .filter(i -> i.getSkuId() == line.skuId())
@@ -68,7 +59,8 @@ public class ShipOrderUseCase {
 
         int totalQty = order.getItems().stream().mapToInt(OrderItem::getQty).sum();
         int shippedQty = order.getItems().stream().mapToInt(OrderItem::getShippedQty).sum();
-        order.setStatus(ShipmentProgress.recalc(totalQty, shippedQty));
+        // 动作由发货进度算出，状态变更统一交回聚合状态机；非法当前状态由状态机抛 40901
+        order.transit(ShipmentProgress.actionFor(order.getStatus(), totalQty, shippedQty));
         orderRepository.save(order);
 
         // 发货落账（与上面的聚合回写同处 @UseCase 事务）：

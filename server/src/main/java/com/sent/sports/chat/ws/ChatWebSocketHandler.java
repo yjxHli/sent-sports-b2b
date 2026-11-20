@@ -14,6 +14,7 @@ import com.sent.sports.chat.service.ChatNotifier;
 import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
 import com.sent.sports.common.util.IdGen;
+import com.sent.sports.common.util.SensitiveWordFilter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
@@ -50,6 +51,9 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 
     private static final String TOKEN_PARAM = "token";
 
+    /** 敏感词拒绝帧的人话文案：前端直接弹给用户，不再二次加工。 */
+    private static final String SENSITIVE_REASON = "消息包含违禁词，请文明发言";
+
     /** sessionId -> 认证通过的 staffId，用于消息分派与断线注销。 */
     private final Map<String, Long> staffBySession = new ConcurrentHashMap<>();
 
@@ -64,11 +68,13 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     private final ChatMessageRepository chatMessageRepository;
     private final IdGen idGen;
     private final Clock clock;
+    private final SensitiveWordFilter sensitiveWordFilter;
 
     public ChatWebSocketHandler(SessionBroadcaster broadcaster, ChatNotifier notifier,
                                 TokenService tokenService, ObjectMapper objectMapper,
                                 ChatSessionRepository chatSessionRepository,
-                                ChatMessageRepository chatMessageRepository, IdGen idGen, Clock clock) {
+                                ChatMessageRepository chatMessageRepository, IdGen idGen, Clock clock,
+                                SensitiveWordFilter sensitiveWordFilter) {
         this.broadcaster = broadcaster;
         this.notifier = notifier;
         this.tokenService = tokenService;
@@ -77,6 +83,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         this.chatMessageRepository = chatMessageRepository;
         this.idGen = idGen;
         this.clock = clock;
+        this.sensitiveWordFilter = sensitiveWordFilter;
     }
 
     @Override
@@ -201,6 +208,16 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                     json(Map.of("event", "DUPLICATE", "clientMsgId", clientMsgId), "DUPLICATE")));
             return;
         }
+        // 敏感词风控（2026-11-19）：WS 上行与 REST 兜底必须同口径阻断——
+        // 只在 REST 拦，客户端切到长连接就能绕过。命中即回错误 ACK，不落库、不广播。
+        // 只检 TEXT：IMAGE 的 content 是 fileId、ORDER 是订单 JSON，匹配它们只会误杀。
+        if (ChatMsgType.of(msgType) == ChatMsgType.TEXT && sensitiveWordFilter.contains(content)) {
+            reply(session, WsEnvelope.ack(sessionId, envelope.seq(),
+                    json(Map.of("code", ErrorCode.SENSITIVE_MESSAGE.getCode(),
+                            "reason", SENSITIVE_REASON, "clientMsgId", clientMsgId),
+                            "{\"code\":40003}")));
+            return;
+        }
         try {
             int seq = chatSession.appendMessage();
             long now = clock.instant().toEpochMilli();
@@ -238,7 +255,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                     json(Map.of("event", "DUPLICATE", "clientMsgId", clientMsgId), "DUPLICATE")));
         } catch (BizException e) {
             reply(session, WsEnvelope.ack(sessionId, envelope.seq(),
-                    json(Map.of("code", e.getErrorCode().getCode(), "reason", "rejected"),
+                    json(Map.of("code", e.getErrorCode().getCode(), "reason", e.resolvedMessage()),
                             "{\"code\":40901}")));
         } catch (RuntimeException e) {
             log.warn("客服消息落库失败, sessionId={}, senderType={}", sessionId, senderType, e);

@@ -1,6 +1,6 @@
 package com.sent.sports.member.dto;
 
-import com.sent.sports.member.domain.MemberLevel;
+import com.sent.sports.member.domain.MemberTier;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
@@ -18,7 +18,7 @@ public final class MemberDtos {
     /** 人工授级请求：客户、目标等级、有效期截止毫秒、原因。 */
     public record GrantLevelCmd(
             @NotNull(message = "客户ID不能为空") Long customerId,
-            @NotNull(message = "目标等级不能为空") MemberLevel targetLevel,
+            @NotNull(message = "目标等级不能为空") MemberTier targetLevel,
             @NotNull(message = "有效期不能为空") Long validToMillis,
             @NotBlank(message = "原因不能为空") String reason) {
     }

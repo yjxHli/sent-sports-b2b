@@ -1,9 +1,8 @@
 package com.sent.sports.order.controller.admin;
 
+import com.sent.sports.common.anno.Confirm;
 import com.sent.sports.common.anno.RequirePerm;
-import com.sent.sports.common.error.BizException;
-import com.sent.sports.common.error.ErrorCode;
-import com.sent.sports.common.service.ConfirmTokenService;
+import com.sent.sports.common.domain.ConfirmAction;
 import com.sent.sports.common.web.PageQuery;
 import com.sent.sports.common.web.PageResult;
 import com.sent.sports.common.web.R;
@@ -16,7 +15,6 @@ import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -26,21 +24,16 @@ import java.util.List;
 /**
  * 订单管理控制器：多维筛选、代客下单、拆单、发货、关单。
  * <p>关单是危险操作：{@code @RequirePerm("order:close")} 由权限拦截器校验，
- * {@code X-Confirm-Token} 用后即焚（短语「确认关闭」在换令牌时由 ConfirmAction 校验）。</p>
+ * {@code @Confirm(ORDER_CLOSE)} 由确认令牌拦截器校验并用后即焚（短语「确认关闭」在换令牌时校验）。</p>
  */
 @RestController
 @RequestMapping("/api/admin")
 public class AdminOrderController {
 
-    private static final String CLOSE_ACTION = "ORDER_CLOSE";
-
     private final OrderAdminService orderAdminService;
-    private final ConfirmTokenService confirmTokenService;
 
-    public AdminOrderController(OrderAdminService orderAdminService,
-                                ConfirmTokenService confirmTokenService) {
+    public AdminOrderController(OrderAdminService orderAdminService) {
         this.orderAdminService = orderAdminService;
-        this.confirmTokenService = confirmTokenService;
     }
 
     @GetMapping("/orders")
@@ -88,19 +81,16 @@ public class AdminOrderController {
     }
 
     /**
-     * 关闭订单：幂等由订单状态条件更新保证；令牌以 action|orderNo 绑定，用后即焚。
+     * 关闭订单：幂等由订单状态条件更新保证；令牌以 action|订单号 绑定，用后即焚（由
+     * {@code ConfirmTokenInterceptor} 统一校验，目标取路径变量 {@code id}）。
      * 关单原因由 {@code CloseCmd.reason} 的 @NotBlank 校验，并写入操作日志与退款单备注。
      */
     @PostMapping("/orders/{id}/close")
+    @Confirm(action = ConfirmAction.ORDER_CLOSE, target = Confirm.Target.PATH_VARIABLE, field = "id")
     @RequirePerm("order:close")
     public R<AdminOrderDtos.AdminOrderVO> close(
             @PathVariable("id") String orderNo,
-            @RequestHeader(value = "X-Confirm-Token", required = false) String confirmToken,
             @Valid @RequestBody AdminOrderDtos.CloseCmd cmd) {
-        if (confirmToken == null || confirmToken.isBlank()
-                || !confirmTokenService.consume(CLOSE_ACTION, orderNo, confirmToken)) {
-            throw new BizException(ErrorCode.CONFIRM_TOKEN_INVALID);
-        }
         return R.ok(orderAdminService.closeOrder(orderNo, cmd.reason()));
     }
 }

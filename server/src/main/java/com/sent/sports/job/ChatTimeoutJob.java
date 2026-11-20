@@ -1,7 +1,6 @@
 package com.sent.sports.job;
 
-import com.sent.sports.chat.mapper.ChatSessionMapper;
-import com.sent.sports.chat.mapper.po.ChatSessionPO;
+import com.sent.sports.chat.service.ChatJobQueryService;
 import com.sent.sports.chat.service.CloseSessionUseCase;
 import com.sent.sports.common.error.BizException;
 import org.slf4j.Logger;
@@ -40,14 +39,14 @@ public class ChatTimeoutJob {
     /** 客户无消息自动结束会话的默认阈值（分钟），可用 {@code app.chat.idle-minutes} 覆盖。 */
     public static final int DEFAULT_IDLE_MINUTES = 10;
 
-    private final ChatSessionMapper chatSessionMapper;
+    private final ChatJobQueryService chatJobQueryService;
     private final CloseSessionUseCase closeSessionUseCase;
     private final Clock clock;
     private final int idleMinutes;
 
-    public ChatTimeoutJob(ChatSessionMapper chatSessionMapper, CloseSessionUseCase closeSessionUseCase,
+    public ChatTimeoutJob(ChatJobQueryService chatJobQueryService, CloseSessionUseCase closeSessionUseCase,
                           Clock clock, @Value("${app.chat.idle-minutes:10}") int idleMinutes) {
-        this.chatSessionMapper = chatSessionMapper;
+        this.chatJobQueryService = chatJobQueryService;
         this.closeSessionUseCase = closeSessionUseCase;
         this.clock = clock;
         this.idleMinutes = idleMinutes <= 0 ? DEFAULT_IDLE_MINUTES : idleMinutes;
@@ -65,17 +64,17 @@ public class ChatTimeoutJob {
     /** 执行一轮超时关闭，返回成功关闭的会话数（便于单测断言）。 */
     public int runOnce() {
         LocalDateTime before = LocalDateTime.now(clock).minusMinutes(idleMinutes);
-        List<ChatSessionPO> sessions = chatSessionMapper.selectIdleSessions(before, BATCH_SIZE);
+        List<Long> sessionIds = chatJobQueryService.findIdleSessionIds(before, BATCH_SIZE);
         int closed = 0;
-        for (ChatSessionPO session : sessions) {
+        for (Long sessionId : sessionIds) {
             try {
-                if (closeSessionUseCase.timeoutClose(session.getId())) {
+                if (closeSessionUseCase.timeoutClose(sessionId)) {
                     closed++;
                 } else {
-                    log.debug("跳过会话 {}：已结束或不存在", session.getId());
+                    log.debug("跳过会话 {}：已结束或不存在", sessionId);
                 }
             } catch (BizException e) {
-                log.debug("跳过会话 {}：{}", session.getId(), e.getMessage());
+                log.debug("跳过会话 {}：{}", sessionId, e.getMessage());
             }
         }
         return closed;
