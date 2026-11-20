@@ -77,9 +77,11 @@ test('企业审核通过与驳回都返回成功，认证状态随之变化', as
   expect(calls[0].code, '审核通过业务码').toBe(0);
   await expect(statusCell).toContainText('已认证');
 
-  // 2) 审核驳回
+  // 2) 审核驳回：原因必填并落库，企业端进度页会原文展示
   await page.getByRole('button', { name: '审核驳回' }).click();
-  await page.locator('.el-message-box:visible').getByRole('button', { name: /确\s*定/ }).click();
+  const rejectBox = page.locator('.el-message-box:visible');
+  await rejectBox.locator('textarea').fill('营业执照模糊，请重新上传清晰照片');
+  await rejectBox.getByRole('button', { name: /确\s*定/ }).click();
   await page.waitForTimeout(1500);
   expect(calls.length).toBeGreaterThanOrEqual(2);
   expect(calls[1].status, '审核驳回 HTTP 状态').toBe(200);

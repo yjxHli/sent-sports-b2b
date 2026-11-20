@@ -93,6 +93,16 @@ test('首页顶部各模块点击都跳到对应页面', async ({ page }) => {
   expect(couponText).toContain('¥10');
   expect(couponText).toContain('¥50');
   expect(couponText, '领券中心不能显示旧的大额券面额').not.toContain('¥500');
+  // 非会员日：首页会员日卡片必须给出下一次会员日的日期时间（周三或周四 00:00）
+  const memberDayNow = [3, 4].includes(new Date().getDay());
+  const nextHint = page.getByTestId('member-day-next');
+  if (memberDayNow) {
+    await expect(nextHint, '会员日当天不必提示下次日期').toHaveCount(0);
+  } else {
+    await expect(nextHint).toBeVisible({ timeout: 15_000 });
+    await expect(nextHint).toContainText('下次会员日');
+    await expect(nextHint).toContainText(/\d{4}年\d{1,2}月\d{1,2}日（周[三四]）00:00/);
+  }
   await page.locator('.promo-main__btn').first().click();
   await expect.poll(() => pathOf(page), { timeout: 15_000 }).toBe('/coupon/center');
   await expect(page.getByRole('heading', { name: '领券中心' })).toBeVisible({ timeout: 15_000 });
@@ -147,4 +157,20 @@ test('搜索框旁不再有购物车按钮，顶栏购物车入口仍在', async
 
   await page.locator('.topbar__cart').click();
   await expect.poll(() => pathOf(page), { timeout: 15_000 }).toBe('/cart');
+});
+
+/**
+ * 非会员日首页提示稳定验收：固定浏览器时钟到周五，会员日卡片必须给出
+ * 下一次会员日的日期时间（周三/周四 00:00），且仍可点击进领券中心。
+ */
+test('非会员日首页会员日卡片提示下次会员日日期时间', async ({ page }) => {
+  await loginUser(page);
+  await page.clock.install({ time: new Date('2026-11-13T15:30:00') }); // 周五
+  await page.goto(`${USER_URL.replace(/\/+$/, '')}/home`);
+  const hint = page.getByTestId('member-day-next');
+  await expect(hint).toBeVisible({ timeout: 20_000 });
+  await expect(hint).toContainText('下次会员日');
+  await expect(hint).toContainText('2026年11月18日（周三）00:00');
+  await page.locator('.promo-main__btn').first().click();
+  await expect.poll(() => pathOf(page), { timeout: 15_000 }).toBe('/coupon/center');
 });

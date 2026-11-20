@@ -1,6 +1,6 @@
 /**
- * 企业自助注册 → 管理端审核 → 企业登录（2026-11-18 用户要求）。
- * 短信验证码暂不开放；客户号用户不可见，只通过管理端列表定位后审核。
+ * 企业自助注册 → 管理端审核 → 企业登录（2026-11-19 补齐短信链路）。
+ * 注册/审核进度查询/短信登录全部使用一次性短信验证码；客户号用户不可见。
  */
 import path from 'node:path';
 import { test, expect } from '@playwright/test';
@@ -17,7 +17,8 @@ test('企业注册后待审核不可登录，管理端通过后可登录', async
   test.setTimeout(180_000);
 
   await page.goto(join(USER_URL, '/enterprise/login'));
-  await expect(page.getByTestId('enterprise-sms-tab')).toBeDisabled();
+  await expect(page.getByTestId('enterprise-sms-tab')).toBeEnabled();
+  await expect(page.getByTestId('enterprise-audit-progress-link')).toBeVisible();
   await expect(page.getByText('13900009101')).toBeVisible();
   await page.getByTestId('enterprise-register-link').click();
   await expect(page).toHaveURL(/\/enterprise\/register(\?|$)/, { timeout: 10_000 });
@@ -29,9 +30,16 @@ test('企业注册后待审核不可登录，管理端通过后可登录', async
   await page.getByTestId('enterprise-company').fill(COMPANY);
   await page.getByTestId('enterprise-credit-code').fill(CREDIT_CODE);
   await page.getByTestId('enterprise-phone').fill(PHONE);
+  const codeResponse = page.waitForResponse(
+    (r) => /\/api\/auth\/sms-code$/.test(new URL(r.url()).pathname)
+      && r.request().method() === 'POST',
+    { timeout: 20_000 },
+  );
   await page.getByTestId('enterprise-send-code').click();
-  await expect(page.locator('.el-message', { hasText: '短信验证码暂未开放' }))
-    .toBeVisible({ timeout: 8_000 });
+  const codeBody: any = await (await codeResponse).json().catch(() => null);
+  const demoCode = String(codeBody?.data?.demoCode ?? '');
+  expect(demoCode, `注册验证码回显失败：${JSON.stringify(codeBody)}`).toMatch(/^\d{6}$/);
+  await page.getByTestId('enterprise-code').fill(demoCode);
   await page.getByTestId('enterprise-password').fill(PASSWORD);
   await page.getByTestId('enterprise-confirm-password').fill(PASSWORD);
   await page.getByTestId('enterprise-agree').click();
@@ -47,6 +55,19 @@ test('企业注册后待审核不可登录，管理端通过后可登录', async
   expect(body?.data?.auditStatus).toBe('PENDING');
   await expect(page.getByTestId('enterprise-register-success'))
     .toContainText('等待管理端审核', { timeout: 10_000 });
+
+  // 审核进度页：手机号 + 验证码匿名查询，待审核时提示耐心等待并展示已提交内容
+  await page.goto(join(USER_URL, '/enterprise/audit-progress'));
+  await page.getByTestId('audit-phone').fill(PHONE);
+  const pendingCodeResp = page.waitForResponse(
+    (r) => /\/api\/auth\/sms-code$/.test(new URL(r.url()).pathname), { timeout: 20_000 });
+  await page.getByTestId('audit-send-code').click();
+  const pendingCode: any = await (await pendingCodeResp).json().catch(() => null);
+  await page.getByTestId('audit-code').fill(String(pendingCode?.data?.demoCode ?? '000000'));
+  await page.getByTestId('audit-query').click();
+  await expect(page.getByTestId('audit-status')).toContainText('审核中', { timeout: 15_000 });
+  await expect(page.getByTestId('audit-pending-tip')).toContainText('耐心等待');
+  await expect(page.getByTestId('audit-result')).toContainText(COMPANY);
 
   // 注册后未审核：企业登录必须被业务门禁拦住
   const pending = await apiCall(request, 'POST', '/auth/login', {
@@ -95,9 +116,29 @@ test('企业注册后待审核不可登录，管理端通过后可登录', async
   });
   expect(approved?.code, `审核通过后应能登录：${JSON.stringify(approved)}`).toBe(0);
 
+  // 审核通过后进度页提示可以登录
+  await page.goto(join(USER_URL, '/enterprise/audit-progress'));
+  await page.getByTestId('audit-phone').fill(PHONE);
+  const okCodeResp = page.waitForResponse(
+    (r) => /\/api\/auth\/sms-code$/.test(new URL(r.url()).pathname), { timeout: 20_000 });
+  await page.getByTestId('audit-send-code').click();
+  const okCode: any = await (await okCodeResp).json().catch(() => null);
+  await page.getByTestId('audit-code').fill(String(okCode?.data?.demoCode ?? '000000'));
+  await page.getByTestId('audit-query').click();
+  await expect(page.getByTestId('audit-status')).toContainText('已审核', { timeout: 15_000 });
+  await expect(page.getByTestId('audit-pass-tip')).toContainText('审核通过');
+
+  // 企业短信登录：与进度页共用 LOGIN scope 验证码，一次性消费
   await page.goto(join(USER_URL, '/enterprise/login'));
+  await page.getByTestId('enterprise-sms-tab').click();
   await page.getByTestId('enterprise-account').fill(PHONE);
-  await page.getByTestId('enterprise-password').fill(PASSWORD);
+  const loginCodeResp = page.waitForResponse(
+    (r) => /\/api\/auth\/sms-code$/.test(new URL(r.url()).pathname), { timeout: 20_000 });
+  await page.getByTestId('enterprise-send-code').click();
+  const loginCode: any = await (await loginCodeResp).json().catch(() => null);
+  const loginDemoCode = String(loginCode?.data?.demoCode ?? '');
+  expect(loginDemoCode).toMatch(/^\d{6}$/);
+  await page.getByTestId('enterprise-code').fill(loginDemoCode);
   await page.getByTestId('enterprise-login-submit').click();
   await expect(page).toHaveURL(/\/(home|products)(\?|$)/, { timeout: 20_000 });
 });

@@ -238,6 +238,9 @@ test('全链路多角色终极验收：用户下单 → 客服实时会话 → �
   let orderNo = '';
   let txnNo = '';
   let amountCent = 0;
+  // 渠道受理回执（P0 起回调必须验签）：后端发起支付时下发，兜底回调原样回放
+  let notifyParams: Record<string, string> | null = null;
+  let notifySign = '';
   let sessionId = 0;
   let customNo = '';
   const beforeCustomIds = new Set<string>();
@@ -316,6 +319,8 @@ test('全链路多角色终极验收：用户下单 → 客服实时会话 → �
       const payBody: any = await (await payResp).json().catch(() => null);
       txnNo = payBody?.data?.txnNo ?? '';
       amountCent = Number(payBody?.data?.amountCent ?? 0);
+      notifyParams = payBody?.data?.notifyParams ?? null;
+      notifySign = payBody?.data?.sign ?? '';
       expect(txnNo, '发起支付必须返回 txnNo').toBeTruthy();
     });
 
@@ -330,12 +335,8 @@ test('全链路多角色终极验收：用户下单 → 客服实时会话 → �
       // 兜底：前端 1.2s 自动回调未触发时，按契约手动补一次（后端条件更新天然幂等）
       if (status !== 'WAIT_SHIP' && txnNo) {
         const cb = await apiPost(request, '/payment/mock/callback', {
-          txnNo,
-          orderNo,
-          amountCent,
-          channel: 'BALANCE',
-          payChannelTradeNo: `E2E-${stamp}`,
-          paidAtMillis: Date.now(),
+          ...(notifyParams ?? { txnNo, orderNo, amountCent, channel: 'BALANCE' }),
+          sign: notifySign,
         });
         expect(cb?.code, `兜底支付回调失败：${JSON.stringify(cb)}`).toBe(0);
         status = await orderStatus(request, orderNo);

@@ -86,8 +86,10 @@ test('商城首页下拉到底自动加载更多商品', async ({ page }) => {
 
   // 4) 最终条数 = 接口总数，且商品不重复
   await expect(cards, '最终卡片数应等于接口返回的总条数').toHaveCount(totalFromApi, { timeout: 15_000 });
-  const names = await cards.locator('.good-card__title').allInnerTexts();
-  expect(new Set(names).size, `商品出现重复：${names.length} 条 / ${new Set(names).size} 种`).toBe(names.length);
+  // 同名不同价的在售条目是合法的，用整卡文本（名称+价格）判重，避免误伤
+  const cardTexts = await cards.allInnerTexts();
+  expect(new Set(cardTexts).size, `商品出现重复：${cardTexts.length} 条 / ${new Set(cardTexts).size} 种`)
+    .toBe(cardTexts.length);
 
   expect(errors, `console errors: ${errors.join(' | ')}`).toHaveLength(0);
 });

@@ -230,15 +230,19 @@ test('结算页券列表：价格只显示一次，可用券强调、不可用�
 });
 
 /**
- * 领券中心（2026-11-18 用户需求 2）：
+ * 领券中心 + 会员日门禁（2026-11-19 追加）：
  * - 首页「领券中心」进新页面 /coupon/center，上半区可领券、下半区商品；
  * - 个人客户看不到企业专属券（B2B 大额阶梯券个人不可领）；
- * - 同一张券不能重复领：第二次领取返回业务拒绝。
+ * - 仅周三/周四可领：非会员日接口 42201 且按钮禁用，并显示 xx天xx小时xx分钟 倒计时；
+ * - 有效期由后端 MemberDayPolicy 统一下发 claimValidDays，前端只展示。
+ *
+ * 用例不依赖执行当天星期：按当天是否为会员日走对应分支，两个分支都有断言。
  */
-test('领券中心：个人不见企业专属券，可领取且不能重复领取', async ({ page, request }) => {
+test('领券中心：券型/有效期口径一致，且会员日门禁生效', async ({ page, request }) => {
   test.setTimeout(180_000);
   const phone = `137${String(Date.now()).slice(-8)}`;
   const password = 'Coupon@123456';
+  const memberDay = [3, 4].includes(new Date().getDay());
   const registered = await apiCall(request, 'POST', '/auth/register', {
     phone, password, confirmPassword: password,
   });
@@ -259,18 +263,33 @@ test('领券中心：个人不见企业专属券，可领取且不能重复领�
   const target = cards.find((c) => c.couponType === 'NO_THRESHOLD');
   expect(target, '应有无门槛券可领').toBeTruthy();
 
+  // 有效期口径：无门槛小额券 3 天 / 其他无门槛 7 天 / 满减券 15 天 / 其余沿用模板
+  for (const c of cards) {
+    const expected = c.couponType === 'NO_THRESHOLD'
+      ? (Number(c.amountCent) <= 500 ? 3 : 7)
+      : c.couponType === 'FULL_REDUCTION'
+        ? 15
+        : Number(c.validDays);
+    expect(Number(c.claimValidDays), `${c.name} 的会员日有效期口径`).toBe(expected);
+  }
+
   const first = await apiCall(request, 'POST', `/coupons/claim/${target.templateId}`, undefined, token);
-  expect(first?.code, `领取失败：${JSON.stringify(first)}`).toBe(0);
-  expect(first?.data?.couponNo).toBeTruthy();
+  if (memberDay) {
+    expect(first?.code, `会员日领取失败：${JSON.stringify(first)}`).toBe(0);
+    expect(first?.data?.couponNo).toBeTruthy();
 
-  const again = await apiCall(request, 'POST', `/coupons/claim/${target.templateId}`, undefined, token);
-  expect(again?.code, '重复领取必须被业务拒绝').toBe(42201);
-  expect(String(again?.message ?? '')).toContain('已领取');
+    const again = await apiCall(request, 'POST', `/coupons/claim/${target.templateId}`, undefined, token);
+    expect(again?.code, '重复领取必须被业务拒绝').toBe(42201);
+    expect(String(again?.message ?? '')).toContain('已领取');
 
-  const mine = await apiCall(request, 'GET', '/coupons/mine', undefined, token);
-  const got = (mine?.data ?? []).find((c: any) => c.couponNo === first.data.couponNo);
-  expect(got, '领取的券要进「我的优惠券」').toBeTruthy();
-  expect(got.source).toBe('CLAIM');
+    const mine = await apiCall(request, 'GET', '/coupons/mine', undefined, token);
+    const got = (mine?.data ?? []).find((c: any) => c.couponNo === first.data.couponNo);
+    expect(got, '领取的券要进「我的优惠券」').toBeTruthy();
+    expect(got.source).toBe('CLAIM');
+  } else {
+    expect(first?.code, '非会员日必须拦截领取').toBe(42201);
+    expect(String(first?.message ?? '')).toContain('会员日');
+  }
 
   // UI：上半区可领券（含已领取态）、下半区商品
   await page.goto(join(USER_URL, '/login'));
@@ -287,21 +306,68 @@ test('领券中心：个人不见企业专属券，可领取且不能重复领�
   expect(await page.locator('.center-page').innerText(), '个人客户页面不应出现企业专属券')
     .not.toContain('企业专属券');
 
-  // 已领过的那张直接是「已领取」，按钮禁用
-  const claimedCard = claimCards.filter({ hasText: target.name }).first();
-  await expect(claimedCard.getByTestId('claim-btn')).toHaveText('已领取');
+  const targetCard = claimCards.filter({ hasText: target.name }).first();
+  await expect(targetCard.locator('.claim-card__valid')).toHaveText(
+    `领取后 ${target.claimValidDays} 天内有效`,
+  );
 
-  // 再领一张没领过的 → 提示成功，按钮变「已领取」
-  const claimableBtn = page.getByTestId('claim-btn').filter({ hasText: '立即领取' }).first();
-  await expect(claimableBtn, '应还有可领取的券').toBeVisible({ timeout: 20_000 });
-  await claimableBtn.click();
-  await expect(page.locator('.el-message', { hasText: '领取成功' })).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByTestId('claim-btn').filter({ hasText: '已领取' }))
-    .toHaveCount(2, { timeout: 15_000 });
+  if (memberDay) {
+    // 已领过的那张直接是「已领取」，按钮禁用
+    await expect(targetCard.getByTestId('claim-btn')).toHaveText('已领取');
+
+    // 再领一张没领过的 → 提示成功，按钮变「已领取」
+    const claimableBtn = page.getByTestId('claim-btn').filter({ hasText: '立即领取' }).first();
+    await expect(claimableBtn, '应还有可领取的券').toBeVisible({ timeout: 20_000 });
+    await claimableBtn.click();
+    await expect(page.locator('.el-message', { hasText: '领取成功' })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('claim-btn').filter({ hasText: '已领取' }))
+      .toHaveCount(2, { timeout: 15_000 });
+  } else {
+    const countdown = page.getByTestId('member-day-countdown');
+    await expect(countdown).toBeVisible({ timeout: 20_000 });
+    await expect(countdown).toContainText('距下次会员日');
+    await expect(countdown).toContainText(/\d+天\d+小时\d+分钟/);
+    const buttons = page.getByTestId('claim-btn');
+    expect(await buttons.count(), '非会员日所有券都要有领取按钮').toBeGreaterThan(0);
+    for (let i = 0; i < await buttons.count(); i += 1) {
+      await expect(buttons.nth(i), '非会员日领取按钮必须禁用').toBeDisabled();
+      await expect(buttons.nth(i)).toHaveText('会员日可领');
+    }
+  }
 
   // 下半区商品：点卡片进详情
   const goods = page.locator('.good-card').first();
   await expect(goods, '领券中心下半区要有商品').toBeVisible({ timeout: 20_000 });
   await goods.click();
   await expect(page).toHaveURL(/\/product\/\w+/, { timeout: 20_000 });
+});
+
+/**
+ * 非会员日 UI 稳定验收：把浏览器时钟固定到周五 15:30（不依赖执行当天星期），
+ * 领券中心必须显示到下次会员日的精确倒计时，并禁用全部领取按钮。
+ */
+test('非会员日：领券中心显示精确倒计时且无法领取', async ({ page }) => {
+  test.setTimeout(120_000);
+  await loginUserUi(page);
+  // 2026-11-13 是周五；到 11-18（下周三）00:00 正好 4天8小时30分钟
+  await page.clock.install({ time: new Date('2026-11-13T15:30:00') });
+  await page.goto(join(USER_URL, '/coupon/center'));
+
+  const countdown = page.getByTestId('member-day-countdown');
+  await expect(countdown).toBeVisible({ timeout: 20_000 });
+  // 时钟按秒推进，分钟数会随执行耗时减 1，故只断言天/小时与格式
+  await expect(countdown).toContainText(/4天8小时\d{1,2}分钟/);
+  await expect(countdown).toContainText('期间暂不可领券');
+
+  const buttons = page.getByTestId('claim-btn');
+  await expect(buttons.first()).toBeVisible({ timeout: 20_000 });
+  expect(await buttons.count()).toBeGreaterThan(0);
+  let pending = 0;
+  for (let i = 0; i < await buttons.count(); i += 1) {
+    await expect(buttons.nth(i)).toBeDisabled();
+    const text = (await buttons.nth(i).innerText()).trim();
+    expect(['会员日可领', '已领取', '已领完'], `意外的按钮文案：${text}`).toContain(text);
+    if (text === '会员日可领') pending += 1;
+  }
+  expect(pending, '至少要有可领状态的券来验证门禁').toBeGreaterThan(0);
 });

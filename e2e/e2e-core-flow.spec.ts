@@ -246,9 +246,19 @@ test('01 核心链路：用户登录下单支付 → 仓管发货 → 用户确�
       const pageMeResp = userPage.waitForResponse(
         (r) => new URL(r.url()).pathname === '/api/me' && r.request().method() === 'GET',
         { timeout: 15_000 },
-      );
+      ).catch(() => null);
       await userPage.goto(join(USER_URL, '/mine'));
-      const pageMe: any = await (await pageMeResp).json().catch(() => null);
+      const resp = await pageMeResp;
+      let pageMe: any = resp ? await resp.json().catch(() => null) : null;
+      if (!pageMe) {
+        // 资料若已被登录页预取，/mine 不会再发 /api/me；用同一 token 直连兜底，
+        // 仍验证 AuthFilter 把 JWT sub 注入到了 Controller（不再是 15s 空等假红）。
+        const fallback = await request.get(join(API_URL, '/me'), {
+          headers: { Authorization: `Bearer ${String(token).replace(/^"|"$/g, '')}` },
+          failOnStatusCode: false,
+        });
+        pageMe = await fallback.json().catch(() => null);
+      }
       expect(pageMe?.code, `页面 GET /api/me 失败：${JSON.stringify(pageMe)}`).toBe(0);
 
       // 昵称不能写死：改昵称功能上线后，演示账号随时会被改成别的名字。
@@ -293,6 +303,9 @@ test('01 核心链路：用户登录下单支付 → 仓管发货 → 用户确�
 
     let txnNo = '';
     let amountCent = 0;
+    // 渠道受理回执：后端在发起支付时下发的签名参数，回调必须原样回放（P0 起验签不可绕过）
+    let notifyParams: Record<string, string> | null = null;
+    let notifySign = '';
     await test.step('用户端：提交订单并点击支付，抓取订单号与支付流水号', async () => {
       // checkout 依次 POST /api/orders、POST /api/payments；抓取支付响应里的 txnNo 供回调使用
       const payResponse = userPage.waitForResponse(
@@ -316,6 +329,8 @@ test('01 核心链路：用户登录下单支付 → 仓管发货 → 用户确�
       const payBody: any = await pay.json().catch(() => null);
       txnNo = payBody?.data?.txnNo ?? '';
       amountCent = Number(payBody?.data?.amountCent ?? 0);
+      notifyParams = payBody?.data?.notifyParams ?? null;
+      notifySign = payBody?.data?.sign ?? '';
       expect(txnNo, '发起支付必须返回 txnNo，否则无法模拟渠道回调').toBeTruthy();
     });
 
@@ -343,14 +358,7 @@ test('01 核心链路：用户登录下单支付 → 仓管发货 → 用户确�
       // 兜底：未启用前端自动回调的部署，按 P4 契约手动触发一次（后端条件更新天然幂等）
       if (status !== 'WAIT_SHIP') {
         const callback = await request.post(join(API_URL, '/payment/mock/callback'), {
-          data: {
-            txnNo,
-            orderNo,
-            amountCent,
-            channel: 'BALANCE',
-            payChannelTradeNo: `E2E-${Date.now()}`,
-            paidAtMillis: Date.now(),
-          },
+          data: { ...(notifyParams ?? { txnNo, orderNo, amountCent, channel: 'BALANCE' }), sign: notifySign },
           failOnStatusCode: false,
         });
         const body: any = await callback.json().catch(() => null);

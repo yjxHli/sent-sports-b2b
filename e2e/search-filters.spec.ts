@@ -178,8 +178,12 @@ test('企业审核与授信：可按企业 ID 搜索', async ({ page }) => {
   const after = await cellTexts(page, 1);
   console.log('企业 ID 搜索 →', enterpriseId, '命中行数:', after.length, '总数:', await totalOf(page));
   expect(after.length).toBeGreaterThan(0);
-  expect(after.every((t) => t === enterpriseId)).toBe(true);
-  expect(await totalOf(page)).toBe(1);
+  // 后端 keyword 同时匹配 nickname / phone / customer_no / id（CustomerMapper），
+  // 因此「按 ID 搜」可能连带命中 customer_no 里含同一串数字的客户（如 CUS2026…91369…），
+  // 这里不能断言「结果全是该 ID」——只验证目标 ID 命中、且结果集真的收敛（证明下推到了后端）。
+  expect(after).toContain(enterpriseId);
+  expect(after.length).toBeLessThan(before);
+  expect(await totalOf(page)).toBeLessThan(before);
 });
 
 test('定制列表：可按定制单号搜索', async ({ page }) => {
