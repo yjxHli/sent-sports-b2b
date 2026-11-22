@@ -39,6 +39,10 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm -C web-admin build
           pnpm -C web-user build
+          pnpm -C web-cs build
+      # 客服台准入规则（chat:serve 门禁 / 登录回跳 / cs-token 前缀）是纯函数，用 Node 内置 runner 跑
+      - name: web-cs access rules
+        run: pnpm -C web-cs test
 
   guardrails:
     name: Guardrails (DDL / placeholder scan)

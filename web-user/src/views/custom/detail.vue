@@ -18,6 +18,31 @@
       <!-- 状态提示：告诉用户现在该做什么 -->
       <div class="detail-hint" :class="`detail-hint--${hint.tone}`">{{ hint.text }}</div>
 
+      <!-- 退款入口（2026-11-21 用户要求）：从「我的订单 → 定制订单」进来就能退，
+           不必再回商品订单里翻这张单。口径与订单详情一致：生产前可退，排产后只给一句解释。 -->
+      <div v-if="showRefundEntry" class="refund-bar">
+        <div class="refund-bar__main">
+          <el-button
+            class="refund-bar__btn"
+            :class="{ 'refund-bar__btn--blocked': customRefundBlocked }"
+            data-testid="custom-refund-apply"
+            @click="goRefundApply"
+          >申请退款</el-button>
+          <span class="refund-bar__sub">退款按订单实付结算，提交时选择要退的商品行并上传凭证</span>
+        </div>
+        <p
+          v-if="customRefundBlocked"
+          class="refund-bar__tip refund-bar__tip--block"
+          data-testid="custom-refund-blocked"
+        >{{ CUSTOM_REFUND_BLOCK_TEXT }}</p>
+        <p
+          v-else-if="customRefundManual"
+          class="refund-bar__tip refund-bar__tip--manual"
+          data-testid="custom-refund-manual"
+        >图纸已通过审核但尚未排产：可以申请退款，客服会先与生产确认是否已备料。</p>
+        <p v-else class="refund-bar__tip">生产前可申请退款；一旦排产将无法退款。</p>
+      </div>
+
       <!-- 基础信息 -->
       <div class="sent-card custom-detail__info">
         <div class="info-row">
@@ -152,8 +177,17 @@
  */
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { ElMessage } from 'element-plus';
-import { fmtDateTime, fmtMoney, statusLabel, statusTone, type StatusTone } from '@sent/shared';
+import { ElMessage, ElMessageBox } from 'element-plus';
+import {
+  CUSTOM_REFUND_BLOCK_TEXT,
+  fmtDateTime,
+  fmtMoney,
+  isCustomRefundBlocked,
+  isCustomRefundManual,
+  statusLabel,
+  statusTone,
+  type StatusTone,
+} from '@sent/shared';
 import { unwrap } from '@/utils/http';
 import { customApi, type CustomVO } from '@/api/custom';
 import { fileApi } from '@/api/file';
@@ -176,6 +210,39 @@ const canUpload = computed(() => {
   const s = detail.value?.status;
   return s === 'WAIT_DRAFT' || s === 'REJECTED';
 });
+
+/**
+ * 退款入口的显示条件：关联订单已付款且还在可退区间内。
+ * 与订单详情页 `canRefund` 同一套订单状态（未付款、已完成、已关闭都不给入口：
+ * 未付款没得退，已完成/已关闭该走售后或已结案），差别只是这里再叠加定制自身的三档判定。
+ */
+const ORDER_REFUNDABLE_STATUS: readonly string[] = ['WAIT_SHIP', 'WAIT_RECEIVE', 'PART_SHIPPED', 'PAID'];
+const showRefundEntry = computed(
+  () => Boolean(detail.value?.orderNo)
+    && ORDER_REFUNDABLE_STATUS.includes(String(detail.value?.orderStatus ?? '')),
+);
+const customRefundBlocked = computed(() => isCustomRefundBlocked(detail.value?.status));
+const customRefundManual = computed(() => isCustomRefundManual(detail.value?.status));
+
+/**
+ * 申请退款：定制单详情不重复表单，直接进「这一单」的申请页（选行 + 上传凭证一页完成）。
+ * 已排产时不跳转，就地弹一句人话——生产后仍会保留入口，是为了让用户看得到「为什么不能退」。
+ */
+function goRefundApply(): void {
+  const orderNo = detail.value?.orderNo;
+  if (!orderNo) {
+    ElMessage.warning('该定制单还没有关联订单，无法申请退款');
+    return;
+  }
+  if (customRefundBlocked.value) {
+    void ElMessageBox.alert(CUSTOM_REFUND_BLOCK_TEXT, '无法申请退款', {
+      confirmButtonText: '我知道了',
+      type: 'warning',
+    });
+    return;
+  }
+  router.push(`/refund/apply/${orderNo}`);
+}
 
 const STATUS_HINT: Record<string, { text: string; tone: 'info' | 'warn' | 'ok' }> = {
   WAIT_DRAFT: { text: '请先上传设计图稿，上传后客服会在 24 小时内完成审核。', tone: 'warn' },
@@ -343,6 +410,51 @@ watch(customOrderId, load);
   background: #eef8f2;
   border-color: #2f9e6a;
   color: #1e7a4f;
+}
+
+/* ---------- 退款入口 ---------- */
+.refund-bar {
+  background: #fff;
+  border-radius: var(--sent-radius);
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+.refund-bar__main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.refund-bar__btn {
+  flex: none;
+}
+/* 已排产：按钮留可点（点了给解释），视觉上先降权 */
+.refund-bar__btn--blocked {
+  color: var(--sent-muted);
+  border-style: dashed;
+}
+.refund-bar__sub {
+  font-size: 12px;
+  color: var(--sent-muted);
+}
+.refund-bar__tip {
+  margin: 8px 0 0;
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #8a5a00;
+  background: #fdf6ec;
+  border-left: 3px solid #e6a23c;
+}
+.refund-bar__tip--manual {
+  color: #8a5a00;
+}
+.refund-bar__tip--block {
+  color: #a8071a;
+  background: #fff1f0;
+  border-left-color: #cf1322;
 }
 
 /* ---------- 基础信息 ---------- */

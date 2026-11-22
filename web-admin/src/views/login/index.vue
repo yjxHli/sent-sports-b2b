@@ -119,38 +119,50 @@ async function submit(): Promise<void> {
 </script>
 
 <style scoped>
+/* 单色深绿底 + 极淡的器材场边线纹理。
+   原来的 135° 三段绿渐变是「AI 落地页」最典型的一屏，这里换成一块安静的深色场。 */
 .login-page {
   min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #0f4738 0%, #12664f 55%, #1c8a68 100%);
+  padding: 24px;
+  background-color: #0f4738;
+  background-image:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.04) 0 1px, transparent 1px 120px),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.04) 0 1px, transparent 1px 120px);
 }
 .login-card {
-  width: 400px;
-  padding: 36px 36px 28px;
-  border-radius: 12px;
-  background: #fff;
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.18);
+  width: 380px;
+  padding: 40px 36px 32px;
+  border: 1px solid var(--sent-line);
+  border-radius: var(--r-panel);
+  background: var(--sent-surface);
+  box-shadow: 0 12px 32px rgba(8, 26, 20, 0.24);
 }
 .login-card h1 {
   margin: 0;
-  font-size: 21px;
-  text-align: center;
-  color: #12664f;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--sent-ink);
 }
 .login-subtitle {
   margin: 8px 0 28px;
-  text-align: center;
   font-size: 13px;
-  color: #7b8a84;
+  color: var(--sent-ink-3);
 }
-.login-submit { width: 100%; }
+.login-submit {
+  width: 100%;
+}
 .login-tip {
   margin: 4px 0 0;
   font-size: 12px;
-  color: #9aa8a2;
-  text-align: center;
+  line-height: 1.6;
+  color: var(--sent-ink-3);
 }
-.login-tip-locked { color: #d03050; font-weight: 600; }
+.login-tip-locked {
+  color: var(--sent-danger);
+  font-weight: 500;
+}
 </style>

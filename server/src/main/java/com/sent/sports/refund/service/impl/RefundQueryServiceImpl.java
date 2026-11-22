@@ -109,7 +109,8 @@ public class RefundQueryServiceImpl implements RefundQueryService {
                 po.getAuditRemark(),
                 toMillis(po.getCreatedAt()),
                 toMillisOrNull(po.getRefundedAt()),
-                toAuditOrderVo(po, receiver, lines));
+                toAuditOrderVo(po, receiver, lines),
+                po.getNeedManualReview() != null && po.getNeedManualReview() == 1);
     }
 
     private RefundDtos.AuditOrderVO toAuditOrderVo(RefundAuditDetailPO po,
@@ -212,7 +213,8 @@ public class RefundQueryServiceImpl implements RefundQueryService {
                 po.getAmountCent() == null ? 0L : po.getAmountCent(),
                 po.getReason(),
                 ImageJsonCodec.decode(po.getImagesJson()),
-                createdAtMillis);
+                createdAtMillis,
+                po.getNeedManualReview() != null && po.getNeedManualReview() == 1);
     }
 
     private static long toMillis(LocalDateTime value) {

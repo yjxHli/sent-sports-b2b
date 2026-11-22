@@ -36,33 +36,27 @@
       切换账号后会自动重新取数。
     </p>
 
-    <el-row :gutter="16" class="overview">
-      <el-col :xs="24" :sm="8">
-        <div class="sent-panel metric">
-          <span class="metric-label">当前账号等级</span>
-          <strong class="metric-value">{{ levelLabel }}</strong>
-          <span class="metric-sub">
-            成长值 {{ level?.growthValue ?? '--' }} / 下一档 {{ level?.nextThreshold ?? '--' }}
-          </span>
-        </div>
-      </el-col>
-      <el-col :xs="24" :sm="8">
-        <div class="sent-panel metric">
-          <span class="metric-label">可用积分</span>
-          <strong class="metric-value">{{ points?.availablePoints ?? '--' }}</strong>
-          <span class="metric-sub">累计成长值 {{ level?.growthValue ?? '--' }}</span>
-        </div>
-      </el-col>
-      <el-col :xs="24" :sm="8">
-        <div class="sent-panel metric">
-          <span class="metric-label">授信可用额度</span>
-          <strong class="metric-value">{{ fmtMoney(credit?.availableCent) }}</strong>
-          <span class="metric-sub">
-            总额度 {{ fmtMoney(credit?.creditLimitCent) }} · 已用 {{ fmtMoney(credit?.creditUsedCent) }}
-          </span>
-        </div>
-      </el-col>
-    </el-row>
+    <div class="sent-stat-row overview">
+      <div class="sent-stat sent-stat--sm metric">
+        <span class="sent-stat__label metric-label">当前账号等级</span>
+        <strong class="sent-stat__value metric-value">{{ levelLabel }}</strong>
+        <span class="sent-stat__hint metric-sub">
+          成长值 {{ level?.growthValue ?? '--' }} / 下一档 {{ level?.nextThreshold ?? '--' }}
+        </span>
+      </div>
+      <div class="sent-stat sent-stat--sm metric">
+        <span class="sent-stat__label metric-label">可用积分</span>
+        <strong class="sent-stat__value metric-value">{{ points?.availablePoints ?? '--' }}</strong>
+        <span class="sent-stat__hint metric-sub">累计成长值 {{ level?.growthValue ?? '--' }}</span>
+      </div>
+      <div class="sent-stat sent-stat--sm metric">
+        <span class="sent-stat__label metric-label">授信可用额度</span>
+        <strong class="sent-stat__value metric-value">{{ fmtMoney(credit?.availableCent) }}</strong>
+        <span class="sent-stat__hint metric-sub">
+          总额度 {{ fmtMoney(credit?.creditLimitCent) }} · 已用 {{ fmtMoney(credit?.creditUsedCent) }}
+        </span>
+      </div>
+    </div>
 
     <div class="member-grid">
       <!-- 第一行：积分调整 | 等级规则（展示用） -->
@@ -316,16 +310,20 @@ onMounted(() => { void initDefaultCustomer(); });
 
 <style scoped>
 .account-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.account-label { color: #6b7c75; font-size: 13px; }
-.account-name { font-size: 15px; font-weight: 600; color: #12664f; }
-.account-meta { color: #93a29c; font-size: 12px; }
-.target-line { margin: 0 0 12px; color: #33463f; font-size: 13px; }
-.overview { margin: 12px 0 6px; }
-.metric { display: flex; flex-direction: column; gap: 6px; }
-.metric-label { color: #6b7c75; font-size: 13px; }
-.metric-value { font-size: 26px; color: #12664f; }
-.metric-sub { color: #93a29c; font-size: 12px; }
-.section-title { margin: 0 0 14px; font-size: 15px; color: #33463f; }
+.account-label { color: var(--sent-ink-3); font-size: 13px; }
+.account-name { font-size: 15px; font-weight: 600; color: var(--sent-ink); }
+.account-meta { color: var(--sent-ink-3); font-size: 13px; }
+.target-line { margin: 0 0 12px; color: var(--sent-ink-2); font-size: 13px; }
+
+/* 三张会员指标排成一条计分板（与工作台/销售报表同构）：1px 发丝线分隔，不再三张浮卡 */
+.overview {
+  margin: 12px 0 16px;
+}
+/* 三张卡里没有主角：数字统一 22px，避免"等级"比"额度"更抢眼 */
+.sent-stat--sm .sent-stat__value {
+  font-size: 22px;
+  letter-spacing: -0.01em;
+}
 
 /*
  * 四个运营卡片按 2×2 网格排布（原先左右两列各自纵向堆叠，行高互不影响）：

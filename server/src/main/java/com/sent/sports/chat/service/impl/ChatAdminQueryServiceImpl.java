@@ -3,6 +3,7 @@ package com.sent.sports.chat.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.sent.sports.chat.domain.PresenceStatus;
 import com.sent.sports.chat.dto.admin.ChatMetricsDtos;
 import com.sent.sports.chat.mapper.ChatAuditMapper;
 import com.sent.sports.chat.mapper.ChatMetricsMapper;
@@ -105,6 +106,14 @@ public class ChatAdminQueryServiceImpl implements ChatAdminQueryService {
                 .toList();
 
         // 排队栏：先来后到（同一毫秒按主键），位置按序号给出，与客户端的排队位置口径一致
+        // 2026-11-21 用户口径：离线坐席「看不到有多少人排队」，因此离线直接返回空队列；
+        // 忙碌坐席仍可看队列（只是不自动接入），故只有 OFFLINE 隐藏。
+        boolean offline = presenceRepository.findByStaffId(staffId)
+                .map(p -> p.getPresence() == PresenceStatus.OFFLINE)
+                .orElse(true);
+        if (offline) {
+            return new OpenSessionsResult(active, List.of());
+        }
         List<ChatSessionPO> waitingPos = chatSessionMapper.selectVisibleWaitingFifo(QUEUE_SCAN_LIMIT);
         List<OpenSessionsResult.Row> waiting = IntStream.range(0, waitingPos.size())
                 .mapToObj(i -> {
@@ -203,6 +212,8 @@ public class ChatAdminQueryServiceImpl implements ChatAdminQueryService {
         LocalDateTime safeTo = to == null
                 ? LocalDate.ofInstant(clock.instant(), clock.getZone()).plusDays(1).atStartOfDay()
                 : to;
+        // 状态是「此刻」的值，不是区间聚合：现场 LEFT JOIN staff_presence 取回，
+        // 指标页再用 /admin/chat/workload 定时刷新，保证筛选与展示始终同一份数据
         List<ChatMetricsDtos.Row> rows = metricsMapper.selectMetrics(safeFrom, safeTo, staffId).stream()
                 .map(po -> new ChatMetricsDtos.Row(
                         po.getStaffId(), po.getStaffName(),
@@ -213,7 +224,8 @@ public class ChatAdminQueryServiceImpl implements ChatAdminQueryService {
                         po.getResolvedCount(),
                         po.getClosedCount() == 0 ? -1
                                 : (int) Math.round(po.getResolvedCount() * 100.0 / po.getClosedCount()),
-                        po.getAvgDurationSeconds()))
+                        po.getAvgDurationSeconds(),
+                        po.getPresence() == null ? "OFFLINE" : po.getPresence()))
                 .toList();
         return new ChatMetricsDtos.Result(safeFrom.toLocalDate().toString(),
                 safeTo.toLocalDate().minusDays(1).toString(), rows);

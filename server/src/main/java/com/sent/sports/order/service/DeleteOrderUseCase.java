@@ -6,6 +6,7 @@ import com.sent.sports.order.mapper.OrderMapper;
 import com.sent.sports.order.mapper.po.OrderPO;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -23,8 +24,15 @@ import java.util.Set;
 @Service
 public class DeleteOrderUseCase {
 
-    /** 可删除的终态：交易已完成、已取消、已关闭。 */
-    static final Set<String> DELETABLE_STATUS = Set.of("COMPLETED", "CANCELLED", "CLOSED");
+    /**
+     * 可删除的终态：交易已完成、已取消、已关闭。
+     * <p>批量删除（{@link BatchDeleteOrdersUseCase}）要把同一份集合写进 SQL 的 {@code status IN (...)}，
+     * 因此保留一个**有序** List 作为唯一真源，{@link #DELETABLE_STATUS} 由它派生，避免两处各写一遍而漂移。</p>
+     */
+    public static final List<String> DELETABLE_STATUSES = List.of("COMPLETED", "CANCELLED", "CLOSED");
+
+    /** 可删除终态的集合视图（单条删除的 O(1) 判定用）。 */
+    static final Set<String> DELETABLE_STATUS = Set.copyOf(DELETABLE_STATUSES);
 
     private final OrderMapper orderMapper;
 

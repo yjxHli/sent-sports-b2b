@@ -42,14 +42,14 @@
           <el-table :data="records" border size="small" highlight-current-row @current-change="onSelectRecord"
                     @selection-change="selectedRecords = $event">
             <el-table-column v-if="recordDeleteMode" type="selection" width="44" />
-            <el-table-column prop="paymentNo" label="回款单号" min-width="160" />
-            <el-table-column label="金额" width="120" align="right">
+            <el-table-column prop="paymentNo" label="回款单号" min-width="126" />
+            <el-table-column label="金额" width="84" align="right">
               <template #default="scope">{{ fmtMoney(scope.row.amountCent) }}</template>
             </el-table-column>
-            <el-table-column label="已核销" width="110" align="right">
+            <el-table-column label="已核销" width="84" align="right">
               <template #default="scope">{{ fmtMoney(scope.row.writtenOffCent ?? 0) }}</template>
             </el-table-column>
-            <el-table-column label="状态" width="110" align="center">
+            <el-table-column label="状态" width="74" align="center">
               <template #default="scope"><StatusTag :status="scope.row.status" /></template>
             </el-table-column>
             <template #empty>
@@ -107,17 +107,17 @@
               @selection-change="selectedReceivables = $event"
             >
               <el-table-column type="selection" width="44" />
-              <el-table-column prop="receivableId" label="应收 ID" width="110" />
+              <el-table-column prop="receivableId" label="应收 ID" width="84" />
               <el-table-column prop="orderNo" label="订单号" min-width="150" />
-              <el-table-column label="未核销" width="120" align="right">
+              <el-table-column label="未核销" width="96" align="right">
                 <template #default="scope">
                   {{ fmtMoney(remainingCent(scope.row)) }}
                 </template>
               </el-table-column>
-              <el-table-column label="状态" width="100" align="center">
+              <el-table-column label="状态" width="74" align="center">
                 <template #default="scope"><StatusTag :status="scope.row.status" /></template>
               </el-table-column>
-              <el-table-column label="本次核销(元)" width="150">
+              <el-table-column label="本次核销(元)" width="140">
                 <template #default="scope">
                   <el-input v-model="writeOffAmounts[scope.row.receivableId]" size="small" placeholder="0.00" />
                 </template>
@@ -671,7 +671,6 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.section-title { margin: 0 0 14px; font-size: 15px; color: #33463f; }
 .sub-title { margin: 20px 0 10px; font-size: 14px; color: #33463f; }
 .section-tools { margin: 14px 0; }
 .record-pager { margin-top: 12px; display: flex; justify-content: flex-end; }

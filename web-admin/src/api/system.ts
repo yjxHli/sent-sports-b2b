@@ -97,6 +97,60 @@ export interface SalesRankVO {
   amountCent: number;
 }
 
+/** 热销商品行（GET /admin/reports/hot-products，按 sku_id 聚合）。 */
+export interface HotProductItemVO {
+  rank: number;
+  /** Long 经 JacksonConfig 序列化为字符串后用 Number() 归一 */
+  skuId: number | string;
+  skuName: string;
+  spec: string;
+  qty: number | string;
+  amountCent: number | string;
+  amountYuan: string;
+  orderCount: number;
+  /** 占区间总成交金额的百分比，保留 1 位小数 */
+  sharePct: string;
+}
+
+/** 热销商品报表（总额/件数/SKU 数恒为区间全量口径，不随 limit 变）。 */
+export interface HotProductVO {
+  fromDate: string;
+  toDate: string;
+  days: number;
+  limit: number;
+  totalAmountCent: number | string;
+  totalAmountYuan: string;
+  totalQty: number | string;
+  skuCount: number;
+  items: HotProductItemVO[];
+}
+
+/** 大客户采购排行行（GET /admin/reports/top-customers，按 customer_id 聚合）。 */
+export interface TopCustomerItemVO {
+  rank: number;
+  customerId: number | string;
+  customerName: string;
+  /** 明文手机号，展示层脱敏 */
+  phone: string;
+  orderCount: number;
+  amountCent: number | string;
+  amountYuan: string;
+  sharePct: string;
+}
+
+/** 大客户采购排行（总额/客户数/订单数恒为区间全量口径）。 */
+export interface TopCustomerVO {
+  fromDate: string;
+  toDate: string;
+  days: number;
+  limit: number;
+  totalAmountCent: number | string;
+  totalAmountYuan: string;
+  totalOrderCount: number | string;
+  customerCount: number;
+  items: TopCustomerItemVO[];
+}
+
 /** 工作台六卡 + 角色化待办数量（GET /admin/reports/dashboard，全部真库聚合）。 */
 export interface DashboardSummaryVO {
   date: string;
@@ -178,6 +232,17 @@ export const systemApi = {
   salesTrend: (days = 30) => http.get<SalesTrendVO>('/admin/reports/sales-trend', { days }),
   /** 销售业绩排行：多行真实数据，统计区间由后端 SQL 下推。 */
   salesRanking: (days = 30) => http.get<SalesRankVO[]>('/admin/reports/sales-ranking', { days }),
+  /**
+   * 热销商品：按 sku_id 聚合成交数量与金额，数据范围由后端 @DataScope 下推
+   * （主管看团队、财务/超管看全部）。
+   */
+  hotProducts: (days = 30, limit = 5) =>
+    http.get<HotProductVO>('/admin/reports/hot-products', { days, limit }),
+  /**
+   * 大客户采购排行：按 customer_id 聚合实付金额，数据范围同样由后端 @DataScope 下推。
+   */
+  topCustomers: (days = 30, limit = 5) =>
+    http.get<TopCustomerVO>('/admin/reports/top-customers', { days, limit }),
   /** 工作台六卡与待办数量，一次请求取齐。 */
   dashboard: () => http.get<DashboardSummaryVO>('/admin/reports/dashboard'),
   stockWarningReport: () => http.get<StockWarningVO>('/admin/reports/stock-warning'),

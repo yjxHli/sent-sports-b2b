@@ -394,17 +394,11 @@ onUnmounted(() => {
   color: var(--sent-muted);
   cursor: not-allowed;
 }
-.goods-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 12px;
-}
+/* 商品网格列数由全局 .goods-grid 自适应（1440 版心 → 6 列），此处不再覆盖 */
 @media (max-width: 1100px) {
   .claim-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .goods-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 900px) {
   .claim-grid { grid-template-columns: 1fr; }
-  .goods-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 </style>

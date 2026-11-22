@@ -26,6 +26,8 @@ public class RefundAuditDetailPO {
     private Long orderItemId;
     private LocalDateTime createdAt;
     private LocalDateTime refundedAt;
+    /** 是否需客服人工复核（V52）：定制单「审核通过未排产」时申请落下的标记。 */
+    private Integer needManualReview;
 
     private Long orderId;
     private String orderStatus;
@@ -356,5 +358,13 @@ public class RefundAuditDetailPO {
 
     public void setShippedAt(LocalDateTime shippedAt) {
         this.shippedAt = shippedAt;
+    }
+
+    public Integer getNeedManualReview() {
+        return needManualReview;
+    }
+
+    public void setNeedManualReview(Integer needManualReview) {
+        this.needManualReview = needManualReview;
     }
 }

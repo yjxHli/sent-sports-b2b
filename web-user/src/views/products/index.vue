@@ -803,11 +803,7 @@ onUnmounted(() => {
   border-right: 1px solid var(--sent-border);
 }
 
-/* ---------- 商品网格：5 列（对齐淘宝分类页密度） ---------- */
-.goods-grid {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 12px;
-}
+/* ---------- 商品网格：列数由全局 .goods-grid 自适应（1440 版心 → 6 列） ---------- */
 
 /* ---------- 右侧悬浮工具条 ---------- */
 .side-tool {

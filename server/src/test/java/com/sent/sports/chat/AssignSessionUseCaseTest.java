@@ -1,7 +1,10 @@
 package com.sent.sports.chat;
 
+import com.sent.sports.chat.domain.AgentPresence;
 import com.sent.sports.chat.domain.ChatSession;
 import com.sent.sports.chat.domain.ChatSessionStatus;
+import com.sent.sports.chat.domain.PresenceStatus;
+import com.sent.sports.chat.repository.AgentPresenceRepository;
 import com.sent.sports.chat.repository.ChatSessionRepository;
 import com.sent.sports.chat.service.AssignSessionUseCase;
 import com.sent.sports.chat.service.ChatNotifier;
@@ -11,6 +14,7 @@ import com.sent.sports.chat.service.dto.TransferCmd;
 import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
 import com.sent.sports.support.BaseUseCaseTest;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Captor;
@@ -23,6 +27,8 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -36,11 +42,51 @@ class AssignSessionUseCaseTest extends BaseUseCaseTest {
     @Mock
     private ChatSessionRepository sessionRepository;
     @Mock
+    private AgentPresenceRepository presenceRepository;
+    @Mock
     private ChatNotifier notifier;
     @InjectMocks
     private AssignSessionUseCase useCase;
     @Captor
     private ArgumentCaptor<ChatSession> sessionCaptor;
+
+    private static AgentPresence presence(long staffId, PresenceStatus status) {
+        return new AgentPresence(staffId, status, 0, 3, 0L);
+    }
+
+    /** 默认坐席在线：接待类用例都建立在「在线才能接线」这条业务规则之上。 */
+    @BeforeEach
+    void onlineByDefault() {
+        // 转接（transfer）不经过在线校验，用 lenient 让那两条用例不必关心状态桩
+        lenient().when(presenceRepository.findByStaffId(anyLong()))
+                .thenReturn(Optional.of(presence(9L, PresenceStatus.ONLINE)));
+    }
+
+    /** 离线/忙碌不允许接线：忙碌的业务含义就是「暂停接待」，不能靠工作台按钮绕过。 */
+    @Test
+    void assignRejectedWhenStaffOffline() {
+        when(presenceRepository.findByStaffId(9L))
+                .thenReturn(Optional.of(presence(9L, PresenceStatus.OFFLINE)));
+
+        BizException e = assertThrows(BizException.class,
+                () -> useCase.assign(new AssignCmd(42L, 9L, 1L)));
+
+        assertEquals(ErrorCode.STATE_CONFLICT, e.getErrorCode());
+        assertEquals("当前不是在线状态，请先切换为在线再接待客户", e.resolvedMessage());
+        verify(sessionRepository, never()).save(any());
+    }
+
+    @Test
+    void assignRejectedWhenStaffBusy() {
+        when(presenceRepository.findByStaffId(9L))
+                .thenReturn(Optional.of(presence(9L, PresenceStatus.BUSY)));
+
+        BizException e = assertThrows(BizException.class,
+                () -> useCase.assign(new AssignCmd(9L, 1L)));
+
+        assertEquals(ErrorCode.STATE_CONFLICT, e.getErrorCode());
+        verify(sessionRepository, never()).save(any());
+    }
 
     /** 接待成功后必须推送「已接入客服」，否则用户端排队提示不会消失。 */
     @Test

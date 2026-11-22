@@ -50,6 +50,10 @@ public class PricingServiceFacadeImpl implements PricingServiceFacade {
                 .ladderTiers(toLadderTiers(req.ladderTiers()))
                 .qty(req.qty())
                 .allowStacking(req.allowStacking())
+                // 秒杀价由仓储按 SKU + 当前时刻查得（V54）。这里必须原样搬运：
+                // 门面是重新组装上下文的，漏搬这一行就会让购物车预览与下单都回落到零售价，
+                // 而详情页仍显示秒杀价——集成测试 FlashSaleIT 就是为拦住这个问题而写的。
+                .flashSale(base.getFlashSalePriceCent(), base.getFlashSaleRuleId())
                 .build();
         PriceResult pr = pricingService.calc(ctx);
         return new LinePrice(pr.getUnitPriceCent(), pr.getSource().name(), pr.isBelowCost());

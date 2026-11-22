@@ -55,6 +55,7 @@ public interface ChatAdminQueryService {
     /**
      * 客服指标：按半开区间 [from, to) 聚合每位客服的接待量 / 满意率 / 解决率 / 平均时长。
      * from 或 to 为空时由实现给兜底区间，避免 SQL 出现悬空 AND。
+     * 每行附带坐席「当前」状态（ONLINE/BUSY/OFFLINE），供指标页展示与筛选。
      */
     ChatMetricsDtos.Result metrics(LocalDateTime from, LocalDateTime to, Long staffId);
 }

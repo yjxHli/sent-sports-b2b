@@ -159,6 +159,43 @@ class ChatAdminQueryServiceTest extends BaseUnitTest {
         assertEquals("UNRESOLVED", result.getList().get(0).result());
     }
 
+    @Test
+    void openSessionsHidesQueueWhenStaffOffline() {
+        // 2026-11-21 用户要求：离线状态「看不到有多少人排队」——不能只在页面上 v-if，
+        // 接口层就不返回排队行，换任何客户端都看不到。
+        when(presenceRepository.findByStaffId(9001L)).thenReturn(java.util.Optional.of(
+                new com.sent.sports.chat.domain.AgentPresence(9001L,
+                        com.sent.sports.chat.domain.PresenceStatus.OFFLINE, 0, 3, 0L)));
+        when(chatSessionMapper.selectVisibleActiveByStaff(anyLong())).thenReturn(java.util.List.of());
+
+        var result = queryService.openSessions(9001L);
+
+        assertEquals(0, result.waiting().size(), "离线坐席不应看到排队客户");
+    }
+
+    @Test
+    void openSessionsShowsQueueWhenStaffOnlineOrBusy() {
+        when(presenceRepository.findByStaffId(9001L)).thenReturn(java.util.Optional.of(
+                new com.sent.sports.chat.domain.AgentPresence(9001L,
+                        com.sent.sports.chat.domain.PresenceStatus.BUSY, 0, 3, 0L)));
+        when(chatSessionMapper.selectVisibleActiveByStaff(anyLong())).thenReturn(java.util.List.of());
+        when(chatSessionMapper.selectVisibleWaitingFifo(anyInt())).thenReturn(java.util.List.of(waitingPo(11L)));
+
+        var result = queryService.openSessions(9001L);
+
+        assertEquals(1, result.waiting().size(), "忙碌只是不自动接入，队列仍要可见");
+        assertEquals(1, result.waiting().get(0).queuePosition(), "排队位置从 1 开始");
+    }
+
+    private static com.sent.sports.chat.mapper.po.ChatSessionPO waitingPo(long sessionId) {
+        var po = new com.sent.sports.chat.mapper.po.ChatSessionPO();
+        po.setId(sessionId);
+        po.setCustomerId(9002L);
+        po.setStatus("WAITING");
+        po.setCreatedAt(LocalDateTime.of(2026, 11, 20, 10, 0));
+        return po;
+    }
+
     private static <T> com.baomidou.mybatisplus.extension.plugins.pagination.Page<T> pageOf(T row) {
         com.baomidou.mybatisplus.extension.plugins.pagination.Page<T> page =
                 new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(1, 10);

@@ -122,4 +122,18 @@ public class OrderQueryServiceImpl implements OrderQueryService {
     private long nonNull(Long value) {
         return value == null ? 0L : value;
     }
+
+    /**
+     * 评价资格（V55）：交给 SQL 一次判定「含此商品 + 已完成」，本层只做入参防御。
+     * <p>非法入参直接返回空而不是抛异常——评价接口自己会先把入参校验掉，
+     * 这里再抛一遍只会让同一个错误出现两套文案。</p>
+     */
+    @Override
+    public Optional<String> findCompletedOrderNoForReview(long customerId, long productId, Long skuId) {
+        if (customerId <= 0 || productId <= 0) {
+            return Optional.empty();
+        }
+        String orderNo = orderMapper.selectCompletedOrderNoForReview(customerId, productId, skuId);
+        return orderNo == null || orderNo.isBlank() ? Optional.empty() : Optional.of(orderNo);
+    }
 }

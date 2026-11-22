@@ -62,6 +62,27 @@ export interface MyCustomOrderVO {
   reviewDeadlineMillis: number;
 }
 
+/**
+ * 订单详情页的定制单条目（`GET /api/custom-orders/by-order/{orderNo}`）。
+ * 一张订单可能有多行定制件 → 数组；订单无定制件时为空数组。
+ */
+export interface OrderCustomVO {
+  customOrderId: string;
+  status: string;
+  version: number;
+  rejectCount: number;
+  qty: number;
+  /** 定制费（分）。JacksonConfig 把 Long 序列化成字符串，用前必须 Number() */
+  feeCent: number | string;
+  reviewDeadlineMillis: number | string;
+}
+
+/** 批量删除结果（与订单侧同构）：`id` 为定制单号，`reason` 可直接展示 */
+export interface CustomBatchDeleteResult {
+  deleted: number;
+  skipped: { id: string; reason: string }[];
+}
+
 export const customApi = {
   detail: (customOrderId: string) =>
     http.get<CustomVO>(`/customize/orders/${customOrderId}`),
@@ -69,6 +90,15 @@ export const customApi = {
     http.post<DraftVO>(`/customize/orders/${customOrderId}/drafts`, cmd),
   my: (query: PageQuery) =>
     http.get<PageResult<MyCustomOrderVO>>('/custom-orders/my', query),
+  /**
+   * 多选删除定制单：只有终态（已发货 / 已取消）会真的删，
+   * 待提交图稿 / 待审核 / 生产中的单后端逐条回「还在进行中」。
+   */
+  batchRemove: (customNos: string[]) =>
+    http.post<CustomBatchDeleteResult>('/custom-orders/batch-delete', { ids: customNos }),
+  /** 订单详情页：按订单号取该单的定制单（订单无定制件返回空数组） */
+  byOrder: (orderNo: string) =>
+    http.get<OrderCustomVO[]>(`/custom-orders/by-order/${encodeURIComponent(orderNo)}`),
 };
 
 /** 商品页选图后暂存的图稿（下单成功再补交到刚生成的定制单，避免用户白选） */

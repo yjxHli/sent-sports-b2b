@@ -130,6 +130,5 @@ function isWarning(row: any): boolean {
 </script>
 
 <style scoped>
-.section-title { margin: 0 0 14px; font-size: 15px; color: #33463f; }
 .danger { color: #d03050; font-weight: 600; }
 </style>

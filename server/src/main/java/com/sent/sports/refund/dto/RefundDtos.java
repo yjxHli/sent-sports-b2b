@@ -68,9 +68,13 @@ public final class RefundDtos {
     public record AuditCmd(@NotNull(message = "审核结论不能为空") Boolean approved, String remark) {
     }
 
-    /** 管理端退款审核列表行（对齐 packages/shared/src/types.ts 的 RefundVO）；images 为用户上传的凭证图片。 */
+    /**
+     * 管理端退款审核列表行（对齐 packages/shared/src/types.ts 的 RefundVO）；images 为用户上传的凭证图片。
+     * <p>{@code needManualReview}：定制单「审核通过未排产」的退款申请，客服必须确认是否已备料再放行。</p>
+     */
     public record RefundAuditVO(String refundNo, String orderNo, String status, long amountCent,
-                                String reason, List<String> images, long createdAt) {
+                                String reason, List<String> images, long createdAt,
+                                boolean needManualReview) {
     }
 
     /**
@@ -85,7 +89,9 @@ public final class RefundDtos {
             String type, String reason, String applicantType,
             int appealCount, List<String> images, String auditRemark,
             Long createdAt, Long refundedAt,
-            AuditOrderVO order) {
+            AuditOrderVO order,
+            /** 定制单审核通过未排产：放行前须与生产确认是否已备料。 */
+            boolean needManualReview) {
     }
 
     /**

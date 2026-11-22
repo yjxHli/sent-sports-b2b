@@ -74,4 +74,33 @@ public final class CustomDtos {
     public record MyCustomOrderVO(String customOrderId, String status, String orderStatus,
                                  int version, int rejectCount, long reviewDeadlineMillis) {
     }
+
+    /**
+     * 订单详情页的定制单条目（2026-11-21）。
+     * <p>用户反馈「商品页勾了 UV 定制，提示下单后上传图稿，但订单详情里根本没有上传入口」。
+     * 订单详情只有订单号，这里按订单号把该单的定制单（可能多行、多张）带出，
+     * 让订单详情页能直接展示定制状态并上传/重传图稿，不必先跳到「我的定制」再找单。</p>
+     */
+    public record OrderCustomVO(
+            String customOrderId,
+            String status,
+            int version,
+            int rejectCount,
+            int qty,
+            long feeCent,
+            /** 审核截止时间（毫秒，0 = 未设置） */
+            long reviewDeadlineMillis) {
+    }
+
+    /**
+     * 我的定制「多选删除」结果（客户侧，V51 软删）。
+     * <p>与 {@code OrderDtos.BatchDeleteResult} 结构一致但各自持有：前端两页可以用同一段提示逻辑，
+     * 后端两个模块不必互相依赖对方的 Web DTO。</p>
+     */
+    public record BatchDeleteResult(int deleted, List<SkippedItem> skipped) {
+    }
+
+    /** 未删除的一条：{@code id} 为定制单号，{@code reason} 可直接展示。 */
+    public record SkippedItem(String id, String reason) {
+    }
 }

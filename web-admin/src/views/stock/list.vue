@@ -102,5 +102,9 @@ function isWarning(row: any): boolean {
 </script>
 
 <style scoped>
-.stock-warn { color: #d03050; font-weight: 700; }
+.stock-warn {
+  color: var(--sent-danger);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
 </style>

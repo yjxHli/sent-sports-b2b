@@ -33,46 +33,37 @@ async function login(page: Page): Promise<void> {
   }
 }
 
-async function cellTexts(page: Page, colIndex: number): Promise<string[]> {
-  return page.$$eval(
-    `.el-table__body-wrapper tbody tr td:nth-child(${colIndex})`,
-    (tds) => (tds as HTMLElement[]).map((td) => td.innerText.trim()),
-  );
-}
-
 function yuan(text: string): number {
   return Number(text.replace(/[^\d.]/g, '') || '0');
 }
 
-test('销售业绩排行：多行真实数据、按成交金额降序、统计区间下推', async ({ page }) => {
+test('热销商品 Top 5：真实数据、按成交金额降序、统计区间下推', async ({ page }) => {
   await login(page);
   await page.goto(ADMIN_URL + 'report/sales');
-  await page.waitForSelector('.el-table__body-wrapper tbody tr', { timeout: 15000 });
-  await page.waitForTimeout(1000);
+  await page.waitForSelector('.chart-panel--side .hot-rank__item', { timeout: 15000 });
+  await page.waitForTimeout(800);
 
-  const rows = page.locator('.el-table__body-wrapper tbody tr');
-  const rowCount = await rows.count();
-  console.log('排行行数:', rowCount);
-  // ① 不再是单条占位
-  expect(rowCount).toBeGreaterThan(1);
+  // ① 右栏是 Top 5 排行（原环形占比卡已删除），行数固定 5
+  const hotItems = page.locator('.chart-panel--side .hot-rank__item');
+  await expect(hotItems).toHaveCount(5);
   const panelText = await page.locator('.sent-panel').last().innerText();
   expect(panelText).not.toContain('占位');
   expect(panelText).not.toContain('后端 P4');
 
-  // ② 名称是真实员工、金额为正且降序
-  const names = await cellTexts(page, 2);
-  const amounts = (await cellTexts(page, 5)).map(yuan);
-  const ranks = (await cellTexts(page, 1)).map((t) => Number(t));
-  console.log('排行:', names.map((n, i) => `${ranks[i]}.${n}=${amounts[i]}`).join(' | '));
-  expect(names.every((n) => n.length > 0 && !n.includes('占位'))).toBe(true);
+  // ② 名称是真实商品、金额为正且降序
+  const names = await hotItems.locator('.hot-rank__name').allInnerTexts();
+  const amounts = (await hotItems.locator('.hot-rank__amount').allInnerTexts()).map(yuan);
+  console.log('Top5:', names.map((n, i) => `${i + 1}.${n}=${amounts[i]}`).join(' | '));
+  expect(names.every((n) => n.trim().length > 0 && !n.includes('占位'))).toBe(true);
   expect(amounts.every((a) => a > 0)).toBe(true);
   expect(amounts.every((a, i) => i === 0 || a <= amounts[i - 1])).toBe(true);
-  expect(ranks[0]).toBe(1);
+  // 第一名的进度条必须占满（按第 1 名归一）
+  await expect(hotItems.first().locator('.hot-rank__fill--first')).toBeVisible();
 
   // ③ 切换「近 7 天」必须由后端按新区间重新聚合
   const [rankResp] = await Promise.all([
     page.waitForResponse(
-      (r) => r.url().includes('/api/admin/reports/sales-ranking')
+      (r) => r.url().includes('/api/admin/reports/hot-products')
         && r.url().includes('days=7')
         && r.request().method() === 'GET',
       { timeout: 15000 },
@@ -83,9 +74,13 @@ test('销售业绩排行：多行真实数据、按成交金额降序、统计�
   expect(rankResp.status()).toBe(200);
   const body = await rankResp.json();
   expect(body.code).toBe(0);
-  expect(Array.isArray(body.data)).toBe(true);
+  // 热销商品返回的是「区间汇总 + Top N 列表」对象，不是裸数组
+  expect(Array.isArray(body.data.items)).toBe(true);
   // 口径说明同步切到 7 天，证明前端确实换了新的统计区间
-  await expect(page.getByText(/聚合近 7 天已支付订单/)).toBeVisible();
+  // （页面底部还有一张大客户卡，口径文案几乎一样，必须限定在右侧热销面板内）
+  await expect(
+    page.locator('.chart-panel--side').getByText(/聚合近 7 天已支付订单/),
+  ).toBeVisible();
 });
 
 test('工作台：六张指标卡全部来自真实报表，不再有 -- 与占位', async ({ page }) => {

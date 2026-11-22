@@ -1,30 +1,38 @@
 <template>
   <div class="cat-page">
-    <div class="cat-head">
-      <div>
+    <div class="sent-page-head">
+      <div class="sent-page-head__main">
         <h2 class="sent-page-title">分类管理</h2>
-        <p class="sent-hint cat-sub">
+        <p class="sent-page-desc">
           两级分类结构总览：一级分类下挂二级分类，商品归属到具体分类后，前台目录与后台筛选都按此归类。
         </p>
       </div>
-      <el-button @click="load">刷新</el-button>
+      <div class="sent-page-actions">
+        <el-button @click="load">刷新</el-button>
+      </div>
     </div>
 
-    <div class="cat-stats">
-      <div class="cat-stat">
-        <span class="cat-stat-label">一级分类</span>
-        <strong class="cat-stat-value">{{ categories.length }}</strong>
-        <span class="cat-stat-foot">个</span>
+    <div class="sent-stat-row">
+      <div class="sent-stat sent-stat--sm">
+        <span class="sent-stat__label">一级分类</span>
+        <strong class="sent-stat__value sent-num">
+          {{ categories.length }}<span class="sent-stat__unit">个</span>
+        </strong>
+        <span class="sent-stat__hint">商品目录的第一层</span>
       </div>
-      <div class="cat-stat">
-        <span class="cat-stat-label">二级分类</span>
-        <strong class="cat-stat-value">{{ secondLevelCount }}</strong>
-        <span class="cat-stat-foot">个</span>
+      <div class="sent-stat sent-stat--sm">
+        <span class="sent-stat__label">二级分类</span>
+        <strong class="sent-stat__value sent-num">
+          {{ secondLevelCount }}<span class="sent-stat__unit">个</span>
+        </strong>
+        <span class="sent-stat__hint">挂在一级分类下</span>
       </div>
-      <div class="cat-stat">
-        <span class="cat-stat-label">已归类商品</span>
-        <strong class="cat-stat-value cat-stat-value--accent">{{ classifiedCount }}</strong>
-        <span class="cat-stat-foot">件</span>
+      <div class="sent-stat sent-stat--sm">
+        <span class="sent-stat__label">已归类商品</span>
+        <strong class="sent-stat__value sent-num">
+          {{ classifiedCount }}<span class="sent-stat__unit">件</span>
+        </strong>
+        <span class="sent-stat__hint">已绑定到具体分类的商品</span>
       </div>
     </div>
 
@@ -284,38 +292,24 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.cat-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
+/* 三张统计卡里，数字都收小一号：这一页的主语是分类树，不是顶部三个数 */
+.sent-stat--sm .sent-stat__value {
+  font-size: 22px;
+  letter-spacing: -0.01em;
 }
-.cat-sub {
-  margin: -8px 0 14px;
-  max-width: 760px;
-  line-height: 1.7;
-}
-.cat-stats {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  margin-bottom: 16px;
-}
-.cat-stat {
-  background: #fff;
-  border-radius: 8px;
-  padding: 14px 16px;
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  border-left: 3px solid #12664f;
-}
-.cat-stat-label { font-size: 13px; color: #6b7a74; flex: 1; }
-.cat-stat-value { font-size: 24px; line-height: 1; color: #1f2d28; }
-.cat-stat-value--accent { color: #ff7a1a; }
-.cat-stat-foot { font-size: 12px; color: #9aa8a2; }
 
+/* 两栏等高：左树右详情的底边对齐，不是一高一矮 */
+.cat-page :deep(.el-row) {
+  align-items: stretch;
+}
+.cat-page :deep(.el-col) {
+  display: flex;
+}
+.cat-page :deep(.el-col) > .sent-panel {
+  flex: 1 1 auto;
+  width: 100%;
+  margin-bottom: 0;
+}
 .cat-tree-panel { min-height: 360px; }
 .cat-tree-head { margin-bottom: 10px; }
 
@@ -336,7 +330,7 @@ onMounted(() => {
 .cat-node--leaf .cat-node-dot { background: #b9c9c3; }
 .cat-node-label { flex: 1; color: #1f2d28; }
 .cat-node-meta {
-  font-size: 12px;
+  font-size: 13px;
   color: #9aa8a2;
   display: flex;
   gap: 8px;
@@ -354,47 +348,54 @@ onMounted(() => {
 .cat-metrics {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  margin-bottom: 18px;
+  gap: 8px;
+  margin-bottom: 16px;
 }
 .cat-metric {
-  background: #f6faf8;
-  border-radius: 6px;
+  background: var(--sent-fill);
+  border-radius: var(--r-control);
   padding: 10px 12px;
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
-.cat-metric-label { font-size: 12px; color: #9aa8a2; }
-.cat-metric-value { font-size: 15px; color: #1f2d28; font-weight: 600; }
+.cat-metric-label { font-size: 12px; color: var(--sent-ink-3); }
+.cat-metric-value {
+  font-size: 14px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--sent-ink);
+}
 
-.cat-section-title { margin: 0 0 10px; font-size: 13px; color: #6b7a74; }
-.cat-children { margin-bottom: 18px; }
+.cat-section-title { margin: 0 0 10px; font-size: 13px; color: var(--sent-ink-3); }
+.cat-children { margin-bottom: 16px; }
 .cat-chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .cat-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border: 1px solid #dfe8e4;
-  background: #fff;
-  color: #1f2d28;
-  border-radius: 14px;
-  padding: 5px 12px;
+  border: 1px solid var(--sent-line-2);
+  background: var(--sent-surface);
+  color: var(--sent-ink-2);
+  border-radius: var(--r-control);
+  padding: 4px 10px;
   font-size: 13px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color var(--sent-ease), border-color var(--sent-ease),
+    color var(--sent-ease);
 }
 .cat-chip:hover {
-  border-color: #12664f;
-  color: #12664f;
-  background: #f2f9f6;
+  border-color: var(--sent-primary);
+  color: var(--sent-primary);
+  background: var(--sent-primary-soft);
 }
 .cat-chip-count {
   font-size: 11px;
-  color: #9aa8a2;
-  background: #f0f4f2;
-  border-radius: 8px;
-  padding: 0 6px;
+  font-variant-numeric: tabular-nums;
+  color: var(--sent-ink-3);
+  background: var(--sent-fill);
+  border-radius: 3px;
+  padding: 0 5px;
 }
 .cat-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 

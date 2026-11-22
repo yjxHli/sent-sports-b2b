@@ -7,6 +7,7 @@ import com.sent.sports.chat.mapper.ChatSessionMapper;
 import com.sent.sports.chat.mapper.po.ChatMessagePO;
 import com.sent.sports.chat.mapper.po.ChatSessionPO;
 import com.sent.sports.customize.mapper.CustomOrderMapper;
+import com.sent.sports.customize.mapper.po.CustomOrderListItemPO;
 import com.sent.sports.customize.mapper.po.CustomOrderPO;
 import com.sent.sports.customer.mapper.CustomerMapper;
 import com.sent.sports.coupon.mapper.CouponMapper;
@@ -21,10 +22,12 @@ import com.sent.sports.product.mapper.CatalogMapper;
 import com.sent.sports.product.mapper.po.LadderPricePO;
 import com.sent.sports.notify.mapper.UserMessageMapper;
 import com.sent.sports.notify.mapper.po.UserMessagePO;
+import com.sent.sports.customize.service.BatchDeleteCustomOrdersUseCase;
 import com.sent.sports.order.mapper.OrderMapper;
 import com.sent.sports.order.mapper.po.OrderDetailLineRow;
 import com.sent.sports.order.mapper.po.OrderItemListRow;
 import com.sent.sports.order.mapper.po.OrderPO;
+import com.sent.sports.order.service.DeleteOrderUseCase;
 import com.sent.sports.payment.mapper.PaymentTxnMapper;
 import com.sent.sports.payment.mapper.po.PaymentTxnPO;
 import com.sent.sports.product.mapper.ProductMapper;
@@ -102,17 +105,54 @@ class MapperIT extends BaseIntegrationTest {
     private CouponMapper couponMapper;
 
     @Test
-    @DisplayName("V1~V49：四十九次迁移全部应用，63 张表就位（V49 演示账号积分余额）")
+    @DisplayName("V1~V55：五十五次迁移全部应用，66 张表就位（V55 商品评价）")
     void migrationsApplyAllThirteenVersions() {
         Integer versions = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1", Integer.class);
-        assertThat(versions).isEqualTo(49);
+        assertThat(versions).isEqualTo(55);
 
         Integer tables = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM information_schema.tables "
                         + "WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE' "
                         + "AND table_name <> 'flyway_schema_history'", Integer.class);
-        assertThat(tables).isEqualTo(63);
+        assertThat(tables).isEqualTo(66);
+
+        // V55：商品评价表 + 「同一订单同一商品只能评一次」的联合唯一索引
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() "
+                        + "AND table_name = 'product_review'",
+                Integer.class)).as("V55 必须建 product_review 表").isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() "
+                        + "AND table_name = 'product_review' AND index_name = 'uk_review_order_product' "
+                        + "AND non_unique = 0",
+                Integer.class)).as("product_review 必须有 (order_no, product_id) 唯一索引").isEqualTo(2);
+
+        // V54：商品富内容三列 + SKU 款式图列
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() "
+                        + "AND table_name = 'product' AND column_name IN "
+                        + "('subtitle', 'detail_images_json', 'service_tags_json')",
+                Integer.class)).as("product 必须有 subtitle/detail_images_json/service_tags_json（V54）")
+                .isEqualTo(3);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() "
+                        + "AND table_name = 'sku' AND column_name = 'image_file_id'",
+                Integer.class)).as("sku 必须有 image_file_id（V54 款式图）").isEqualTo(1);
+        // 说明：本基类每个用例前会 TRUNCATE 全部业务表（含 sys_role），
+        // 因此这里只断言迁移版本与表结构；V53 写入的角色 data_scope 由真实请求链路验证。
+
+        // V52：定制退款三档处置的「需人工复核」快照列（APPROVED 未排产档，客服审核台据此标识）
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() "
+                        + "AND table_name = 'refund_order' AND column_name = 'need_manual_review'",
+                Integer.class)).as("refund_order 必须有 need_manual_review（V52）").isEqualTo(1);
+
+        // V51：我的定制「多选删除」= 客户侧软删列（管理端另有 V34 的 deleted，两者互不影响）
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() "
+                        + "AND table_name = 'custom_order' AND column_name = 'customer_deleted_at'",
+                Integer.class)).as("custom_order 必须有 customer_deleted_at（V51 客户侧软删）").isEqualTo(1);
 
         // V48：券模板管理从 customer:grant 拆出独立权限点（R15）
         // 权限行本身会被 IT 基类 TRUNCATE，这里断言迁移已成功落地（版本号存在且成功）
@@ -676,6 +716,41 @@ class MapperIT extends BaseIntegrationTest {
     }
 
     @Test
+    @DisplayName("V51：客户侧批量软删——归属与终态写进 SQL，列表与 count 同条件过滤，重复提交幂等")
+    void customerBatchSoftDeleteForOrdersAndCustoms() {
+        insertOrderForList("SO-CB-1", "COMPLETED");
+        insertOrderForList("SO-CB-2", "WAIT_SHIP");
+
+        assertThat(orderMapper.selectByOrderNosForCustomer(9002L, List.of("SO-CB-1", "SO-CB-2")))
+                .extracting(OrderPO::getOrderNo).containsExactlyInAnyOrder("SO-CB-1", "SO-CB-2");
+        assertThat(orderMapper.selectByOrderNosForCustomer(1234L, List.of("SO-CB-1")))
+                .as("他人单号必须查不出来，否则批量删除会越权").isEmpty();
+
+        assertThat(orderMapper.batchMarkCustomerDeleted(9002L, List.of("SO-CB-1", "SO-CB-2"),
+                DeleteOrderUseCase.DELETABLE_STATUSES))
+                .as("只删终态：在途单即使混进 IN 也不该被标记").isEqualTo(1);
+        assertThat(orderMapper.selectMyPage(new Page<>(1, 50), 9002L, null, null).getRecords())
+                .extracting(OrderPO::getOrderNo).doesNotContain("SO-CB-1");
+        assertThat(orderMapper.selectByOrderNo("SO-CB-1").getStatus())
+                .as("软删只打时间戳，业务状态不动（财务/客服读面照旧）").isEqualTo("COMPLETED");
+        assertThat(orderMapper.batchMarkCustomerDeleted(9002L, List.of("SO-CB-1"),
+                DeleteOrderUseCase.DELETABLE_STATUSES)).as("重复提交幂等返回 0 行").isZero();
+
+        insertCustomFor("CC-CB-1", "SHIPPED", 9002L);
+        insertCustomFor("CC-CB-2", "IN_PRODUCTION", 9002L);
+        long before = customOrderMapper.countMy(9002L);
+        assertThat(customOrderMapper.batchMarkCustomerDeleted(9002L, List.of("CC-CB-1", "CC-CB-2"),
+                BatchDeleteCustomOrdersUseCase.DELETABLE_STATUSES))
+                .as("定制单只删终态（已发货），生产中的不受影响").isEqualTo(1);
+        assertThat(customOrderMapper.countMy(9002L)).isEqualTo(before - 1);
+        assertThat(customOrderMapper.selectMyPage(new Page<>(1, 50), 9002L).getRecords())
+                .extracting(CustomOrderListItemPO::getCustomOrderId)
+                .doesNotContain("CC-CB-1").contains("CC-CB-2");
+        assertThat(customOrderMapper.selectByCustomNosForCustomer(1234L, List.of("CC-CB-2")))
+                .as("他人定制单号查不出来").isEmpty();
+    }
+
+    @Test
     @DisplayName("P5-17：应收一单一条（重复落账被忽略），核销不得超额，逾期口径正确")
     void receivableWriteOffGuard() {
         LocalDate yesterday = LocalDate.now().minusDays(1);
@@ -899,6 +974,20 @@ class MapperIT extends BaseIntegrationTest {
         refund.setAmountCent(amountCent);
         refund.setStatus(status);
         refundOrderMapper.insert(refund);
+    }
+
+    private void insertCustomFor(String customNo, String status, long customerId) {
+        CustomOrderPO custom = new CustomOrderPO();
+        custom.setCustomNo(customNo);
+        custom.setCustomerId(customerId);
+        custom.setServiceType("ATTACHED");
+        custom.setPrintSide("SINGLE");
+        custom.setQty(2);
+        custom.setFeeCent(2000L);
+        custom.setStatus(status);
+        custom.setCurrentVersion(0);
+        custom.setRejectCount(0);
+        assertThat(customOrderMapper.insert(custom)).isEqualTo(1);
     }
 
     private void insertCustom(String customNo, String status, LocalDateTime deadline) {

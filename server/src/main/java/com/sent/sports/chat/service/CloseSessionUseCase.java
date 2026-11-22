@@ -3,6 +3,7 @@ package com.sent.sports.chat.service;
 import com.sent.sports.chat.domain.ChatCloseReason;
 import com.sent.sports.chat.domain.ChatSession;
 import com.sent.sports.chat.domain.ChatSessionStatus;
+import com.sent.sports.chat.domain.PresenceStatus;
 import com.sent.sports.chat.repository.AgentPresenceRepository;
 import com.sent.sports.chat.repository.ChatSessionRepository;
 import com.sent.sports.chat.service.dto.CloseCmd;
@@ -108,6 +109,14 @@ public class CloseSessionUseCase {
      * @return 被补位的会话号；队列为空返回 null
      */
     private Long promoteNextWaiting(long staffId) {
+        // 2026-11-21 用户口径：「忙碌」= 暂停接待，排队客户要等切回在线才接入；
+        // 离线同理。只有在线坐席结束会话时才自动补位。
+        boolean online = presenceRepository.findByStaffId(staffId)
+                .map(p -> p.getPresence() == PresenceStatus.ONLINE)
+                .orElse(false);
+        if (!online) {
+            return null;
+        }
         Optional<ChatSession> picked = sessionRepository.findWaiting().stream()
                 // 分配给别人的排队会话不抢；未指定分配对象（常态）或本就指向该客服的才可接
                 .filter(s -> s.getStaffId() == null || s.getStaffId() == staffId)

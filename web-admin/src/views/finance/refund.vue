@@ -13,7 +13,7 @@
         row-key="refundNo"
         exportable
         export-name="退款单"
-        :operation-width="205"
+        :operation-width="176"
         @selection-change="selected = $event"
         @update:page="onPage"
         @update:size="onSize"
@@ -48,6 +48,14 @@
         </template>
 
         <template #col-status="{ row }"><StatusTag :status="row.status" /></template>
+
+        <!-- 人工复核标记（V52）：定制单「审核通过未排产」，放行前须跟生产确认是否已备料 -->
+        <template #col-needManualReview="{ row }">
+          <el-tag v-if="row.needManualReview" type="warning" size="small" effect="dark">
+            需人工复核
+          </el-tag>
+          <span v-else class="proof-empty">—</span>
+        </template>
 
         <template #col-images="{ row }">
           <div v-if="row.images && row.images.length" class="proof-shots">
@@ -111,13 +119,14 @@ import BatchDeleteButton from '@/components/BatchDeleteButton.vue';
 import type { TableColumn } from '@/components/types';
 
 const columns: TableColumn[] = [
-  { prop: 'refundNo', label: '退款单号', minWidth: 170 },
-  { prop: 'orderNo', label: '订单号', minWidth: 170 },
-  { prop: 'status', label: '状态', width: 100, align: 'center' },
-  { prop: 'amountCent', label: '退款金额', width: 120, align: 'right',
+  { prop: 'refundNo', label: '退款单号', minWidth: 164 },
+  { prop: 'orderNo', label: '订单号', minWidth: 164 },
+  { prop: 'status', label: '状态', width: 84, align: 'center' },
+  { prop: 'amountCent', label: '退款金额', width: 108, align: 'right',
     formatter: (_r, v) => fmtMoney(v) },
-  { prop: 'reason', label: '退款原因', minWidth: 110 },
-  { prop: 'images', label: '凭证图片', width: 130, align: 'center' },
+  { prop: 'reason', label: '退款原因', minWidth: 96 },
+  { prop: 'needManualReview', label: '人工复核', width: 76, align: 'center' },
+  { prop: 'images', label: '凭证图片', width: 92, align: 'center' },
   { prop: 'createdAt', label: '申请时间', width: 150, formatter: (_r, v) => fmtDateTime(v) },
 ];
 
@@ -189,18 +198,21 @@ async function reject(row: any): Promise<void> {
   justify-content: center;
 }
 .proof-shot {
+  flex: none;
   width: 34px;
   height: 34px;
   border-radius: 4px;
-  border: 1px solid #e5e6eb;
+  border: 1px solid var(--sent-line-2);
+  background: var(--sent-fill); /* 白底凭证图在纯白卡片上会"消失"，给一块浅底兜住 */
+  object-fit: cover;
   cursor: zoom-in;
 }
 .proof-count {
-  font-size: 12px;
+  font-size: 13px;
   color: #86909c;
 }
 .proof-empty {
-  font-size: 12px;
+  font-size: 13px;
   color: #c9cdd4;
 }
 </style>

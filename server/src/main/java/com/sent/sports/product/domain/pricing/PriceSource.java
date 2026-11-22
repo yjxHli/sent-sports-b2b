@@ -4,6 +4,7 @@ package com.sent.sports.product.domain.pricing;
 public enum PriceSource {
     CUSTOMER_SKU,   // 一客一价（谈判结果，终结计算）
     AGREEMENT,      // 企业协议价（吸收阶梯）
+    FLASH_SALE,     // 秒杀活动价（公开限时价，不覆盖合同价）
     LADDER,         // 阶梯价
     MEMBER,         // 会员等级折扣
     RETAIL,         // 零售价（兜底）

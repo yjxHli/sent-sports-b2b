@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>首页改版 · 方案 C 三视口复核</title>
+<style>
+  :root { --line:#e6e8eb; --muted:#8b93a1; --text:#1f2329; --green:#12664f; --orange:#e8640a; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:28px 32px 60px; background:#f5f5f5; color:var(--text);
+         font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }
+  h1 { font-size:19px; margin:0 0 6px; letter-spacing:.5px; }
+  .sub { font-size:13px; color:var(--muted); margin-bottom:22px; }
+  h2 { font-size:15px; margin:32px 0 12px; padding-left:11px; border-left:4px solid var(--green); }
+  table { border-collapse:collapse; width:100%; background:#fff; border:1px solid var(--line);
+          border-radius:8px; overflow:hidden; font-size:13px; margin-bottom:10px; }
+  th,td { padding:8px 12px; text-align:left; border-bottom:1px solid var(--line); }
+  th { background:#fafbfc; font-weight:600; color:#4b5563; font-size:12px; }
+  tr:last-child td { border-bottom:none; }
+  .bad { color:#a32d2d; }
+  .good { color:var(--green); font-weight:600; }
+  figure { margin:0 0 16px; background:#fff; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  figure img { display:block; width:100%; height:auto; }
+  figcaption { padding:8px 12px; font-size:12px; color:var(--muted); border-top:1px solid var(--line); }
+  .two { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+</style>
+</head>
+<body>
+
+<h1>首页改版 · 方案 C 三视口复核</h1>
+<div class="sub">2026-11-21 · 价格失真修复 + 首屏重排 + 用户卡 8 项收敛 + 双橙主视觉降级</div>
+
+<h2>关键尺寸</h2>
+<table>
+  <tr><th>项</th><th>改前</th><th>改后（1920 视口实测）</th></tr>
+  <tr><td>三栏</td><td>210 / 726 / 236</td><td class="good">210 / 942 / 260</td></tr>
+  <tr><td>banner</td><td class="bad">934 × 200（4.7:1）</td><td class="good">730 × 290（2.52:1）</td></tr>
+  <tr><td>券卡</td><td class="bad">260×183 橙渐变</td><td class="good">200×290 白底橙描边</td></tr>
+  <tr><td>促销瓦片</td><td class="bad">106 × 108 方块</td><td class="good">227 × 76 横条</td></tr>
+  <tr><td>用户卡</td><td class="bad">236 宽 + 130px 空白带</td><td class="good">260 × 378，企业采购贴底吸收</td></tr>
+</table>
+
+<h2>瓦片起价（真实数据）</h2>
+<table>
+  <tr><th>瓦片</th><th>改前</th><th>改后（接口实测最低价）</th></tr>
+  <tr><td>定制队服</td><td class="bad">¥151 起</td><td>按件计价（定制费按件结算，不编数字）</td></tr>
+  <tr><td>跑步装备</td><td class="bad">¥182 起</td><td class="good">¥18.18 起</td></tr>
+  <tr><td>健身器材</td><td class="bad">¥329 起</td><td class="good">¥16.27 起</td></tr>
+  <tr><td>球类专场</td><td class="bad">¥89 起</td><td class="good">¥18.52 起</td></tr>
+</table>
+
+<h2>三视口首屏</h2>
+<figure><img src="1920-hero-final.png" alt="1920 首屏"><figcaption>1920 · 三栏 210/942/260 · banner 730×290 · 瓦片 227×76</figcaption></figure>
+<figure><img src="1440-hero-final.png" alt="1440 首屏"><figcaption>1440 · 三栏 210/910/260 · banner 698×290</figcaption></figure>
+<figure><img src="1280-hero-final.png" alt="1280 首屏"><figcaption>1280 · 降为两栏，用户卡下移（不再 display:none）</figcaption></figure>
+
+<h2>窄屏用户卡（下移成整宽横条）</h2>
+<figure><img src="1280-sidecard-final.png" alt="1280 用户卡"><figcaption>1280 · 1248×161 横条：头像+LV3 徽标 / 三项数字 / 五个入口 / 企业采购面板全部保留</figcaption></figure>
+
+</body>
+</html>

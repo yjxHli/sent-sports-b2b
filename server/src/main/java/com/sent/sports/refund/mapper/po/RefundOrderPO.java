@@ -32,6 +32,8 @@ public class RefundOrderPO extends BasePO {
     private Long auditorId;
     private String auditRemark;
     private LocalDateTime refundedAt;
+    /** 是否需要客服人工复核（V52）：1 = 订单含「审核通过未排产」的定制单。初始 0 保证 INSERT 不为 NULL。 */
+    private Integer needManualReview = 0;
 
     public String getRefundNo() {
         return refundNo;
@@ -159,5 +161,13 @@ public class RefundOrderPO extends BasePO {
 
     public void setRefundedAt(LocalDateTime refundedAt) {
         this.refundedAt = refundedAt;
+    }
+
+    public Integer getNeedManualReview() {
+        return needManualReview;
+    }
+
+    public void setNeedManualReview(Integer needManualReview) {
+        this.needManualReview = needManualReview;
     }
 }

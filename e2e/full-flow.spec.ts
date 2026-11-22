@@ -36,10 +36,12 @@ import {
   type Page,
 } from '@playwright/test';
 import path from 'node:path';
-import { clearOpenSessions } from './chat-helpers';
+import { clearOpenSessions, loginCs } from './chat-helpers';
 
 const USER_URL = process.env.E2E_USER_URL ?? 'http://127.0.0.1:5173';
 const ADMIN_URL = process.env.E2E_ADMIN_URL ?? 'http://127.0.0.1:5174/admin/';
+/** 客服工作台独立端（web-cs，:5175）：接待段走这里，其余管理段仍是 ADMIN_URL */
+const CS_URL = process.env.E2E_CS_URL ?? 'http://127.0.0.1:5175';
 const API_URL = process.env.E2E_API_URL ?? 'http://127.0.0.1:8088/api';
 
 const CFG = {
@@ -379,9 +381,10 @@ test('全链路多角色终极验收：用户下单 → 客服实时会话 → �
     // 3 · 客服 Context：登录 → 客服工作台 → 接待该会话
     // =====================================================================
     await test.step('客服：独立 Context 登录并进入客服工作台（WS 已连接）', async () => {
-      await loginAdmin(servicePage, CFG.service.username, CFG.service.password, '客服');
+      // 客服台已是独立工程（web-cs :5175）：登录后直落 /workbench，没有 /dashboard 中间站
+      await loginCs(servicePage, CFG.service.username, CFG.service.password);
       serviceToken = await accessTokenOf(servicePage);
-      await servicePage.goto(join(ADMIN_URL, '/chat/workbench'));
+      await servicePage.goto(join(CS_URL, '/workbench'));
       await expect(servicePage.getByRole('heading', { name: '客服工作台' })).toBeVisible();
       await expect(
         servicePage.locator('.el-tag').filter({ hasText: 'WebSocket 已连接' }),
@@ -508,6 +511,10 @@ test('全链路多角色终极验收：用户下单 → 客服实时会话 → �
     });
 
     await test.step('定制：客服驳回 V1（填写原因）', async () => {
+      // 关键：客服台（5175）与管理端（5174）是两个不同 origin，localStorage 不互通。
+      // cs-token_* 存在 5175 源下，进 5174 读不到 → 不补这一步会直接掉到管理端登录页。
+      // 同一账号(service)再登一次管理端即可，两套令牌互不覆盖（前缀不同：cs-token_* / sent_admin_*）。
+      await loginAdmin(servicePage, CFG.service.username, CFG.service.password, '客服');
       await openReview();
       const reject = servicePage.getByRole('button', { name: '驳回重做' });
       await expect(reject, '待审核图稿应可驳回').toBeEnabled({ timeout: 15_000 });
@@ -719,7 +726,8 @@ test('全链路多角色终极验收：用户下单 → 客服实时会话 → �
  *      java -jar server/target/sent-server.jar            # 后端 :8088（dev profile）
  *      pnpm --dir web-user dev                            # 商城 :5173
  *      pnpm --dir web-admin dev                           # 后台 :5174
- *    （或设置 E2E_AUTOSTART=1 让 Playwright 自动拉起三端）
+ *      pnpm --dir web-cs dev                              # 客服台 :5175（接待段跑这里）
+ *    （或设置 E2E_AUTOSTART=1 让 Playwright 自动拉起四端）
  *
  * 2) 执行本脚本（复用系统 Chrome，无需下载 Chromium）：
  *      cd e2e && npx playwright test full-flow.spec.ts --headed
@@ -733,7 +741,7 @@ test('全链路多角色终极验收：用户下单 → 客服实时会话 → �
  *      E2E_USER_NAME=13800138000  E2E_USER_PASSWORD=123456
  *      E2E_SERVICE_NAME=service   E2E_WAREHOUSE_NAME=warehouse  E2E_FINANCE_NAME=finance
  *      E2E_PRODUCT_ID=1001  E2E_CUSTOM_SKU_ID=9102  E2E_CUSTOMER_ID=9002
- *      E2E_USER_URL / E2E_ADMIN_URL / E2E_API_URL / E2E_CHANNEL=msedge
+ *      E2E_USER_URL / E2E_ADMIN_URL / E2E_CS_URL / E2E_API_URL / E2E_CHANNEL=msedge
  *
  * 4) 前置条件（Flyway 到 V19）：
  *      - V15：客户 13800138000 存在且可登录

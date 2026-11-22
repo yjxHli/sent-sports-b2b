@@ -8,18 +8,24 @@ import { defineConfig, devices } from '@playwright/test';
  *
  *   # 1) 后端（本机 MySQL 8.0.43 / sent_dev，root/123456）
  *   java -jar server/target/sent-server.jar --spring.datasource.password=123456   # 默认 :8088
- *   # 2) 用户端 / 管理端
+ *   # 2) 用户端 / 管理端 / 客服台
  *   pnpm --dir web-user dev
  *   pnpm --dir web-admin dev
+ *   pnpm --dir web-cs dev      # 客服工作台（:5175）——接待类用例跑在这里
  *   # 3) 执行
  *   cd e2e && npx playwright test
  *
- * 双端 token 物理隔离（sent_user / sent_admin），因此用两个独立 BrowserContext，
- * 绝不共用 storageState。
+ * 三端 token 物理隔离（sent_user / sent_admin / cs-token），因此各用独立 BrowserContext，
+ * 绝不共用 storageState；客服台用例的 base 是 CS_URL，只有「商城」用例才用 USER_URL。
  */
 
 const USER_URL = process.env.E2E_USER_URL ?? 'http://127.0.0.1:5173';
 const ADMIN_URL = process.env.E2E_ADMIN_URL ?? 'http://127.0.0.1:5174/admin/';
+/**
+ * 客服工作台独立端（web-cs）。2026-11-20 从管理端剥离后，
+ * 原先跑在 /admin/chat/workbench 的 14 个接待类 spec 全部迁移到本 base。
+ */
+const CS_URL = process.env.E2E_CS_URL ?? 'http://127.0.0.1:5175';
 const API_URL = process.env.E2E_API_URL ?? 'http://127.0.0.1:8088/api';
 const AUTO_START = process.env.E2E_AUTOSTART === '1';
 
@@ -72,9 +78,17 @@ export default defineConfig({
           reuseExistingServer: true,
           timeout: 120_000,
         },
+        {
+          // 客服工作台独立端：接待类用例（chat-*/satisfaction-*）依赖它
+          command: 'pnpm --dir web-cs dev',
+          cwd: '..',
+          url: `${CS_URL}/`,
+          reuseExistingServer: true,
+          timeout: 120_000,
+        },
       ]
     : undefined,
 });
 
-// 供 spec 复用的常量（避免三处硬编码）
-export const E2E_URLS = { USER_URL, ADMIN_URL, API_URL };
+// 供 spec 复用的常量（避免多处硬编码）
+export const E2E_URLS = { USER_URL, ADMIN_URL, CS_URL, API_URL };

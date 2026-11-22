@@ -7,6 +7,7 @@ import com.sent.sports.common.dto.TierDto;
 import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
 import com.sent.sports.common.util.IdGen;
+import com.sent.sports.common.util.JsonListCodec;
 import com.sent.sports.common.web.PageQuery;
 import com.sent.sports.common.web.PageResult;
 import com.sent.sports.product.dto.admin.AdminProductDtos;
@@ -23,6 +24,7 @@ import org.springframework.stereotype.Service;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -43,6 +45,17 @@ public class ProductAdminServiceImpl implements ProductAdminService {
     private static final String PRODUCT_DRAFT = "DRAFT";
     private static final String SKU_ON = "ON";
     private static final String SKU_OFF = "OFF";
+
+    /** 富内容上限（V54）：与《商品详情页改造方案》§4.2 一致。 */
+    private static final int MAX_IMAGES = 8;
+    private static final int MAX_DETAIL_IMAGES = 20;
+    private static final int MAX_PARAMS = 20;
+    private static final int MAX_SERVICE_TAGS = 6;
+    private static final int MAX_FILE_ID_LENGTH = 512;
+    private static final int MAX_SUBTITLE_LENGTH = 255;
+    private static final int MAX_PARAM_LABEL_LENGTH = 32;
+    private static final int MAX_PARAM_VALUE_LENGTH = 128;
+    private static final int MAX_SERVICE_TAG_LENGTH = 16;
 
     private final CatalogMapper catalogMapper;
     private final ProductMapper productMapper;
@@ -68,14 +81,22 @@ public class ProductAdminServiceImpl implements ProductAdminService {
     @Override
     @UseCase
     public AdminProductDtos.ProductVO create(AdminProductDtos.ProductForm form) {
+        RichContent rich = validateRichContent(form);
         ProductPO po = new ProductPO();
         po.setProductNo(idGen.next("SPU"));
         po.setTitle(form.name().trim());
+        po.setSubtitle(rich.subtitle());
         po.setCategoryId(form.categoryId());
+        po.setBrand(rich.brand());
+        po.setMainImage(rich.mainImage());
+        po.setImagesJson(JsonListCodec.write(rich.images()));
+        po.setDetailImagesJson(JsonListCodec.write(rich.detailImages()));
         po.setDetailHtml(form.description());
+        po.setParamsJson(JsonListCodec.write(rich.params()));
+        po.setServiceTagsJson(JsonListCodec.write(rich.serviceTags()));
         po.setStatus(PRODUCT_ON_SHELF);
         po.setPublishedAt(LocalDateTime.ofInstant(clock.instant(), ZoneId.systemDefault()));
-        po.setCanCustomize(0);
+        po.setCanCustomize(rich.canCustomize());
         po.setSalesCount(0L);
         po.setDeleted(0);
         productMapper.insert(po);
@@ -93,13 +114,42 @@ public class ProductAdminServiceImpl implements ProductAdminService {
     @UseCase
     public AdminProductDtos.ProductVO update(Long id, AdminProductDtos.ProductForm form) {
         requireId(id, "商品ID不能为空");
+        RichContent rich = validateRichContent(form);
         ProductPO po = productMapper.selectById(id);
         if (po == null) {
             throw new BizException(ErrorCode.NOT_FOUND, "商品不存在：" + id);
         }
         po.setTitle(form.name().trim());
+        po.setSubtitle(rich.subtitle());
         po.setCategoryId(form.categoryId());
+        po.setBrand(rich.brand());
         po.setDetailHtml(form.description());
+        // 富内容三态语义：null = 不改（保留库内旧值）；空数组 = 清空（必须写 "[]"，
+        // 因为 MyBatis-Plus updateById 会跳过 null，写 null 等于"删不掉"）。
+        if (form.mainImage() != null) {
+            po.setMainImage(rich.mainImage());
+        }
+        if (form.images() != null) {
+            po.setImagesJson(JsonListCodec.write(rich.images()));
+            // 图集清空时主图要一起清：写 null 会被 updateById 跳过，于是详情页还挂着已删掉的图
+            if (rich.images().isEmpty()) {
+                po.setMainImage("");
+            } else if (form.mainImage() == null) {
+                po.setMainImage(rich.images().get(0));
+            }
+        }
+        if (form.detailImages() != null) {
+            po.setDetailImagesJson(JsonListCodec.write(rich.detailImages()));
+        }
+        if (form.params() != null) {
+            po.setParamsJson(JsonListCodec.write(rich.params()));
+        }
+        if (form.serviceTags() != null) {
+            po.setServiceTagsJson(JsonListCodec.write(rich.serviceTags()));
+        }
+        if (form.canCustomize() != null) {
+            po.setCanCustomize(rich.canCustomize());
+        }
         productMapper.updateById(po);
         List<AdminProductDtos.SkuForm> skuForms = normalizeSkus(form.skus());
         replaceSkus(id, skuForms);
@@ -376,9 +426,20 @@ public class ProductAdminServiceImpl implements ProductAdminService {
         po.setSpuId(spuId);
         po.setSkuNo(skuNo);
         po.setSpecJson(toSpecJson(form.spec()));
+        String imageFileId = trimToNull(form.imageFileId());
+        if (imageFileId != null && imageFileId.length() > MAX_FILE_ID_LENGTH) {
+            throw new BizException(ErrorCode.PARAM_INVALID,
+                    "款式图地址过长（最多 " + MAX_FILE_ID_LENGTH + " 字符）");
+        }
+        po.setImageFileId(imageFileId);
         po.setRetailPriceCent(form.retailPriceCent());
-        po.setFloorPriceCent(0L);
-        po.setCostPriceCent(0L);
+        // 成本价/底价不在编辑页表单里（由商品主数据维护），更新既有 SKU 时必须原样带回：
+        // 之前一律写 0，导致「改个副标题保存」就把全店 SKU 变成零成本零底价，
+        // 报表毛利失真、秒杀底价校验也形同失效（2026-11-21 由 price-repricing E2E 抓出）。
+        po.setFloorPriceCent(existing == null || existing.getFloorPriceCent() == null
+                ? 0L : existing.getFloorPriceCent());
+        po.setCostPriceCent(existing == null || existing.getCostPriceCent() == null
+                ? 0L : existing.getCostPriceCent());
         po.setWeightG(0);
         po.setStatus(SKU_ON);
         return po;
@@ -394,6 +455,118 @@ public class ProductAdminServiceImpl implements ProductAdminService {
         long retail = po.getRetailPriceCent() == null ? 0L : po.getRetailPriceCent();
         return new AdminProductDtos.SkuVO(String.valueOf(po.getId()), po.getSkuNo(),
                 plainSpec(po.getSpecJson()), retail, stock);
+    }
+
+    /** 校验并归一化后的富内容，避免 create/update 里散落一堆局部变量。 */
+    private record RichContent(String subtitle, String brand, String mainImage, int canCustomize,
+                               List<String> images, List<String> detailImages,
+                               List<AdminProductDtos.ParamItem> params, List<String> serviceTags) {
+    }
+
+    /**
+     * 富内容校验 + 归一化（V54）。所有上限在此收口，越界一律抛 {@code PARAM_INVALID}，
+     * 不做静默截断——运营填了 9 张图必须被明确告知，而不是悄悄丢掉一张。
+     */
+    private static RichContent validateRichContent(AdminProductDtos.ProductForm form) {
+        String subtitle = trimToNull(form.subtitle());
+        if (subtitle != null && subtitle.length() > MAX_SUBTITLE_LENGTH) {
+            throw new BizException(ErrorCode.PARAM_INVALID, "副标题最多 " + MAX_SUBTITLE_LENGTH + " 字");
+        }
+        String brand = trimToNull(form.brand());
+        if (brand != null && brand.length() > 64) {
+            throw new BizException(ErrorCode.PARAM_INVALID, "品牌名最多 64 字");
+        }
+        List<String> images = normalizeFiles(form.images(), MAX_IMAGES, "商品图");
+        List<String> detailImages = normalizeFiles(form.detailImages(), MAX_DETAIL_IMAGES, "详情图");
+        List<AdminProductDtos.ParamItem> params = normalizeParams(form.params());
+        List<String> serviceTags = normalizeServiceTags(form.serviceTags());
+        String mainImage = trimToNull(form.mainImage());
+        // 主图缺省取图集第一张：运营只传图集时也不会出现"无主图"的空列表页卡片
+        if (mainImage == null && !images.isEmpty()) {
+            mainImage = images.get(0);
+        }
+        int canCustomize = Boolean.TRUE.equals(form.canCustomize()) ? 1 : 0;
+        return new RichContent(subtitle, brand, mainImage, canCustomize,
+                images, detailImages, params, serviceTags);
+    }
+
+    /** 图片 fileId 列表：去空白、去重（保序）、限长、限量。 */
+    private static List<String> normalizeFiles(List<String> values, int max, String label) {
+        if (values == null) {
+            return List.of();
+        }
+        List<String> result = new ArrayList<>();
+        for (String value : values) {
+            String fileId = trimToNull(value);
+            if (fileId == null) {
+                continue;
+            }
+            if (fileId.length() > MAX_FILE_ID_LENGTH) {
+                throw new BizException(ErrorCode.PARAM_INVALID,
+                        label + "地址过长（最多 " + MAX_FILE_ID_LENGTH + " 字符）");
+            }
+            if (!result.contains(fileId)) {
+                result.add(fileId);
+            }
+        }
+        if (result.size() > max) {
+            throw new BizException(ErrorCode.PARAM_INVALID, label + "最多 " + max + " 张");
+        }
+        return result;
+    }
+
+    private static List<AdminProductDtos.ParamItem> normalizeParams(List<AdminProductDtos.ParamItem> values) {
+        if (values == null) {
+            return List.of();
+        }
+        List<AdminProductDtos.ParamItem> result = new ArrayList<>();
+        for (AdminProductDtos.ParamItem item : values) {
+            if (item == null) {
+                continue;
+            }
+            String label = trimToNull(item.label());
+            if (label == null) {
+                throw new BizException(ErrorCode.PARAM_INVALID, "参数名不能为空");
+            }
+            if (label.length() > MAX_PARAM_LABEL_LENGTH) {
+                throw new BizException(ErrorCode.PARAM_INVALID,
+                        "参数名最多 " + MAX_PARAM_LABEL_LENGTH + " 字：" + label);
+            }
+            String value = trimToNull(item.value());
+            if (value != null && value.length() > MAX_PARAM_VALUE_LENGTH) {
+                throw new BizException(ErrorCode.PARAM_INVALID,
+                        "参数值最多 " + MAX_PARAM_VALUE_LENGTH + " 字：" + label);
+            }
+            result.add(new AdminProductDtos.ParamItem(label, value));
+        }
+        if (result.size() > MAX_PARAMS) {
+            throw new BizException(ErrorCode.PARAM_INVALID, "参数最多 " + MAX_PARAMS + " 条");
+        }
+        return result;
+    }
+
+    private static List<String> normalizeServiceTags(List<String> values) {
+        if (values == null) {
+            return List.of();
+        }
+        List<String> result = new ArrayList<>();
+        for (String value : values) {
+            String tag = trimToNull(value);
+            if (tag == null) {
+                continue;
+            }
+            if (tag.length() > MAX_SERVICE_TAG_LENGTH) {
+                throw new BizException(ErrorCode.PARAM_INVALID,
+                        "服务承诺单个最多 " + MAX_SERVICE_TAG_LENGTH + " 字：" + tag);
+            }
+            if (!result.contains(tag)) {
+                result.add(tag);
+            }
+        }
+        if (result.size() > MAX_SERVICE_TAGS) {
+            throw new BizException(ErrorCode.PARAM_INVALID, "服务承诺最多 " + MAX_SERVICE_TAGS + " 个");
+        }
+        return result;
     }
 
     private static List<AdminProductDtos.SkuForm> normalizeSkus(List<AdminProductDtos.SkuForm> skus) {

@@ -25,6 +25,8 @@ public interface CustomOrderMapper extends BaseMapper<CustomOrderPO> {
     /**
      * 用户端「我的定制单」分页（收口阶段）：联查订单状态与最新图稿版本。
      * 由 MyBatis-Plus 分页拦截器按传入 {@link Page} 自动追加 LIMIT/OFFSET；总数另由 {@link #countMy} 统计。
+     * <p>客户侧软删（V51 {@code customer_deleted_at}）的单不再出现：列表与 {@link #countMy} 必须同条件，
+     * 否则分页 total 会比实际能翻到的多出一截。</p>
      */
     @Select("SELECT co.custom_no AS customOrderId, co.status, co.reject_count AS rejectCount, "
             + "COALESCE(d.max_version, co.current_version) AS version, "
@@ -34,14 +36,65 @@ public interface CustomOrderMapper extends BaseMapper<CustomOrderPO> {
             + "LEFT JOIN orders o ON o.id = oi.order_id "
             + "LEFT JOIN (SELECT custom_order_id, MAX(version) AS max_version FROM custom_draft "
             + "          GROUP BY custom_order_id) d ON d.custom_order_id = co.id "
-            + "WHERE co.customer_id = #{customerId} "
+            + "WHERE co.customer_id = #{customerId} AND co.customer_deleted_at IS NULL "
             + "ORDER BY co.created_at DESC")
     IPage<CustomOrderListItemPO> selectMyPage(Page<CustomOrderListItemPO> page,
                                              @Param("customerId") long customerId);
 
-    /** 用户端「我的定制单」总数（收口阶段）。 */
-    @Select("SELECT COUNT(*) FROM custom_order WHERE customer_id = #{customerId}")
+    /** 用户端「我的定制单」总数（收口阶段），过滤条件与 {@link #selectMyPage} 保持一致。 */
+    @Select("SELECT COUNT(*) FROM custom_order "
+            + "WHERE customer_id = #{customerId} AND customer_deleted_at IS NULL")
     long countMy(@Param("customerId") long customerId);
+
+    /**
+     * 批量删除前的一次性读：拿这批定制单号在当前客户名下、且客户未删过的单（V51）。
+     *
+     * <p>归属写进 SQL：他人的单号查不出来 → 调用方按「不存在或已删除」跳过，不泄露存在性。
+     * 一次多选只查一趟，避免逐单 {@code selectByCustomNo} 的 N 次往返。</p>
+     */
+    @Select({"<script>",
+            "SELECT * FROM custom_order WHERE customer_id = #{customerId}",
+            "AND customer_deleted_at IS NULL AND custom_no IN",
+            "<foreach collection='customNos' item='no' open='(' separator=',' close=')'>#{no}</foreach>",
+            "</script>"})
+    List<CustomOrderPO> selectByCustomNosForCustomer(@Param("customerId") long customerId,
+                                                     @Param("customNos") List<String> customNos);
+
+    /**
+     * 客户侧批量软删（V51）：只写 {@code customer_deleted_at}。
+     * <p>条件里再带一次 {@code customer_id}、未删与终态集合，调用方漏判也删不掉进行中的单；
+     * 重复提交影响 0 行，天然幂等。</p>
+     */
+    @Update({"<script>",
+            "UPDATE custom_order SET customer_deleted_at = NOW(3) ",
+            "WHERE customer_id = #{customerId} AND customer_deleted_at IS NULL ",
+            "AND status IN <foreach collection='statuses' item='st' open='(' separator=',' close=')'>#{st}</foreach> ",
+            "AND custom_no IN <foreach collection='customNos' item='no' open='(' separator=',' close=')'>#{no}</foreach>",
+            "</script>"})
+    int batchMarkCustomerDeleted(@Param("customerId") long customerId,
+                                 @Param("customNos") List<String> customNos,
+                                 @Param("statuses") List<String> statuses);
+
+    /**
+     * 按订单号查该订单下的定制单（订单详情页的「UV 定制」卡片用）。
+     * <p>一个订单可以有多行定制件，因此返回列表；归属同时校验 {@code orders.customer_id}，
+     * 避免拿别人的订单号就能看到定制单（越权）。管理端软删（{@code deleted}）与
+     * 客户侧软删（{@code customer_deleted_at}，V51）的定制单都不返回：客户既然在「我的定制」里删了它，
+     * 订单详情卡片再冒出来只会让人以为没删成功。</p>
+     */
+    @Select("SELECT co.custom_no AS customOrderId, co.status, co.qty, co.fee_cent AS feeCent, "
+            + "COALESCE(d.max_version, co.current_version) AS version, co.reject_count AS rejectCount, "
+            + "co.review_deadline AS reviewDeadline "
+            + "FROM custom_order co "
+            + "JOIN order_item oi ON oi.id = co.order_item_id "
+            + "JOIN orders o ON o.id = oi.order_id "
+            + "LEFT JOIN (SELECT custom_order_id, MAX(version) AS max_version FROM custom_draft "
+            + "          GROUP BY custom_order_id) d ON d.custom_order_id = co.id "
+            + "WHERE o.order_no = #{orderNo} AND o.customer_id = #{customerId} AND co.deleted = 0 "
+            + "AND co.customer_deleted_at IS NULL "
+            + "ORDER BY co.id")
+    List<OrderCustomRow> selectByOrderNo(@Param("customerId") long customerId,
+                                        @Param("orderNo") String orderNo);
 
     /** 按定制单号读取。 */
     @Select("SELECT * FROM custom_order WHERE custom_no = #{customNo}")
@@ -281,9 +334,34 @@ public interface CustomOrderMapper extends BaseMapper<CustomOrderPO> {
         public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
     }
 
+    /** 订单详情页的定制单行（订单号 → 该单下的定制单，可能多张）。 */
+    class OrderCustomRow {
+        private String customOrderId;
+        private String status;
+        private Integer version;
+        private Integer rejectCount;
+        private Integer qty;
+        private Long feeCent;
+        private LocalDateTime reviewDeadline;
+
+        public String getCustomOrderId() { return customOrderId; }
+        public void setCustomOrderId(String customOrderId) { this.customOrderId = customOrderId; }
+        public String getStatus() { return status; }
+        public void setStatus(String status) { this.status = status; }
+        public Integer getVersion() { return version; }
+        public void setVersion(Integer version) { this.version = version; }
+        public Integer getRejectCount() { return rejectCount; }
+        public void setRejectCount(Integer rejectCount) { this.rejectCount = rejectCount; }
+        public Integer getQty() { return qty; }
+        public void setQty(Integer qty) { this.qty = qty; }
+        public Long getFeeCent() { return feeCent; }
+        public void setFeeCent(Long feeCent) { this.feeCent = feeCent; }
+        public LocalDateTime getReviewDeadline() { return reviewDeadline; }
+        public void setReviewDeadline(LocalDateTime reviewDeadline) { this.reviewDeadline = reviewDeadline; }
+    }
+
     /** 定制单所属订单的轻量引用（订单号 + 订单状态）。 */
-    class OrderRefRow {
-        private String orderNo;
+    class OrderRefRow {        private String orderNo;
         private String orderStatus;
 
         public String getOrderNo() { return orderNo; }

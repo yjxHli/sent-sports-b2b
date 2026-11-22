@@ -64,6 +64,8 @@ public class RefundRepositoryImpl implements RefundRepository {
         po.setReasonCode(onlyRefund ? "SYSTEM" : "USER_APPLY");
         po.setRemark(order.getReason());
         po.setApplicantType(onlyRefund ? "STAFF" : "CUSTOMER");
+        // 人工复核标记只在申请时写一次：它是「申请时刻的判定快照」，后续审核不覆盖
+        po.setNeedManualReview(order.isNeedManualReview() ? 1 : 0);
         // 凭证图片：fileId 数组以 JSON 落 images_json，审核端再解码成图片列表展示
         po.setImagesJson(ImageJsonCodec.encode(order.getImages()));
         // created_at / updated_at 由 MetaObjectHandler 自动填充，此处不重复写入。
@@ -84,6 +86,7 @@ public class RefundRepositoryImpl implements RefundRepository {
         order.setAppealCount(po.getAppealCount() == null ? 0 : po.getAppealCount().intValue());
         order.setPointRefund(po.getPointRefund() == null ? 0L : po.getPointRefund());
         order.setImages(ImageJsonCodec.decode(po.getImagesJson()));
+        order.setNeedManualReview(po.getNeedManualReview() != null && po.getNeedManualReview() == 1);
         return order;
     }
 

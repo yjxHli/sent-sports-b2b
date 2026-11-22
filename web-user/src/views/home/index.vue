@@ -16,31 +16,33 @@
     </div>
 
     <div class="home-hero">
-      <!-- 左侧分类导航 -->
+      <!-- 左侧分类导航：图标 + 同一行用「/」串起 2 个分类（参考图样式）。
+           铺不下的分类不打紧，点「查看全部商品」在分类结果页的分类条里都能看到。 -->
       <aside class="cat-nav">
-        <div class="cat-nav__title">全部商品分类</div>
+        <div class="cat-nav__title">分类</div>
         <ul class="cat-nav__list">
-          <li
-            v-for="c in categories"
-            :key="c.categoryId"
-            class="cat-nav__item"
-            @click="goCategory(c.categoryId)"
-          >
-            <span>{{ c.name }}</span>
-            <span class="cat-nav__arrow">›</span>
+          <li v-for="row in catRows" :key="row.key" class="cat-nav__row">
+            <span class="cat-nav__icon" aria-hidden="true">{{ row.icon }}</span>
+            <span class="cat-nav__names">
+              <template v-for="(c, i) in row.items" :key="c.categoryId">
+                <span v-if="i" class="cat-nav__sep">/</span>
+                <span class="cat-nav__item" @click="goCategory(c.categoryId)">{{ c.name }}</span>
+              </template>
+            </span>
           </li>
-          <li v-if="categories.length === 0" class="cat-nav__empty">暂无分类</li>
+          <li v-if="!catRows.length" class="cat-nav__empty">暂无分类</li>
         </ul>
         <div class="cat-nav__all" @click="goProducts">查看全部商品 ›</div>
       </aside>
 
-      <!-- 中间：活动瓦片 + 轮播 -->
+      <!-- 中间：券卡（200 权益侧栏）+ 主 banner（730）并排，让 banner 成为唯一主视觉；
+           下方四个渠道瓦片改为 76px 横条，标题/起价一行读完，不再折行挤压。 -->
       <div class="home-main">
-        <div class="promo-grid">
+        <div class="promo-row">
           <div class="promo-main" @click="goCouponCenter">
             <div class="promo-main__badge">会员日</div>
             <div class="promo-main__title">领券中心</div>
-            <p class="promo-main__sub">5 元无门槛 / 满 20 减 10 / 满 80 减 50</p>
+            <p class="promo-main__sub">5元无门槛 · 满20减10 · 满80减50</p>
             <p v-if="!isMemberDay" class="promo-main__next" data-testid="member-day-next">
               下次会员日：{{ nextMemberDayText }}
             </p>
@@ -49,59 +51,62 @@
             </div>
             <button class="promo-main__btn" @click.stop="goCouponCenter">立即领取</button>
           </div>
-          <div class="promo-tiles">
-            <div
-              v-for="t in PROMO_TILES"
-              :key="t.key"
-              class="promo-tile"
-              :style="{ background: t.bg }"
-              @click="goEntry(t)"
-            >
-              <div class="promo-tile__head">
-                <b>{{ t.title }}</b>
-                <span>{{ t.tag }}</span>
+
+          <el-carousel height="290px" :interval="4500" arrow="hover" class="home-carousel">
+            <el-carousel-item v-for="b in banners" :key="b.key">
+              <div class="banner" :style="{ background: b.bg }">
+                <div class="banner__inner">
+                  <div class="banner__tag">{{ b.tag }}</div>
+                  <h2 class="banner__title">{{ b.title }}</h2>
+                  <p class="banner__sub">{{ b.sub }}</p>
+                  <button class="banner__btn" @click.stop="goEntry(b)">立即选购</button>
+                </div>
+                <div class="banner__emoji">{{ b.emoji }}</div>
               </div>
-              <div class="promo-tile__price">{{ t.price }}</div>
-              <div class="promo-tile__emoji">{{ t.emoji }}</div>
-            </div>
-          </div>
+            </el-carousel-item>
+          </el-carousel>
         </div>
 
-        <el-carousel height="200px" :interval="4500" arrow="hover" class="home-carousel">
-          <el-carousel-item v-for="b in banners" :key="b.key">
-            <div class="banner" :style="{ background: b.bg }">
-              <div class="banner__inner">
-                <div class="banner__tag">{{ b.tag }}</div>
-                <h2 class="banner__title">{{ b.title }}</h2>
-                <p class="banner__sub">{{ b.sub }}</p>
-                <button class="banner__btn" @click.stop="goEntry(b)">立即选购</button>
-              </div>
-              <div class="banner__emoji">{{ b.emoji }}</div>
+        <div class="promo-tiles">
+          <div
+            v-for="t in PROMO_TILES"
+            :key="t.key"
+            class="promo-tile"
+            :style="{ background: t.bg }"
+            @click="goEntry(t)"
+          >
+            <div class="promo-tile__head">
+              <b>{{ t.title }}</b>
+              <span>{{ t.tag }}</span>
             </div>
-          </el-carousel-item>
-        </el-carousel>
-
+            <div class="promo-tile__price">{{ tilePriceText(t) }}</div>
+            <div class="promo-tile__emoji">{{ t.emoji }}</div>
+          </div>
+        </div>
       </div>
 
       <!-- 右侧用户卡（对齐参考图的登录态信息面板） -->
       <aside class="side-card">
         <div class="side-user">
-          <div class="side-user__avatar">{{ (profile?.nickname || '森').slice(0, 1) }}</div>
+          <div class="side-user__avatar" :class="{ 'side-user__avatar--guest': !profile }">
+            {{ avatarChar }}
+            <span v-if="profile" class="side-user__level">{{ statusLabel(profile.levelCode) }}</span>
+          </div>
           <div class="side-user__info">
             <b>{{ profile?.nickname || (auth.isLoggedIn ? '森特会员' : '未登录') }}</b>
-            <span>{{ profile ? statusLabel(profile.levelCode) : '登录后查看权益' }}</span>
+            <router-link v-if="!profile" to="/login" class="side-user__login">登录 / 注册</router-link>
           </div>
         </div>
 
         <div class="side-stats">
-          <div class="side-stat">
-            <b>{{ profile?.pointsBalance ?? 0 }}</b><span>积分</span>
+          <div class="side-stat" :class="{ 'side-stat--zero': isZeroStat(profile?.pointsBalance) }">
+            <b>{{ statText(profile?.pointsBalance) }}</b><span>积分</span>
           </div>
-          <div class="side-stat">
-            <b>{{ profile?.growthValue ?? 0 }}</b><span>成长值</span>
+          <div class="side-stat" :class="{ 'side-stat--zero': isZeroStat(profile?.growthValue) }">
+            <b>{{ statText(profile?.growthValue) }}</b><span>成长值</span>
           </div>
-          <div class="side-stat">
-            <b>{{ cartCount }}</b><span>购物车</span>
+          <div class="side-stat" :class="{ 'side-stat--zero': isZeroStat(cartCount) }">
+            <b>{{ statText(cartCount) }}</b><span>购物车</span>
           </div>
         </div>
 
@@ -114,8 +119,8 @@
         </div>
 
         <div class="side-tip">
-          <b>企业采购？</b>
-          <p>支持增值税专用发票、账期结算与批量阶梯价。</p>
+          <b>企业采购</b>
+          <p>专票·账期·阶梯价</p>
           <router-link :to="GROUP_BUY" class="side-tip__btn">查看团购专区</router-link>
         </div>
       </aside>
@@ -168,6 +173,36 @@ const cart = useCartStore();
 const categories = ref<CategoryVO[]>([]);
 const products = ref<CatalogProductVO[]>([]);
 const profile = ref<UserMeVO | null>(null);
+
+/* ------------------------------------------------------------------
+ * 左侧分类面板：参考图样式（图标 + 一行 2 个分类用 / 分隔）
+ * ------------------------------------------------------------------ */
+/** 一行放两个分类：球类/足球、篮球/羽毛球这种同族搭配读起来最顺 */
+const CAT_PER_ROW = 2;
+/** 左栏最多铺 8 行（16 个分类），再多的分类到「全部商品」页的分类条里看 */
+const CAT_MAX_ROWS = 8;
+/** 图标按名称关键词匹配，认不出的用默认奖牌图标兜底（新增分类不会变成空白格） */
+const CAT_ICON_RULES: Array<[RegExp, string]> = [
+  [/足球/, '⚽'], [/篮球/, '🏀'], [/羽毛球/, '🏸'], [/排球/, '🏐'], [/网球/, '🎾'],
+  [/健身|器械|哑铃/, '🏋'], [/瑜伽/, '🧘'], [/跑步|跑鞋/, '🏃'],
+  [/户外|登山|骑行|露营/, '⛰'], [/游泳|泳/, '🏊'], [/服饰|衣|裤|鞋/, '👕'],
+  [/配件|包|水壶|护具/, '🎒'],
+];
+
+function catIcon(name: string): string {
+  for (const [pattern, icon] of CAT_ICON_RULES) {
+    if (pattern.test(name)) return icon;
+  }
+  return '🏅';
+}
+
+const catRows = computed(() => {
+  const visible = categories.value.slice(0, CAT_PER_ROW * CAT_MAX_ROWS);
+  return Array.from({ length: Math.ceil(visible.length / CAT_PER_ROW) }, (_, i) => {
+    const items = visible.slice(i * CAT_PER_ROW, (i + 1) * CAT_PER_ROW);
+    return { key: items.map((c) => c.categoryId).join('-'), icon: catIcon(items[0].name), items };
+  });
+});
 /** 首屏加载（占位骨架）/ 追页加载 / 已到底 */
 const loading = ref(false);
 const loadingMore = ref(false);
@@ -179,6 +214,28 @@ const sentinel = ref<HTMLElement | null>(null);
 let observer: IntersectionObserver | undefined;
 
 const cartCount = computed(() => cart.totalQty);
+
+/* ---------------- 右侧用户卡展示辅助 ---------------- */
+/**
+ * 头像首字：取昵称首字。
+ * 注意：演示数据里的昵称是客户/企业名（如「验收客户」），不是真实人名，
+ * 「姓氏首字」在数据层面拿不到 —— 这里只能用首字，靠等级徽标 + 中性配色
+ * 消除「像验证通过标识」的歧义。真实修复需要后端 profile 提供真实姓名/头像。
+ */
+const avatarChar = computed(() => (profile.value?.nickname || '森').slice(0, 1));
+
+/** 数字展示：千分位；无数据（未登录 / 接口失败）显示「—」而不是 0 */
+function statText(v: number | string | null | undefined): string {
+  if (v === null || v === undefined || v === '') return '—';
+  const n = Number(v);
+  return Number.isFinite(n) ? n.toLocaleString('zh-CN') : '—';
+}
+
+/** 0 值降灰的判据：无数据也按 0 处理（未登录时不该显示成有数据） */
+function isZeroStat(v: number | string | null | undefined): boolean {
+  if (v === null || v === undefined || v === '') return true;
+  return Number(v) === 0;
+}
 /** 周三(3)/周四(4) 是会员日：顶部大促横幅只在这两天出现 */
 /** 会员日判断走 shared 纯函数（与后端 MemberDayPolicy 同口径），now 每秒刷新保证跨零点自动切换 */
 const now = ref(new Date());
@@ -204,7 +261,6 @@ interface PromoTile extends EntryLink {
   key: string;
   title: string;
   tag: string;
-  price: string;
   emoji: string;
   bg: string;
 }
@@ -218,12 +274,76 @@ interface BannerItem extends EntryLink {
   emoji: string;
 }
 
+/**
+ * 四个促销瓦片。
+ * **价格不再写死**（2026-11-21）：原先的 `¥151 / ¥182 / ¥329 / ¥89 起` 与接口实测的
+ * 真实零售价区间 10~40 元差了 4~10 倍，属可信度问题。现在起价一律由
+ * `loadTilePrices()` 从 `/api/products` 的真实 SKU 零售价里取最小值。
+ */
 const PROMO_TILES: PromoTile[] = [
-  { key: 't1', title: '定制队服', tag: '来图即做', price: '¥151 起', emoji: '👕', bg: 'linear-gradient(135deg,#fff4ec,#ffe2cd)', path: '/custom' },
-  { key: 't2', title: '跑步装备', tag: '新款直降', price: '¥182 起', emoji: '👟', bg: 'linear-gradient(135deg,#eef6ff,#d9e9ff)', query: { keyword: '跑步' } },
-  { key: 't3', title: '健身器材', tag: '满减叠加', price: '¥329 起', emoji: '🏋️', bg: 'linear-gradient(135deg,#f2fbf4,#d8f0de)', query: { keyword: '训练' } },
-  { key: 't4', title: '球类专场', tag: '比赛级', price: '¥89 起', emoji: '🏀', bg: 'linear-gradient(135deg,#fdf3f5,#fbdde3)', query: { categoryId: '1' } },
+  { key: 't1', title: '定制队服', tag: '来图即做', emoji: '👕', bg: 'linear-gradient(135deg,#fff4ec,#ffe2cd)', path: '/custom' },
+  { key: 't2', title: '跑步装备', tag: '新款直降', emoji: '👟', bg: 'linear-gradient(135deg,#eef6ff,#d9e9ff)', query: { keyword: '跑步' } },
+  { key: 't3', title: '健身器材', tag: '满减叠加', emoji: '🏋️', bg: 'linear-gradient(135deg,#f2fbf4,#d8f0de)', query: { keyword: '训练' } },
+  { key: 't4', title: '球类专场', tag: '比赛级', emoji: '🏀', bg: 'linear-gradient(135deg,#fdf3f5,#fbdde3)', query: { categoryId: '1' } },
 ];
+
+/** 瓦片 key → 该类目/关键词下的真实最低零售价（分）；null 表示查询失败或无在售 SKU */
+const tilePriceCent = ref<Record<string, number | null>>({});
+
+/** 单页取全的上限，与商品结果页排序时一致（PageQuery.MAX_SIZE） */
+const TILE_PRICE_PAGE_SIZE = 100;
+
+/** 从商品列表里取「在售 SKU 的最低零售价」（分） */
+function minSkuCent(list: CatalogProductVO[]): number | null {
+  let min: number | null = null;
+  for (const p of list) {
+    for (const s of p.skus ?? []) {
+      if (s.onShelf === false) continue;
+      const cent = Number(s.price?.retailPriceCent ?? 0);
+      if (cent > 0 && (min === null || cent < min)) min = cent;
+    }
+  }
+  return min;
+}
+
+/** 并发拉三个商品类瓦片的真实最低价（定制是服务入口，无商品报价可比，不参与） */
+async function loadTilePrices(): Promise<void> {
+  const jobs = PROMO_TILES.filter((t) => t.query).map(async (t) => {
+    const q = t.query ?? {};
+    try {
+      const res = await unwrap(
+        productApi.list({
+          keyword: q.keyword,
+          categoryId: q.categoryId ? Number(q.categoryId) : undefined,
+          page: 1,
+          size: TILE_PRICE_PAGE_SIZE,
+        }),
+      );
+      tilePriceCent.value[t.key] = minSkuCent(res.list ?? []);
+    } catch {
+      tilePriceCent.value[t.key] = null;
+    }
+  });
+  await Promise.allSettled(jobs);
+}
+
+/** 分 → 展示用的元（整数不带小数，如 1000 分 → "10"；非整数保留两位） */
+function yuanCompact(cent: number): string {
+  return cent % 100 === 0 ? String(cent / 100) : (cent / 100).toFixed(2);
+}
+
+/**
+ * 瓦片价格文案。
+ * - 商品类瓦片：显示真实起价；
+ * - 定制瓦片：定制费按件结算、没有可比商品价 → 显示「按件计价」，**不编造数字**；
+ * - 查询失败：留空，不退回写死值。
+ */
+function tilePriceText(t: PromoTile): string {
+  const cent = tilePriceCent.value[t.key];
+  if (cent && cent > 0) return `¥${yuanCompact(cent)} 起`;
+  if (t.path) return '按件计价';
+  return '';
+}
 
 /** 企业采购「团购专区」：独立的团购专区页（阶梯价 / 账期 / 专票），不再复用训练关键词 */
 const GROUP_BUY = { path: '/group-buy' };
@@ -390,6 +510,8 @@ function onWindowScroll(): void {
 onMounted(async () => {
   tick();
   clockTimer = setInterval(tick, 1000);
+  // 瓦片起价走真实商品数据，不阻塞首屏其它数据链路
+  void loadTilePrices();
 
   try {
     categories.value = (await unwrap(productApi.categories())) ?? [];
@@ -494,21 +616,23 @@ onUnmounted(() => {
 }
 
 /* ---------- 主区三栏 ---------- */
+/* 版心 1440 下的分配：210 分类 + 942 中栏 + 260 用户卡。
+   中栏 942 = 券卡 200 + gap 12 + banner 730，banner 比例 730:290 ≈ 2.5:1（接近淘宝的 2.44:1）。 */
 .home-hero {
   display: grid;
-  grid-template-columns: 210px minmax(0, 1fr) 236px;
+  grid-template-columns: 210px minmax(0, 1fr) 260px;
   gap: 14px;
-  /* 左右两栏跟着中间轮播栏一起拉满高度，避免框底下漏出灰色空隙 */
+  /* 三栏等高，避免框底下漏出灰色空隙 */
   align-items: stretch;
 }
 
-/* 分类导航 */
+/* 分类导航（参考图版式：图标 + 一行多个分类用 / 分隔） */
 .cat-nav {
   background: #fff;
   border-radius: var(--sent-radius);
   overflow: hidden;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-  padding-bottom: 6px;
+  padding-bottom: 4px;
   display: flex;
   flex-direction: column;
 }
@@ -517,40 +641,58 @@ onUnmounted(() => {
   color: #fff;
   font-size: 15px;
   font-weight: 600;
-  padding: 13px 18px;
+  padding: 12px 18px;
   letter-spacing: 1px;
 }
 .cat-nav__list {
   list-style: none;
   margin: 0;
-  padding: 6px 0;
-  /* 分类项均分剩余高度，把卡片填满（只有 3~5 个分类时也不会留一大块白） */
+  padding: 8px 8px 4px;
+  /* 行数少于可用高度时按比例撑满，左栏永远和右侧对齐，不留半块白 */
   flex: 1;
   display: flex;
   flex-direction: column;
 }
-.cat-nav__item {
+.cat-nav__row {
+  flex: 1;
+  min-height: 34px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 11px 18px;
-  min-height: 44px;
-  flex: 1;
+  gap: 9px;
+  padding: 0 8px;
+  border-radius: 8px;
+  transition: background 0.15s;
+}
+.cat-nav__row:hover {
+  background: var(--sent-primary-soft);
+}
+.cat-nav__icon {
+  width: 20px;
+  flex: none;
+  text-align: center;
   font-size: 14px;
+  line-height: 1;
+}
+.cat-nav__names {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.cat-nav__item {
+  font-size: 13.5px;
   color: var(--sent-text-2);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: color 0.15s;
 }
 .cat-nav__item:hover {
-  background: var(--sent-primary-soft);
   color: var(--sent-primary);
-  padding-left: 22px;
+  text-decoration: underline;
 }
-.cat-nav__arrow {
-  color: #c6cbd3;
-}
-.cat-nav__item:hover .cat-nav__arrow {
-  color: var(--sent-primary);
+.cat-nav__sep {
+  margin: 0 7px;
+  color: #c9d2cd;
+  font-size: 12px;
 }
 .cat-nav__empty {
   padding: 12px 18px;
@@ -562,7 +704,7 @@ onUnmounted(() => {
   justify-content: center;
 }
 .cat-nav__all {
-  margin: 6px 14px 0;
+  margin: 4px 14px 0;
   padding: 9px 0;
   text-align: center;
   font-size: 13px;
@@ -580,26 +722,38 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 12px;
 }
-
-/* ---------- 活动瓦片 ---------- */
-.promo-grid {
+/* ---------- 券卡 + banner 并排 ---------- */
+.promo-row {
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 12px;
 }
 .promo-main {
-  background: linear-gradient(135deg, #ff5a2b 0%, #ff8a3d 100%);
+  /* 2026-11-21 双橙主视觉处理：券卡由「橙渐变大块」降级为「白底 + 橙描边」，
+     首屏只留 banner 一个彩色主视觉，券卡退回权益侧栏的位置。 */
+  background: #fff;
+  border: 1px solid #ffd9bf;
   border-radius: 10px;
-  color: #fff;
-  padding: 14px 16px;
+  color: var(--sent-text);
+  padding: 14px;
   cursor: pointer;
   position: relative;
   overflow: hidden;
+  /* 200×290 的竖长条：内容纵向铺开，按钮沉底 */
+  display: flex;
+  flex-direction: column;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.promo-main:hover {
+  border-color: var(--sent-accent);
+  box-shadow: 0 6px 16px rgba(255, 122, 26, 0.12);
 }
 .promo-main__badge {
   display: inline-block;
+  align-self: flex-start;
   font-size: 11px;
-  background: rgba(255, 255, 255, 0.24);
+  background: var(--sent-accent-soft);
+  color: var(--sent-accent-dark);
   border-radius: 9px;
   padding: 2px 8px;
   margin-bottom: 8px;
@@ -608,18 +762,20 @@ onUnmounted(() => {
   font-size: 20px;
   font-weight: 800;
   letter-spacing: 1px;
+  color: var(--sent-accent-dark);
 }
 .promo-main__sub {
   margin: 6px 0 10px;
   font-size: 12px;
-  opacity: 0.92;
+  color: var(--sent-text-2);
+  line-height: 1.6;
 }
 .promo-main__next {
-  margin: -4px 0 8px;
+  margin: 0 0 10px;
   font-size: 11px;
   font-weight: 600;
-  color: #fff;
-  background: rgba(0, 0, 0, 0.18);
+  color: var(--sent-accent-dark);
+  background: var(--sent-accent-soft);
   border-radius: 4px;
   padding: 4px 6px;
   line-height: 1.4;
@@ -630,8 +786,9 @@ onUnmounted(() => {
   margin-bottom: 12px;
 }
 .promo-main__cupons span {
-  background: rgba(255, 255, 255, 0.92);
-  color: #ff4a1f;
+  background: #fff;
+  border: 1px solid #ffd9bf;
+  color: var(--sent-accent-dark);
   font-size: 12px;
   font-weight: 700;
   border-radius: 4px;
@@ -639,26 +796,36 @@ onUnmounted(() => {
 }
 .promo-main__btn {
   border: none;
-  background: #fff;
-  color: #ff4a1f;
+  background: var(--sent-accent);
+  color: #fff;
   font-size: 12px;
   font-weight: 700;
   border-radius: 14px;
   padding: 6px 16px;
   cursor: pointer;
+  /* 券卡变竖长条后，按钮沉到底部 */
+  margin-top: auto;
+  align-self: flex-start;
+}
+.promo-main__btn:hover {
+  background: var(--sent-accent-dark);
 }
 .promo-tiles {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
+  gap: 12px;
 }
+/* 横条瓦片（76px 高）：左侧标题/标签两行，右侧起价与图标同一行读完，不再折行 */
 .promo-tile {
   border-radius: 10px;
-  padding: 10px 12px;
+  padding: 0 12px;
   cursor: pointer;
   position: relative;
   overflow: hidden;
-  min-height: 108px;
+  min-height: 76px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   transition: transform 0.15s, box-shadow 0.15s;
 }
 .promo-tile:hover {
@@ -669,34 +836,48 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .promo-tile__head b {
   font-size: 14px;
   color: var(--sent-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .promo-tile__head span {
   font-size: 11px;
   color: var(--sent-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .promo-tile__price {
-  margin-top: 8px;
+  flex: none;
   font-size: 13px;
   font-weight: 700;
   color: var(--sent-accent-dark);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 .promo-tile__emoji {
-  position: absolute;
-  right: 6px;
-  bottom: 4px;
-  font-size: 34px;
-  opacity: 0.85;
+  flex: none;
+  font-size: 24px;
+  line-height: 1;
+  opacity: 0.55;
 }
 
-/* ---------- 轮播 ---------- */
+/* ---------- 轮播（banner） ---------- */
+/* 高度由模板的 height="290px" 决定（730×290 ≈ 2.5:1）；这里只管圆角与裁切 */
 .home-carousel {
+  height: 290px;
   border-radius: var(--sent-radius);
   overflow: hidden;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+.home-carousel :deep(.el-carousel__container) {
+  height: 100% !important;
 }
 .banner {
   height: 100%;
@@ -708,7 +889,7 @@ onUnmounted(() => {
   position: relative;
 }
 .banner__inner {
-  max-width: 470px;
+  max-width: 560px;
 }
 .banner__tag {
   display: inline-block;
@@ -720,16 +901,16 @@ onUnmounted(() => {
   margin-bottom: 10px;
 }
 .banner__title {
-  font-size: 26px;
+  font-size: 30px;
   font-weight: 800;
-  margin: 0 0 8px;
+  margin: 0 0 10px;
   letter-spacing: 1px;
 }
 .banner__sub {
-  font-size: 13px;
+  font-size: 14px;
   opacity: 0.9;
-  margin: 0 0 16px;
-  line-height: 1.6;
+  margin: 0 0 18px;
+  line-height: 1.7;
 }
 .banner__btn {
   border: none;
@@ -738,14 +919,14 @@ onUnmounted(() => {
   color: var(--sent-primary);
   font-size: 13px;
   font-weight: 700;
-  padding: 9px 26px;
+  padding: 10px 28px;
   border-radius: 22px;
 }
 .banner__btn:hover {
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
 }
 .banner__emoji {
-  font-size: 96px;
+  font-size: 120px;
   line-height: 1;
   opacity: 0.9;
   filter: drop-shadow(0 10px 20px rgba(0, 0, 0, 0.22));
@@ -791,11 +972,9 @@ onUnmounted(() => {
 .section-more:hover {
   color: var(--sent-accent);
 }
-/* 整宽后 4 列卡片过大，按 5 列排布更接近电商首页的密度 */
-.home-section :deep(.goods-grid) {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 12px;
-}
+/* 网格列数交给全局 `.goods-grid`（auto-fill / minmax(216px, 1fr)）：
+   1440 版心下自动排 6 列，窄屏自动降列，不再在这里写死 5 列。
+   2026-11-21 设计决策：与分类页/收藏页等 6 处商品网格统一口径，避免一页 6 一页 5。 */
 
 /* ---------- 无限滚动 ---------- */
 .scroll-sentinel {
@@ -823,32 +1002,53 @@ onUnmounted(() => {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   display: flex;
   flex-direction: column;
-  /* 2026-11-18：原 space-between 把富余高度均分到各块之间，看起来很散；
-     改为内容自然紧凑靠上，新增收藏/足迹/客服入口把信息填满同一只卡片。 */
-  gap: 9px;
+  /* 2026-11-21 方案 C：删掉 space-between —— 它把富余高度摊成几条空白带。
+     改为紧凑排布，剩余高度交给底部「企业采购」块（margin-top:auto + 浅绿底）吸收。 */
+  justify-content: flex-start;
+  gap: 12px;
 }
 .side-user {
   display: flex;
   align-items: center;
   gap: 10px;
 }
+/* 头像：改中性暖色底（原品牌绿底 + 白字「验」最像「验证通过」标识），右下角挂等级徽标 */
 .side-user__avatar {
-  width: 38px;
-  height: 38px;
+  position: relative;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
-  background: var(--sent-primary-soft);
-  color: var(--sent-primary);
+  background: linear-gradient(135deg, #fff1e6, #ffe0c7);
+  color: #b4531a;
   font-weight: 700;
-  font-size: 18px;
+  font-size: 17px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex: none;
 }
+.side-user__avatar--guest {
+  background: #f1f2f4;
+  color: var(--sent-muted);
+}
+/* 等级徽标：把「等级」从一行小字变成头像上的身份标记，同时避免与价格色抢戏 */
+.side-user__level {
+  position: absolute;
+  right: -6px;
+  bottom: -5px;
+  font-size: 10px;
+  line-height: 1;
+  padding: 3px 5px;
+  border-radius: 8px;
+  background: var(--sent-primary);
+  color: #fff;
+  font-weight: 600;
+  white-space: nowrap;
+}
 .side-user__info {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   min-width: 0;
 }
 .side-user__info b {
@@ -858,26 +1058,41 @@ onUnmounted(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.side-user__info span {
+/* 会员数据缺失时的唯一出口：不能只留一句「未登录」 */
+.side-user__login {
+  align-self: flex-start;
   font-size: 12px;
   color: var(--sent-accent-dark);
+  border-bottom: 1px solid currentColor;
+  padding-bottom: 1px;
+}
+.side-user__login:hover {
+  color: var(--sent-accent);
 }
 .side-stats {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   background: #fafbfc;
   border-radius: 8px;
-  padding: 8px 0;
+  padding: 9px 0;
 }
 .side-stat {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: 3px;
 }
 .side-stat b {
   font-size: 15px;
   color: var(--sent-text);
+  /* 数字等宽，避免刷新/切页时抖动 */
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.2px;
+}
+/* 0 值降灰：把视觉重量让给真正有数的指标 */
+.side-stat--zero b {
+  color: var(--sent-muted);
+  font-weight: 500;
 }
 .side-stat span {
   font-size: 11px;
@@ -886,65 +1101,127 @@ onUnmounted(() => {
 .side-links {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 6px;
+  gap: 2px 6px;
 }
+/* 纯文字行：去掉灰底 + 灰边，消除「卡片套卡片」的视觉噪点 */
 .side-link {
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--sent-text-2);
-  background: #fafbfc;
+  padding: 7px 6px;
   border-radius: 6px;
-  padding: 6px 4px;
-  text-align: center;
-  border: 1px solid #f2f3f5;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.15s, color 0.15s;
 }
 .side-link:hover {
-  border-color: var(--sent-primary);
+  background: var(--sent-primary-soft);
   color: var(--sent-primary);
 }
+/* 在线客服：幽灵描边 —— 首屏只保留一个实心 CTA（团购） */
 .side-link--chat {
   grid-column: span 2;
+  justify-content: center;
+  border: 1px solid #ffdcc2;
+  color: var(--sent-accent-dark);
+  font-weight: 600;
+}
+.side-link--chat:hover {
   background: var(--sent-accent-soft);
-  border-color: #ffdcc2;
+  border-color: var(--sent-accent);
   color: var(--sent-accent-dark);
 }
 .side-tip {
-  border-top: 1px dashed #eef0f2;
-  padding-top: 8px;
+  /* 贴底吸收剩余高度：浅绿底块看起来是「一块有内容的面板」，而不是一条空白带 */
+  margin-top: auto;
+  background: var(--sent-primary-soft);
+  border-radius: 8px;
+  padding: 10px 12px;
   font-size: 12px;
-  color: var(--sent-muted);
+  color: var(--sent-text-2);
+  /* 标题 / 说明在左，按钮在右且跨两行 —— 省掉一行高度 */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 2px 8px;
 }
 .side-tip b {
+  grid-column: 1;
+  grid-row: 1;
   color: var(--sent-text);
-  font-size: 12px;
+  font-size: 12.5px;
 }
 .side-tip p {
-  margin: 4px 0 8px;
+  grid-column: 1;
+  grid-row: 2;
+  margin: 0;
   line-height: 1.5;
 }
 .side-tip__btn {
+  grid-column: 2;
+  grid-row: 1 / span 2;
   display: inline-block;
   font-size: 12px;
   color: #fff;
   background: var(--sent-primary);
   border-radius: 14px;
-  padding: 5px 14px;
+  padding: 6px 12px;
+  white-space: nowrap;
 }
 .side-tip__btn:hover {
   background: var(--sent-primary-dark);
 }
 
-@media (max-width: 1240px) {
+/* 1440 版心需要约 1440 的视口；不够时降为两栏，用户卡**下移成整宽横条**，
+   不再 display:none（那会把订单/收藏/足迹/在线客服/团购六个入口一起砍掉）。 */
+@media (max-width: 1380px) {
   .home-hero {
     grid-template-columns: 190px minmax(0, 1fr);
   }
   .side-card {
-    display: none;
+    grid-column: 1 / -1;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 14px 24px;
   }
-  .promo-grid {
+  .side-user {
+    flex: none;
+  }
+  .side-stats {
+    flex: 1 1 220px;
+  }
+  .side-links {
+    flex: 1 1 240px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 4px;
+  }
+  .side-tip {
+    flex: 1 1 100%;
+    margin-top: 0;
+  }
+}
+@media (max-width: 1240px) {
+  .promo-row {
     grid-template-columns: 220px minmax(0, 1fr);
   }
   .promo-tiles {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+/* 手机/窄屏：用户卡回到纵向排布 */
+@media (max-width: 900px) {
+  .side-card {
+    flex-direction: column;
+  }
+  .side-links {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .side-link--chat {
+    grid-column: span 2;
   }
 }
 </style>

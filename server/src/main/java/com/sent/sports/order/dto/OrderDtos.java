@@ -123,4 +123,19 @@ public final class OrderDtos {
                                 Long unitPriceCent, String unitPriceYuan,
                                 Long linePaidCent, String linePaidYuan) {
     }
+
+    /**
+     * 我的订单「多选删除」结果。
+     * <p>刻意不做「一单在途整批失败」：{@code skipped} 逐条给出原因，前端可以提示
+     * 「已删除 3 单，2 单在途未删」，用户不需要自己一个个试哪单能删。</p>
+     *
+     * @param deleted 实际软删条数（已被删过的返回 0，属幂等成功）
+     * @param skipped 未删除明细，按订单号字典序
+     */
+    public record BatchDeleteResult(int deleted, List<SkippedItem> skipped) {
+    }
+
+    /** 未删除的一条：{@code id} 为订单号，{@code reason} 是可直接展示给用户的中文原因。 */
+    public record SkippedItem(String id, String reason) {
+    }
 }

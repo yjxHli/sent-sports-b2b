@@ -10,7 +10,8 @@ import { existsSync } from 'node:fs';
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { startConsultation } from './chat-helpers';
 
-const ADMIN_URL = process.env.E2E_ADMIN_URL ?? 'http://127.0.0.1:5174/admin/';
+const CS_URL = process.env.E2E_CS_URL ?? 'http://127.0.0.1:5175';
+// 客服工作台已剥离到独立工程 web-cs：登录后直落 /workbench，Token 前缀 cs-token_*
 const API_URL = (process.env.E2E_API_URL ?? 'http://127.0.0.1:8088/api').replace(/\/+$/, '');
 const ADMIN_NAME = process.env.E2E_ADMIN_NAME ?? 'admin';
 const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? '123456';
@@ -40,11 +41,14 @@ async function api(request: APIRequestContext, method: 'GET' | 'POST', path: str
 }
 
 async function loginAdmin(page: Page): Promise<void> {
-  await page.goto(join(ADMIN_URL, '/login'));
+  await page.goto(join(CS_URL, '/login'));
   await page.getByPlaceholder('用户名').fill(ADMIN_NAME);
   await page.getByPlaceholder('密码').fill(ADMIN_PASSWORD);
   await page.getByRole('button', { name: '登录' }).click();
-  await expect(page).toHaveURL(/\/admin\/dashboard/, { timeout: 20_000 });
+  await expect(page).toHaveURL(/\/workbench/, { timeout: 20_000 });
+  // 2026-11-21 起客服登录默认离线：真实客服也要手动切在线才开始接单，用例照做
+  await page.locator('[data-testid="presence-online"]').click();
+  await expect(page.locator('[data-testid="presence-online"]')).toHaveClass(/is-active/, { timeout: 15_000 });
 }
 
 test('客服发评价卡 → 客户打分 → 今日满意率实时显示，重复打分幂等', async ({ browser, request }) => {
@@ -127,7 +131,7 @@ test('客服发评价卡 → 客户打分 → 今日满意率实时显示，重�
     const page = await browser.newPage();
     try {
       await loginAdmin(page);
-      await page.goto(join(ADMIN_URL, '/chat/workbench'));
+      await page.goto(join(CS_URL, '/workbench'));
       const chip = page.getByTestId('today-satisfaction-rate');
       await expect(chip).toBeVisible({ timeout: 20_000 });
       await expect(chip).toContainText('今日满意率');

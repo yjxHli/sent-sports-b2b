@@ -12,10 +12,11 @@ public final class ChatMetricsDtos {
      * @param satisfactionRate 满意率百分比；无有效评价为 -1（前端显示 --）
      * @param resolutionRate   解决率百分比；无已结束会话为 -1（前端显示 --）
      * @param avgDurationSeconds 平均会话时长（秒，向下取整）
+     * @param presence         坐席当前状态 ONLINE / BUSY / OFFLINE（无记录按 OFFLINE），供指标页实时展示与筛选
      */
     public record Row(long staffId, String staffName, int closedCount, int ratedCount,
                       int satisfiedCount, int satisfactionRate, int resolvedCount,
-                      int resolutionRate, long avgDurationSeconds) {
+                      int resolutionRate, long avgDurationSeconds, String presence) {
     }
 
     /** @param from 统计起日 yyyy-MM-dd；@param to 统计止日 yyyy-MM-dd */

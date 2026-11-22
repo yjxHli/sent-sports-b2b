@@ -1,12 +1,14 @@
 package com.sent.sports.order.controller;
 
 import com.sent.sports.common.anno.RequirePerm;
+import com.sent.sports.common.dto.admin.BatchDeleteDtos;
 import com.sent.sports.common.web.PageQuery;
 import com.sent.sports.common.web.PageResult;
 import com.sent.sports.common.web.CurrentUser;
 import com.sent.sports.common.web.R;
 import com.sent.sports.order.dto.OrderDtos;
 import com.sent.sports.order.dto.OrderVOAssembler;
+import com.sent.sports.order.service.BatchDeleteOrdersUseCase;
 import com.sent.sports.order.service.CancelOrderUseCase;
 import com.sent.sports.order.service.ConfirmReceiptUseCase;
 import com.sent.sports.order.service.CreateOrderUseCase;
@@ -47,15 +49,18 @@ public class OrderController {
     private final CancelOrderUseCase cancelOrderUseCase;
     private final ConfirmReceiptUseCase confirmReceiptUseCase;
     private final DeleteOrderUseCase deleteOrderUseCase;
+    private final BatchDeleteOrdersUseCase batchDeleteOrdersUseCase;
     private final OrderQueryService orderQueryService;
 
     public OrderController(CreateOrderUseCase createOrderUseCase, CancelOrderUseCase cancelOrderUseCase,
                            ConfirmReceiptUseCase confirmReceiptUseCase, DeleteOrderUseCase deleteOrderUseCase,
+                           BatchDeleteOrdersUseCase batchDeleteOrdersUseCase,
                            OrderQueryService orderQueryService) {
         this.createOrderUseCase = createOrderUseCase;
         this.cancelOrderUseCase = cancelOrderUseCase;
         this.confirmReceiptUseCase = confirmReceiptUseCase;
         this.deleteOrderUseCase = deleteOrderUseCase;
+        this.batchDeleteOrdersUseCase = batchDeleteOrdersUseCase;
         this.orderQueryService = orderQueryService;
     }
 
@@ -112,6 +117,26 @@ public class OrderController {
                           @RequestAttribute(value = CurrentUser.ATTR, required = false) CurrentUser user) {
         deleteOrderUseCase.delete(orderNo, user == null || user.isAdmin() ? null : user.userId());
         return R.ok();
+    }
+
+    /**
+     * 我的订单「多选删除」：{@code POST /api/orders/batch-delete}，体 {@code {"ids":["SO..."]}}。
+     *
+     * <p>与单条删除同一套权限点（{@code order:delete}），但**不给整批一个失败码**：
+     * 多选里只要有一单在途，就把能删的删掉、删不掉的逐条回原因，前端提示「已删除 X 单」。
+     * 路径写在校验之前不会与 {@code /{orderNo}} 冲突（后者是 GET/DELETE，这里是 POST）。</p>
+     */
+    @PostMapping("/batch-delete")
+    @RequirePerm("order:delete")
+    public R<OrderDtos.BatchDeleteResult> batchDelete(
+            @Valid @RequestBody BatchDeleteDtos.BatchDeleteCmd cmd,
+            @RequestAttribute(value = CurrentUser.ATTR, required = false) CurrentUser user) {
+        var result = batchDeleteOrdersUseCase.delete(
+                cmd.ids(), user == null || user.isAdmin() ? null : user.userId());
+        return R.ok(new OrderDtos.BatchDeleteResult(result.deleted(),
+                result.skipped().stream()
+                        .map(s -> new OrderDtos.SkippedItem(s.orderNo(), s.reason()))
+                        .toList()));
     }
 
     private CreateOrderCmd toCmd(OrderDtos.CreateOrderCmd cmd) {

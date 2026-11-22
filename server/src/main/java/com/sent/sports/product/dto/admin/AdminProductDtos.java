@@ -23,6 +23,7 @@ public final class AdminProductDtos {
     /**
      * SKU 表单：{@code skuId} 为空表示新增行；{@code skuCode} 留空时由后端生成唯一编码；
      * {@code spuId} 仅独立 SKU 端点需要，商品编辑保存由路径上的商品 id 提供归属。
+     * <p>{@code imageFileId} 是款式图（V54），存 fileId 相对路径，渲染走 {@code /api/files/{fileId}}。</p>
      */
     public record SkuForm(
             Long skuId,
@@ -31,24 +32,46 @@ public final class AdminProductDtos {
             String spec,
             @NotNull(message = "分类不能为空") Long categoryId,
             @Min(value = 0, message = "零售价不能小于0") long retailPriceCent,
-            @Min(value = 0, message = "库存不能小于0") int stock) {
+            @Min(value = 0, message = "库存不能小于0") int stock,
+            String imageFileId) {
 
         public SkuForm(String skuCode, String spec, Long categoryId, long retailPriceCent, int stock) {
-            this(null, null, skuCode, spec, categoryId, retailPriceCent, stock);
+            this(null, null, skuCode, spec, categoryId, retailPriceCent, stock, null);
         }
 
         public SkuForm(Long skuId, String skuCode, String spec, Long categoryId,
                        long retailPriceCent, int stock) {
-            this(skuId, null, skuCode, spec, categoryId, retailPriceCent, stock);
+            this(skuId, null, skuCode, spec, categoryId, retailPriceCent, stock, null);
         }
     }
 
-    /** 商品表单：名称、分类、描述、SKU 集合。 */
+    /** 商品参数键值对（V54）：前 4 条在用户端放大成宫格展示。 */
+    public record ParamItem(@NotBlank(message = "参数名不能为空") String label, String value) {
+    }
+
+    /**
+     * 商品表单：名称、分类、描述、SKU 集合 + 详情富内容（V54）。
+     * <p>富内容字段全部可空：不传即视为清空（服务层把空列表落成 {@code "[]"}，
+     * 避免 MyBatis-Plus {@code updateById} 跳过 null 导致"删图无效"）。</p>
+     */
     public record ProductForm(
             @NotBlank(message = "商品名称不能为空") String name,
             @NotNull(message = "分类不能为空") Long categoryId,
             String description,
-            List<@Valid SkuForm> skus) {
+            List<@Valid SkuForm> skus,
+            String subtitle,
+            String brand,
+            Boolean canCustomize,
+            String mainImage,
+            List<String> images,
+            List<String> detailImages,
+            List<ParamItem> params,
+            List<String> serviceTags) {
+
+        /** 旧签名：仅名称/分类/描述/SKU（历史单测与集成测试在用）。 */
+        public ProductForm(String name, Long categoryId, String description, List<SkuForm> skus) {
+            this(name, categoryId, description, skus, null, null, null, null, null, null, null, null);
+        }
     }
 
     /** 上/下架指令。 */

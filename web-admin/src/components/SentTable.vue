@@ -6,9 +6,9 @@
       </div>
       <div class="sent-table-actions">
         <slot name="toolbar-actions" />
-        <el-button size="small" @click="emit('refresh')">刷新</el-button>
+        <el-button class="sent-table__tool" text size="small" @click="emit('refresh')">刷新</el-button>
         <el-dropdown v-if="columnToggle" trigger="click" :hide-on-click="false">
-          <el-button size="small">列显隐</el-button>
+          <el-button class="sent-table__tool" text size="small">列显隐</el-button>
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item v-for="col in columns" :key="col.prop">
@@ -22,7 +22,14 @@
             </el-dropdown-menu>
           </template>
         </el-dropdown>
-        <el-button v-if="exportable" size="small" :loading="exporting" @click="exportCsv">
+        <el-button
+          v-if="exportable"
+          class="sent-table__tool"
+          text
+          size="small"
+          :loading="exporting"
+          @click="exportCsv"
+        >
           {{ exporting ? '导出中…' : '导出 CSV' }}
         </el-button>
       </div>
@@ -31,8 +38,6 @@
     <el-table
       :data="rows"
       v-loading="loading"
-      border
-      stripe
       :row-key="rowKey"
       @selection-change="onSelectionChange"
     >
@@ -58,7 +63,7 @@
         label="操作"
         :width="operationWidth"
         fixed="right"
-        align="center"
+        align="left"
       >
         <template #default="scope">
           <slot name="operations" :row="scope.row" />
@@ -219,8 +224,27 @@ async function exportCsv(): Promise<void> {
   gap: 8px;
   flex-wrap: wrap;
 }
-.sent-table-actions { display: flex; gap: 8px; }
-.sent-table-pager { display: flex; justify-content: flex-end; margin-top: 14px; }
+.sent-table-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+/* 工具按钮：刷新 / 列显隐 / 导出是维护动作，仍比「查询」主按钮轻一档，
+   但文字必须到正文色阶（原 --sent-ink-3 在白卡上对比度只有 4.3:1，扫一眼看不清）。 */
+.sent-table__tool {
+  padding: 0 8px;
+  color: var(--sent-ink-2);
+  font-weight: var(--fw-medium);
+}
+.sent-table__tool:hover {
+  color: var(--sent-primary);
+  background: var(--sent-primary-soft);
+}
+.sent-table-pager {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
 /**
  * 左右分栏的窄卡片（企业审核与授信）里，分页器「共 N 条 / 条每页 / 页码 / 前往」一行放不下时，
  * flex 会把靠左的「条/页」挤出容器左侧、甚至压到侧边栏下面，用户点都点不到。

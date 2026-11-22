@@ -15,6 +15,8 @@ public class RefundAuditItemPO {
     private String reason;
     /** 用户申请时上传的凭证图片（JSON 数组原文），由查询层解码成 fileId 列表后再出参。 */
     private String imagesJson;
+    /** 是否需客服人工复核（V52）：1 = 订单含「审核通过未排产」的定制单。 */
+    private Integer needManualReview;
     private LocalDateTime createdAt;
 
     public String getRefundNo() {
@@ -63,6 +65,14 @@ public class RefundAuditItemPO {
 
     public void setImagesJson(String imagesJson) {
         this.imagesJson = imagesJson;
+    }
+
+    public Integer getNeedManualReview() {
+        return needManualReview;
+    }
+
+    public void setNeedManualReview(Integer needManualReview) {
+        this.needManualReview = needManualReview;
     }
 
     public LocalDateTime getCreatedAt() {

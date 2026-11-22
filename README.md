@@ -34,7 +34,7 @@
 | 维度 | 规模 |
 |---|---|
 | 后端源码 | 701 个 Java 文件 / 20 个业务模块 / 203 个 REST 端点 / 1 个 WebSocket 端点 |
-| 数据模型 | 49 个 Flyway 迁移（V1 → V49）/ 63 张表 / 46 个具名唯一索引 |
+| 数据模型 | 50 个 Flyway 迁移（V1 → V50）/ 63 张表 / 46 个具名唯一索引 |
 | 前端 | 双端 84 个 `.vue` + 68 个 `.ts`，商城 **24 个业务路由**、管理端 **37 个业务路由** |
 | 测试 | 1233 单元测试 + 66 集成测试（19 个 `*IT`）+ 123 条 Playwright E2E 用例（70 个 spec） |
 
@@ -50,7 +50,8 @@
 │  首页 · 分类/搜索 · 商品详情 · 领券中心(会员日) · 购物车 · 结算 · 订单 · 售后
 │  收藏夹 · 足迹 · 会员中心 · 我的券 · 站内信 · 在线客服(WS) · 团购专区
 │  登录引导/注册 · 验证码登录 · 忘记密码 · 企业自助注册/审核进度
-│  工作台 · 商品 · 库存 · 订单 · 财务 · 定制审核 · 客服 · 券管理 · 报表 · 系统（含违禁词库）
+│  工作台 · 商品 · 库存 · 订单 · 财务 · 定制审核 · 客服审查/指标 · 券管理 · 报表 · 系统（含违禁词库）
+│  客服工作台  web-cs  :5175（独立工程，仅 chat:serve 账号可入；管理端不再承载接待）
 └──────────────────────────────────────────────────────────
                         │  /api/**   +   /ws/chat
                         ▼
@@ -66,7 +67,7 @@
 │  横切：file(内容寻址) · job(10 个定时任务) · report(报表) · common
 └──────────────────────────────────────────────────────────
                         ▼
-      MySQL 8.0（63 表 / Flyway V1→V49） + 本地内容寻址文件库
+      MySQL 8.0（63 表 / Flyway V1→V50） + 本地内容寻址文件库
 ```
 
 **一条主链路的完整生命周期**：
@@ -380,9 +381,10 @@ sent-sports-b2b/
 │   │   └── common/                  # 领域基座：error/idempotent/ratelimit/storage/interceptor
 │   ├── src/main/resources/
 │   │   ├── application{,-dev,-test,-prod}.yml
-│   │   └── db/migration/            # Flyway V1 → V49（63 张表）
+│   │   └── db/migration/            # Flyway V1 → V50（63 张表）
 │   └── src/test/java/               # 单元测试 + integration/*IT（Testcontainers，19 个）
 ├── web-admin/                       # 管理端 Vue3（dev :5174，base /admin/）
+├── web-cs/                          # 独立客服工作台 Vue3（dev :5175，base /，Token 前缀 cs-token）
 ├── web-user/                        # 商城端 Vue3（dev :5173，base /）
 ├── packages/shared/                 # 双端共享 HTTP 内核 / TokenStorage / 类型 / 格式化
 ├── e2e/                             # Playwright 用例（70 个 spec / 123 条用例）
@@ -425,7 +427,7 @@ curl -s http://127.0.0.1:8088/actuator/health      # {"status":"UP"}
 | 管理端 | `http://localhost/admin/` |
 | 后端 API | `http://localhost:8088/api/**`（经 Nginx 反代对外） |
 
-> 后端固定 **8088**（8080 常被 Steam 等软件抢占）。首次启动由 Flyway 自动建表（V1 → V49）；`APP_ENV=prod` 下未注入 `JWT_SECRET` / `PAY_MOCK_SECRET` 时会**拒绝启动**，这是刻意的 fail-closed 设计。
+> 后端固定 **8088**（8080 常被 Steam 等软件抢占）。首次启动由 Flyway 自动建表（V1 → V50）；`APP_ENV=prod` 下未注入 `JWT_SECRET` / `PAY_MOCK_SECRET` 时会**拒绝启动**，这是刻意的 fail-closed 设计。
 
 ### 路线 B：本地开发（改代码用）
 
@@ -453,6 +455,7 @@ java -jar target/sent-server.jar --spring.datasource.password="$DB_PASSWORD"
 cd ..
 cd web-user  && ./node_modules/.bin/vite --port 5173 --host
 cd web-admin && ./node_modules/.bin/vite --port 5174 --host
+cd web-cs    && ./node_modules/.bin/vite --port 5175 --host   # 客服工作台（需 chat:serve 账号，如 service/123456）
 ```
 
 健康检查：
@@ -561,7 +564,7 @@ cd e2e && npx playwright test --output runs/$(date +%Y%m%d-%H%M)
 - 手机号使用 `1380000900x` / `1390000910x` / `13800138000` 等示例号段；邮箱使用保留域 `.test` / `example.com`。
 - 统一社会信用代码、发票代码、银行账号均含 `XXXXXXXX` / `DEMO-` / 全零等占位特征，**不可用于真实开票或结算**；发票销售方信息可经 `INVOICE_SELLER_*` 覆盖。
 - 商品图片使用占位图源；支付通道为可复现的 Mock 网关，不连接任何真实支付机构。
-- 种子数据位于 `server/src/main/resources/db/migration/V11`~`V15`、`V29`、`V42`~`V49` 与 `seed/DemoDataGenerator`。
+- 种子数据位于 `server/src/main/resources/db/migration/V11`~`V15`、`V29`、`V42`~`V50` 与 `seed/DemoDataGenerator`。
 
 **已完成的加固**
 
@@ -605,7 +608,7 @@ git ls-files | grep -Ei '(^|/)(target|node_modules|dist|logs)/|\.log$|\.pem$|\.k
 1. Fork → 建分支（`feat/xxx`、`fix/xxx`、`docs/xxx`）。
 2. 提交前必须过门禁：`mvn -o clean verify` + 双端 `build` + `npx playwright test`。
 3. 遵循既有边界：新增跨模块调用必须走 `service` 接口，否则 ArchUnit 会拦下你的 PR。
-4. 新增表结构只能**追加** Flyway 迁移（当前最新 `V49`，下一个是 `V50__xxx.sql`），不得修改历史迁移（会破坏 `sent_test` 校验和）。
+4. 新增表结构只能**追加** Flyway 迁移（当前最新 `V50`，下一个是 `V51__xxx.sql`），不得修改历史迁移（会破坏 `sent_test` 校验和）。
 5. Commit 信息用中文或英文均可，但需说明「改了什么 + 为什么」。
 
 ---

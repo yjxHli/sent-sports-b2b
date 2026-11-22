@@ -273,6 +273,29 @@ class ProductAdminServiceImplTest {
     }
 
     @Test
+    @DisplayName("update 保留既有 SKU 的成本价与底价（编辑页没有这两个字段，不能被存成 0）")
+    void updateKeepsSkuCostAndFloor() {
+        ProductPO product = product();
+        SkuPO existing = sku(9205L, "SKU-9205", 29900L);
+        // 底价/成本由商品主数据维护，管理端编辑页不提交它们
+        existing.setFloorPriceCent(23900L);
+        existing.setCostPriceCent(14900L);
+        when(productMapper.selectById(9103L)).thenReturn(product);
+        when(productMapper.selectSkusBySpu(9103L)).thenReturn(List.of(existing));
+        when(skuMapper.selectBySkuNo("SKU-9205")).thenReturn(existing);
+
+        service.update(9103L, new AdminProductDtos.ProductForm("新商品", 1L, "新描述", List.of(
+                new AdminProductDtos.SkuForm(9205L, "SKU-9205", "室内外通用", 1L, 29900L, 210))));
+
+        // 只改规格名/售价/库存，毛利链（cost < floor <= retail）必须原样保留，
+        // 否则一次「改副标题」的保存就会把全店 SKU 变成零成本零底价，报表毛利直接失真。
+        verify(skuMapper).updateById(argThat((SkuPO po) ->
+                Long.valueOf(9205L).equals(po.getId())
+                        && Long.valueOf(23900L).equals(po.getFloorPriceCent())
+                        && Long.valueOf(14900L).equals(po.getCostPriceCent())));
+    }
+
+    @Test
     @DisplayName("update 拒绝提交不属于当前商品的 SKU，避免越权改别店数据")
     void updateRejectsForeignSku() {
         when(productMapper.selectById(9103L)).thenReturn(product());

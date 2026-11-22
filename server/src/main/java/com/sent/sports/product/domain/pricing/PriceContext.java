@@ -19,6 +19,8 @@ public class PriceContext {
     private List<LadderTier> ladderTiers = new ArrayList<>(); // 阶梯价档位
     private int qty = 1;                            // 购买数量（用于阶梯命中）
     private boolean allowStacking = false;          // 客户档案显式开启的"折上折"开关
+    private Long flashSalePriceCent;                // 当前生效秒杀价（分），无活动为 null
+    private String flashSaleRuleId;                 // 秒杀规则标识，落 order_item.price_rule_id
 
     private PriceContext() {
     }
@@ -65,6 +67,14 @@ public class PriceContext {
 
     public boolean isAllowStacking() {
         return allowStacking;
+    }
+
+    public Long getFlashSalePriceCent() {
+        return flashSalePriceCent;
+    }
+
+    public String getFlashSaleRuleId() {
+        return flashSaleRuleId;
     }
 
     /** 协议是否对企业客户有效。 */
@@ -132,6 +142,13 @@ public class PriceContext {
 
         public ContextBuilder allowStacking(boolean v) {
             ctx.allowStacking = v;
+            return this;
+        }
+
+        /** 注入当前生效的秒杀价；{@code priceCent} 为 null 表示无生效活动。 */
+        public ContextBuilder flashSale(Long priceCent, String ruleId) {
+            ctx.flashSalePriceCent = priceCent;
+            ctx.flashSaleRuleId = ruleId;
             return this;
         }
 

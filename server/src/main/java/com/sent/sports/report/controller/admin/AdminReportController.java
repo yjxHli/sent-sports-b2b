@@ -3,9 +3,13 @@ package com.sent.sports.report.controller.admin;
 import com.sent.sports.common.anno.RequirePerm;
 import com.sent.sports.common.web.R;
 import com.sent.sports.report.dto.DashboardReportDtos;
+import com.sent.sports.report.dto.HotProductDtos;
 import com.sent.sports.report.dto.SalesTrendDtos;
+import com.sent.sports.report.dto.TopCustomerDtos;
 import com.sent.sports.report.service.DashboardReportService;
+import com.sent.sports.report.service.HotProductService;
 import com.sent.sports.report.service.SalesTrendService;
+import com.sent.sports.report.service.TopCustomerService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -25,11 +29,17 @@ public class AdminReportController {
 
     private final SalesTrendService salesTrendService;
     private final DashboardReportService dashboardReportService;
+    private final HotProductService hotProductService;
+    private final TopCustomerService topCustomerService;
 
     public AdminReportController(SalesTrendService salesTrendService,
-                                 DashboardReportService dashboardReportService) {
+                                 DashboardReportService dashboardReportService,
+                                 HotProductService hotProductService,
+                                 TopCustomerService topCustomerService) {
         this.salesTrendService = salesTrendService;
         this.dashboardReportService = dashboardReportService;
+        this.hotProductService = hotProductService;
+        this.topCustomerService = topCustomerService;
     }
 
     @GetMapping("/sales-trend")
@@ -45,6 +55,30 @@ public class AdminReportController {
     public R<List<DashboardReportDtos.SalesRankVO>> salesRanking(
             @RequestParam(required = false, defaultValue = "30") int days) {
         return R.ok(dashboardReportService.salesRank(days));
+    }
+
+    /**
+     * 热销商品：按 SKU 聚合成交数量与金额（B2B 自助下单场景更关心卖什么，而不是谁卖的）。
+     * <p>数据范围由 Mapper 的 {@code @DataScope} 下推：主管看团队、财务/超管看全部。</p>
+     */
+    @GetMapping("/hot-products")
+    @RequirePerm("system:report:view")
+    public R<HotProductDtos.HotProductVO> hotProducts(
+            @RequestParam(required = false, defaultValue = "30") int days,
+            @RequestParam(required = false, defaultValue = "5") int limit) {
+        return R.ok(hotProductService.hotProducts(days, limit));
+    }
+
+    /**
+     * 大客户采购排行：按 customer_id 聚合实付金额（B2B 关心谁在持续采购）。
+     * <p>数据范围同样由 {@code @DataScope} 下推，主管只看到团队订单带来的客户。</p>
+     */
+    @GetMapping("/top-customers")
+    @RequirePerm("system:report:view")
+    public R<TopCustomerDtos.TopCustomerVO> topCustomers(
+            @RequestParam(required = false, defaultValue = "30") int days,
+            @RequestParam(required = false, defaultValue = "5") int limit) {
+        return R.ok(topCustomerService.topCustomers(days, limit));
     }
 
     /** 工作台六卡与角色化待办数量，一次请求取齐，避免六张卡各自发请求。 */

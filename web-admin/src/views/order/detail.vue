@@ -26,7 +26,7 @@
         </el-descriptions-item>
       </el-descriptions>
 
-      <h3 class="section-title">金额拆分</h3>
+      <h3 class="section-title section-title--spaced">金额拆分</h3>
       <el-descriptions :column="2" border>
         <el-descriptions-item label="货款">{{ fmtMoney(detail?.goodsAmountCent) }}</el-descriptions-item>
         <el-descriptions-item label="运费">{{ fmtMoney(detail?.freightCent) }}</el-descriptions-item>
@@ -36,7 +36,7 @@
         </el-descriptions-item>
       </el-descriptions>
 
-      <h3 class="section-title">订单进度</h3>
+      <h3 class="section-title section-title--spaced">订单进度</h3>
       <el-alert
         v-if="terminated"
         :title="`订单已终止：${statusLabel(detail?.status)}`"
@@ -48,7 +48,7 @@
         <el-step v-for="step in steps" :key="step" :title="statusLabel(step)" />
       </el-steps>
 
-      <h3 class="section-title">订单行明细</h3>
+      <h3 class="section-title section-title--spaced">订单行明细</h3>
       <el-table v-if="lines.length" :data="lines" border size="small">
         <el-table-column prop="skuName" label="商品 / SKU" min-width="180" />
         <el-table-column prop="spec" label="规格" width="140" />
@@ -203,7 +203,6 @@ onMounted(() => { void load(); });
 
 <style scoped>
 .order-no { margin-left: auto; font-weight: 600; color: #12664f; }
-.section-title { margin: 22px 0 12px; font-size: 15px; color: #33463f; }
 .detail-actions { margin-top: 22px; }
 /* 禁用按钮不触发 mouse 事件，用外层 span 承载 tooltip */
 .close-btn-wrap { display: inline-flex; margin-right: 12px; }

@@ -22,7 +22,42 @@
         />
         <el-button type="primary" @click="applySearch">搜索</el-button>
       </div>
+      <el-button
+        class="order-batch-toggle"
+        size="small"
+        :type="manage ? 'primary' : 'default'"
+        data-testid="order-batch-toggle"
+        @click="toggleManage"
+      >
+        {{ manage ? '退出批量' : '批量管理' }}
+      </el-button>
       <span class="order-tabs__total">共 {{ total }} 笔</span>
+    </div>
+
+    <!-- 批量操作条：只在批量管理态出现，提示「只有终态单能删」，避免用户勾了在途单又困惑 -->
+    <div v-if="manage" class="batch-bar" data-testid="order-batch-bar">
+      <el-checkbox
+        :model-value="allSelected"
+        :indeterminate="indeterminate"
+        :disabled="selectableOrders.length === 0"
+        data-testid="order-batch-all"
+        @change="toggleAll"
+      >
+        全选本页
+      </el-checkbox>
+      <span class="batch-bar__hint">
+        已选 <b>{{ selected.length }}</b> 笔 · 仅「已完成 / 已取消 / 已关闭」可删除，在途订单请先收货或取消
+      </span>
+      <el-button
+        type="danger"
+        size="small"
+        :disabled="selected.length === 0"
+        :loading="removing"
+        data-testid="order-batch-delete"
+        @click="removeSelected"
+      >
+        删除所选
+      </el-button>
     </div>
 
     <div v-if="loading" class="list-hint">加载中…</div>
@@ -30,9 +65,18 @@
 
     <template v-else>
       <div class="order-list">
-        <div v-for="o in orders" :key="o.orderNo" class="order-card">
+        <div v-for="o in orders" :key="o.orderNo" class="order-card" :class="{ 'order-card--selected': isSelected(o.orderNo) }">
           <!-- 卡片头：下单时间 / 订单号 / 店铺 / 状态 -->
           <div class="order-card__head">
+            <el-checkbox
+              v-if="manage"
+              class="order-card__check"
+              :model-value="isSelected(o.orderNo)"
+              :disabled="!canDelete(o)"
+              :title="canDelete(o) ? '选择这一笔' : '在途订单不能删除，请先完成收货或取消订单'"
+              data-testid="order-select"
+              @change="toggle(o.orderNo)"
+            />
             <span class="order-card__time">{{ fmtDateTime(o.createdAt) }}</span>
             <span class="order-card__no">订单号：{{ o.orderNo }}</span>
             <span class="order-card__shop">森特体育自营店</span>
@@ -42,7 +86,7 @@
           </div>
 
           <!-- 卡片体：商品行 + 实付款 -->
-          <div class="order-card__body" @click="goDetail(o.orderNo)">
+          <div class="order-card__body" @click="onCardClick(o)">
             <div class="order-items">
               <div v-for="(it, idx) in itemsOf(o)" :key="idx" class="order-item">
                 <ProductThumb
@@ -156,7 +200,7 @@
  */
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { fmtDateTime, statusLabel, statusTone, type StatusTone } from '@sent/shared';
 import { unwrap } from '@/utils/http';
 import { orderApi, type OrderItemLine, type OrderListItem } from '@/api/order';
@@ -195,6 +239,105 @@ const emptyText = computed(() => {
   if (keyword.value) return `没有找到与「${keyword.value}」相关的订单`;
   return activeTab.value ? '该状态下暂无订单' : '还没有订单，去逛逛吧';
 });
+
+/* ---------------- 批量删除（多选） ---------------- */
+/**
+ * 「可以选择删除哪些」= 每张卡片一个复选框 + 全选。
+ * 可删范围与后端 `DeleteOrderUseCase.DELETABLE_STATUS` 同口径（已完成 / 已取消 / 已关闭）：
+ * 在途单（待付款/待发货/待收货）删了客服就找不到单，复选框直接禁用并把原因写在 title 上，
+ * 而不是等用户勾完再报错。真正的归属与状态校验仍在服务端（前端只是减噪）。
+ */
+const DELETABLE_STATUS = ['COMPLETED', 'CANCELLED', 'CLOSED'];
+const manage = ref(false);
+/** 已勾选的订单号（只存本页的、且可删的） */
+const selected = ref<string[]>([]);
+const removing = ref(false);
+
+function canDelete(o: OrderListItem): boolean {
+  return DELETABLE_STATUS.includes(String(o.status ?? ''));
+}
+
+const selectableOrders = computed(() => orders.value.filter(canDelete));
+const allSelected = computed(
+  () => selectableOrders.value.length > 0 && selected.value.length === selectableOrders.value.length,
+);
+/** 半选态：勾了一部分，全选框显示横线而不是勾 */
+const indeterminate = computed(() => selected.value.length > 0 && !allSelected.value);
+
+function isSelected(orderNo: string): boolean {
+  return selected.value.includes(orderNo);
+}
+
+function toggleManage(): void {
+  manage.value = !manage.value;
+  selected.value = [];
+}
+
+function toggle(orderNo: string): void {
+  selected.value = isSelected(orderNo)
+    ? selected.value.filter((x) => x !== orderNo)
+    : [...selected.value, orderNo];
+}
+
+/** 全选/取消全选：只作用于本页可删的单，在途单永远进不了选择集 */
+function toggleAll(value: boolean | string | number): void {
+  selected.value = value ? selectableOrders.value.map((o) => o.orderNo) : [];
+}
+
+/** 批量态点卡片 = 勾选；普通态点卡片 = 进详情（保持原交互不变） */
+function onCardClick(o: OrderListItem): void {
+  if (!manage.value) {
+    goDetail(o.orderNo);
+    return;
+  }
+  if (!canDelete(o)) {
+    ElMessage.warning('在途订单不能删除，请先确认收货或取消订单');
+    return;
+  }
+  toggle(o.orderNo);
+}
+
+/**
+ * 删除所选：二次确认 → 调批量接口 → 按「删了几笔 / 几笔没删掉及原因」分别提示。
+ * 后端不会因为一单在途就整批失败，所以这里也不能把 skipped 当错误吞掉。
+ */
+async function removeSelected(): Promise<void> {
+  if (selected.value.length === 0) return;
+  const count = selected.value.length;
+  try {
+    await ElMessageBox.confirm(
+      `确定删除选中的 ${count} 笔订单吗？删除后将从「我的订单」中移除，客服与财务侧仍可查询原始记录。`,
+      '删除订单',
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '再想想' },
+    );
+  } catch {
+    return;
+  }
+
+  removing.value = true;
+  try {
+    const res = await unwrap(orderApi.batchRemove([...selected.value]));
+    const deleted = Number(res?.deleted ?? 0);
+    const skipped = res?.skipped ?? [];
+    if (deleted > 0) ElMessage.success(`已删除 ${deleted} 笔订单`);
+    if (skipped.length > 0) {
+      const detail = skipped
+        .slice(0, 3)
+        .map((s) => `${s.id}：${s.reason}`)
+        .join('；');
+      ElMessage.warning(
+        `${skipped.length} 笔未删除 —— ${detail}${skipped.length > 3 ? ' 等' : ''}`,
+      );
+    }
+    if (deleted === 0 && skipped.length === 0) ElMessage.info('所选订单已删除，无需重复操作');
+    selected.value = [];
+    await load();
+  } catch (e) {
+    ElMessage.error((e as Error).message || '删除失败');
+  } finally {
+    removing.value = false;
+  }
+}
 
 function label(s: string | null): string { return statusLabel(s); }
 function toneOf(s: string | null): StatusTone { return statusTone(s); }
@@ -357,6 +500,8 @@ async function load(): Promise<void> {
     }));
     orders.value = res.list ?? [];
     total.value = Number(res.total ?? 0);
+    // 翻页/删完重新取数后，勾选集必须重置：否则会把上一页的单号带到这一页的「删除所选」里
+    selected.value = selected.value.filter((no) => orders.value.some((o) => o.orderNo === no));
   } finally {
     loading.value = false;
   }
@@ -432,6 +577,9 @@ onMounted(load);
 }
 .order-search__input {
   width: 240px;
+}
+.order-batch-toggle {
+  margin-left: 12px;
 }
 .order-tabs__total {
   margin-left: auto;
@@ -597,6 +745,36 @@ onMounted(load);
   font-size: 14px;
   font-variant-numeric: tabular-nums;
   color: #d4380d;
+}
+
+/* ---------- 批量删除 ---------- */
+.batch-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: #fff;
+  border: 1px solid var(--sent-border);
+  border-radius: var(--sent-radius);
+  padding: 10px 16px;
+  margin-bottom: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+.batch-bar__hint {
+  font-size: 12px;
+  color: var(--sent-muted);
+}
+.batch-bar__hint b {
+  color: var(--sent-accent-dark);
+}
+.batch-bar .el-button {
+  margin-left: auto;
+}
+.order-card__check {
+  margin-right: 4px;
+  height: auto;
+}
+.order-card--selected {
+  box-shadow: 0 0 0 2px var(--sent-primary-soft), 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .list-hint {

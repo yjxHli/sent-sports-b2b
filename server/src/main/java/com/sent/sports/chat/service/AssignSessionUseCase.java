@@ -1,6 +1,9 @@
 package com.sent.sports.chat.service;
 
+import com.sent.sports.chat.domain.AgentPresence;
 import com.sent.sports.chat.domain.ChatSession;
+import com.sent.sports.chat.domain.PresenceStatus;
+import com.sent.sports.chat.repository.AgentPresenceRepository;
 import com.sent.sports.chat.repository.ChatSessionRepository;
 import com.sent.sports.chat.service.dto.AssignCmd;
 import com.sent.sports.chat.service.dto.AssignSessionResult;
@@ -24,15 +27,22 @@ import org.springframework.stereotype.Service;
 public class AssignSessionUseCase {
 
     private final ChatSessionRepository sessionRepository;
+    private final AgentPresenceRepository presenceRepository;
     private final ChatNotifier notifier;
 
-    public AssignSessionUseCase(ChatSessionRepository sessionRepository, ChatNotifier notifier) {
+    public AssignSessionUseCase(ChatSessionRepository sessionRepository,
+                                AgentPresenceRepository presenceRepository,
+                                ChatNotifier notifier) {
         this.sessionRepository = sessionRepository;
+        this.presenceRepository = presenceRepository;
         this.notifier = notifier;
     }
 
     @UseCase
     public AssignSessionResult assign(AssignCmd cmd) {
+        // 2026-11-21 用户要求：坐席登录后默认离线，离线/忙碌时「无法接线」。
+        // 接待是唯一能把 WAITING 变 ACTIVE 的人工入口，必须在这里拦，不能只靠前端禁用按钮。
+        requireOnline(cmd.staffId());
         // 指定会话：工作台点「接待」必须接待用户看到的那一条，
         // 否则会退化成「拉取队列里最早的一条」，把别的客户的会话接待掉。
         if (cmd.sessionId() > 0) {
@@ -66,5 +76,22 @@ public class AssignSessionUseCase {
         session.reassign(cmd.toStaffId());
         sessionRepository.save(session);
         return new AssignSessionResult(session.getId(), session.getStatus(), session.getStaffId());
+    }
+
+    /**
+     * 只有「在线」坐席可以接线。
+     *
+     * <p>忙碌的业务含义是「暂停接待，队列继续排队」，离线是「不接待也不看队列」，
+     * 两者都不允许把 WAITING 会话变成 ACTIVE——否则忙碌/离线的坐席仍能通过工作台按钮把客户拉进来，
+     * 用户看到的「忙碌时不会自动接入」就名存实亡。</p>
+     */
+    private void requireOnline(long staffId) {
+        boolean online = presenceRepository.findByStaffId(staffId)
+                .map(AgentPresence::getPresence)
+                .map(status -> status == PresenceStatus.ONLINE)
+                .orElse(false);
+        if (!online) {
+            throw new BizException(ErrorCode.STATE_CONFLICT, "当前不是在线状态，请先切换为在线再接待客户");
+        }
     }
 }

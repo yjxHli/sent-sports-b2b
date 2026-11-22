@@ -1,0 +1,25 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 客服工作台自己的少量全局补充：滚动条走深色壳，避免浅色滚动条割裂视觉 */
+html {
+  background: var(--cs-shell-2);
+}
+
+/* 三栏区域内的滚动条细一点，工作台信息密度高，粗滚动条会挤压内容 */
+.cs-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #c8d3ce transparent;
+}
+.cs-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.cs-scroll::-webkit-scrollbar-thumb {
+  background: #c8d3ce;
+  border-radius: 999px;
+}
+.cs-scroll::-webkit-scrollbar-thumb:hover {
+  background: #aab9b3;
+}

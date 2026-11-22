@@ -17,8 +17,27 @@ function goHome(): void {
 </script>
 
 <style scoped>
-.error-page { padding: 80px 20px; text-align: center; color: #1f2d28; }
-.error-code { font-size: 76px; font-weight: 700; color: #ff7a1a; line-height: 1; }
-.error-page h2 { margin: 18px 0 8px; font-size: 20px; }
-.error-page p { margin: 0 0 24px; color: #7b8a84; }
+.error-page {
+  padding: 80px 24px;
+  max-width: 420px;
+  color: var(--sent-ink);
+}
+.error-code {
+  font-size: 40px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--sent-ink-3);
+}
+.error-page h2 {
+  margin: 16px 0 8px;
+  font-size: 20px;
+  font-weight: 600;
+}
+.error-page p {
+  margin: 0 0 24px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--sent-ink-3);
+}
 </style>

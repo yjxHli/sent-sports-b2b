@@ -20,8 +20,13 @@ import java.util.Arrays;
 @Configuration
 public class WebMvcConfig implements WebMvcConfigurer {
 
+    /**
+     * 本机三个 Vite dev server：商城 5173 / 管理端 5174 / 客服工作台 5175。
+     * 客服台虽然走同源代理，但浏览器仍会带 Origin 头，漏配就会被 Spring 判成 Invalid CORS request。
+     */
     private static final String DEV_ORIGINS =
-            "http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://127.0.0.1:5174";
+            "http://localhost:5173,http://localhost:5174,http://localhost:5175,"
+            + "http://127.0.0.1:5173,http://127.0.0.1:5174,http://127.0.0.1:5175";
 
     private static final String[] EXPOSE_HEADERS = {
             "X-New-Token", "X-Token-Expire-In", "X-Idempotent-Replay"

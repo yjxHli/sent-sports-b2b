@@ -366,7 +366,6 @@ onUnmounted(() => { if (timer) clearInterval(timer); });
   min-height: 240px;
   cursor: zoom-in;
 }
-.section-title { margin: 0 0 14px; font-size: 15px; color: #33463f; }
 .review-body { margin-top: 18px; }
 .review-alert { margin-bottom: 14px; }
 .review-actions { margin-top: 8px; }

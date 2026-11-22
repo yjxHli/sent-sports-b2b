@@ -30,7 +30,7 @@ class ArchitectureTest {
     private static final String[] MODULES = {
             "auth", "system", "customer", "member", "product", "stock", "cart",
             "order", "payment", "refund", "customize", "finance", "chat", "notify", "report", "job",
-            "file"
+            "file", "review"
     };
 
     private static JavaClasses classes;

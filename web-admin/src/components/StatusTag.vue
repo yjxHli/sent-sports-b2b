@@ -1,5 +1,15 @@
 <template>
-  <el-tag :type="tone" size="small" effect="light">{{ text }}</el-tag>
+  <!--
+    统一状态标签（2026-11-21 设计重构）：
+    浅底 Tag 在一张 18 行的表里就是 18 个色块，噪音大于信息；
+    改成「6px 色点 + 灰色文字」，颜色只承载语义，文字只承载状态名。
+    空状态不再渲染标签框（此前 statusLabel 返回 '-'，会渲染出一个空灰框）。
+  -->
+  <span v-if="text && text !== '-'" class="sent-status" :class="`sent-status--${toneKey}`">
+    <i class="sent-status__dot" aria-hidden="true" />
+    <span class="sent-status__text">{{ text }}</span>
+  </span>
+  <span v-else class="sent-status__none">-</span>
 </template>
 
 <script setup lang="ts">
@@ -20,12 +30,48 @@ const props = defineProps<{
 
 const text = computed(() => props.label ?? statusLabel(props.status));
 
-const TONES: Record<StatusTone, 'primary' | 'success' | 'warning' | 'danger' | 'info'> = {
-  primary: 'primary',
-  success: 'success',
-  warning: 'warning',
-  danger: 'danger',
-  info: 'info',
-};
-const tone = computed(() => TONES[props.tone ?? statusTone(props.status)]);
+/** 色点只有 5 个语义色，直接映射到令牌，不再借 Element 的 tag type */
+const toneKey = computed<StatusTone>(() => props.tone ?? statusTone(props.status));
 </script>
+
+<style scoped>
+.sent-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--sent-ink-2);
+  white-space: nowrap;
+}
+
+.sent-status__dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--sent-ink-3);
+}
+
+.sent-status--primary .sent-status__dot {
+  background: var(--sent-primary);
+}
+.sent-status--success .sent-status__dot {
+  background: var(--sent-ok);
+}
+.sent-status--warning .sent-status__dot {
+  background: var(--sent-warn);
+}
+.sent-status--danger .sent-status__dot {
+  background: var(--sent-danger);
+}
+.sent-status--info .sent-status__dot {
+  background: var(--sent-ink-3);
+}
+
+/* 空值：一个弱色破折号，没有框、没有底色 */
+.sent-status__none {
+  font-size: 13px;
+  color: #b3bdb7;
+}
+</style>

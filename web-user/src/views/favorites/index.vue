@@ -30,7 +30,7 @@
       <router-link v-if="active === ''" to="/products" class="fav-empty__btn">去挑几件喜欢的</router-link>
     </div>
 
-    <div v-else class="fav-grid">
+    <div v-else class="goods-grid">
       <div v-for="f in shown" :key="f.productId" class="fav-card" :class="{ 'fav-card--off': !f.onShelf }">
         <button type="button" class="fav-card__heart" title="取消收藏" @click.stop="unfavorite(f)">
           <svg viewBox="0 0 20 20" aria-hidden="true">
@@ -243,12 +243,7 @@ onMounted(() => {
   color: var(--sent-muted);
 }
 
-/* ---------- 网格 ---------- */
-.fav-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 12px;
-}
+/* ---------- 网格：统一走全局 .goods-grid（auto-fill，1440 版心 → 6 列） ---------- */
 .fav-card {
   position: relative;
   background: #fff;
@@ -405,9 +400,5 @@ onMounted(() => {
   color: var(--sent-primary);
 }
 
-@media (max-width: 1080px) {
-  .fav-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
+/* 窄屏列数由全局 .goods-grid 的 auto-fill 自动降列，原 1080px 三列断点已冗余，删除 */
 </style>

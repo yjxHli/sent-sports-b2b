@@ -59,11 +59,11 @@ class AdminRefundApiTest extends BaseApiTest {
     }
 
     @Test
-    @DisplayName("审核列表返回退款单号/订单号/金额/原因/凭证图片/申请时间")
+    @DisplayName("审核列表返回退款单号/订单号/金额/原因/凭证图片/申请时间/人工复核标记")
     void listReturnsAuditPage() throws Exception {
         RefundDtos.RefundAuditVO vo = new RefundDtos.RefundAuditVO(
                 "RF1", "O1", "PENDING", 12800L, "质量原因",
-                List.of("2026/11/ab/a.png"), 1_700_000_000_000L);
+                List.of("2026/11/ab/a.png"), 1_700_000_000_000L, true);
         when(refundQueryService.listAuditRefunds(any(PageQuery.class), any(), isNull()))
                 .thenReturn(PageResult.of(List.of(vo), 1L, 1, 10));
 
@@ -77,6 +77,7 @@ class AdminRefundApiTest extends BaseApiTest {
                 .andExpect(jsonPath("$.data.list[0].amountCent").value(12800))
                 .andExpect(jsonPath("$.data.list[0].reason").value("质量原因"))
                 .andExpect(jsonPath("$.data.list[0].images[0]").value("2026/11/ab/a.png"))
+                .andExpect(jsonPath("$.data.list[0].needManualReview").value(true))
                 .andExpect(jsonPath("$.data.list[0].createdAt").value(1_700_000_000_000L));
     }
 
@@ -96,7 +97,7 @@ class AdminRefundApiTest extends BaseApiTest {
         RefundDtos.RefundAuditDetailVO vo = new RefundDtos.RefundAuditDetailVO(
                 "RF1", "SO1", "PENDING", 12800L, "128.00", 0L,
                 "REFUND", "尺码不符", "CUSTOMER", 1, List.of("2026/11/ab/a.png"), null,
-                1_767_200_000_000L, null, order);
+                1_767_200_000_000L, null, order, true);
         when(refundQueryService.getAuditDetail("RF1")).thenReturn(vo);
 
         mvc.perform(get("/api/admin/refunds/RF1"))
@@ -112,7 +113,8 @@ class AdminRefundApiTest extends BaseApiTest {
                 .andExpect(jsonPath("$.data.order.address").value("广东省 深圳市 南山区 科技园路 5 号"))
                 .andExpect(jsonPath("$.data.order.trackingNo").value("SF123456"))
                 .andExpect(jsonPath("$.data.order.lines[0].skuName").value("速干训练短袖"))
-                .andExpect(jsonPath("$.data.order.lines[0].qty").value(2));
+                .andExpect(jsonPath("$.data.order.lines[0].qty").value(2))
+                .andExpect(jsonPath("$.data.needManualReview").value(true));
 
         verify(refundQueryService).getAuditDetail("RF1");
     }

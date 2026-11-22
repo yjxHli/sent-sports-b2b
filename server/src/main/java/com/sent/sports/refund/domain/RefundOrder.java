@@ -27,6 +27,13 @@ public class RefundOrder {
      * 否则「钱退了、积分到底退没退」只能去翻流水。</p>
      */
     private long pointRefund;
+    /**
+     * 本单是否需要客服人工复核（定制单「审核通过但未排产」时置 true）。
+     * <p>为什么要有这一位：APPROVED 阶段还没进机器，不该硬拦用户退款；但图纸已过审、
+     * 可能已经备料/打样，退不退不能由用户一句话决定。这一档必须让审核台看得见，
+     * 否则「APPROVED 视同可自助退」等于把烂账推给生产。</p>
+     */
+    private boolean needManualReview;
 
     public RefundOrder(String refundNo, String orderNo, long orderId, long amountCent, String type, String reason,
                       RefundStatus status, long createdAtMillis) {
@@ -118,5 +125,14 @@ public class RefundOrder {
 
     public void setPointRefund(long pointRefund) {
         this.pointRefund = Math.max(0L, pointRefund);
+    }
+
+    /** 是否需要客服人工复核（定制 APPROVED 档）。 */
+    public boolean isNeedManualReview() {
+        return needManualReview;
+    }
+
+    public void setNeedManualReview(boolean needManualReview) {
+        this.needManualReview = needManualReview;
     }
 }

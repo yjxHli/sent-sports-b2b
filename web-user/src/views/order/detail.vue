@@ -83,7 +83,14 @@
             <el-button v-if="canConfirm" type="primary" class="od-btn od-btn--main" :loading="acting" @click="confirm">
               确认收货
             </el-button>
-            <el-button v-if="canRefund" class="od-btn" @click="goRefundApply">申请退款</el-button>
+            <el-button
+              v-if="canRefund"
+              class="od-btn"
+              data-testid="order-refund-apply"
+              :class="{ 'od-btn--blocked': customRefundBlocked }"
+              :title="customRefundBlocked ? CUSTOM_REFUND_BLOCK_TEXT : ''"
+              @click="goRefundApply"
+            >申请退款</el-button>
 
             <el-button v-if="canInvoice" class="od-btn" @click="invoiceVisible = true">
               {{ invoice ? '查看发票' : '申请开票' }}
@@ -92,9 +99,75 @@
             <el-button class="od-btn" @click="printOrder">打印</el-button>
             <el-button v-if="order.status !== 'COMPLETED'" class="od-btn" @click="goChat">联系客服</el-button>
           </div>
+
+          <!-- 定制退款口径（2026-11-21）：按钮仍在，但点下去只会得到一句解释——
+               按钮直接置灰会让用户不知道「为什么别人能退我不能退」 -->
+          <p v-if="canRefund && customRefundBlocked" class="od-refund-tip od-refund-tip--block"
+             data-testid="order-refund-blocked">
+            定制商品已开始生产，无法申请退款。如有质量问题请联系客服。
+          </p>
+          <p v-else-if="canRefund && customRefundManual" class="od-refund-tip"
+             data-testid="order-refund-manual">
+            定制商品审核通过但尚未排产：可以提交退款申请，客服会先与生产确认是否已备料。
+          </p>
         </section>
 
-        <!-- ③ 店铺 + 商品表格 + 物流 -->
+        <!-- ③ UV 定制图稿：商品页/结算页都提示「下单后上传」，
+             入口必须在这里，不能让用户自己跑去「我的定制」里找单 -->
+        <section v-if="hasCustom" class="od-custom" data-testid="order-custom">
+          <div class="od-custom__head">
+            <h3 class="od-custom__title">UV 定制图稿</h3>
+            <span class="od-custom__sub">上传图稿后客服审图，通过即安排生产</span>
+          </div>
+
+          <p v-if="customOrders.length === 0" class="od-custom__empty">
+            定制单正在生成中，稍后刷新本页即可上传；
+            也可在
+            <button type="button" class="od-custom__link" @click="goMyCustom">我的定制</button>
+            中查看。
+          </p>
+
+          <ul v-else class="od-custom__list">
+            <li v-for="c in customOrders" :key="c.customOrderId" class="od-custom__row">
+              <div class="od-custom__meta">
+                <b class="od-custom__no">{{ c.customOrderId }}</b>
+                <span class="od-custom__status" :class="`od-custom__status--${tone(c.status)}`">
+                  {{ label(c.status) }}
+                </span>
+                <span class="od-custom__info">
+                  图稿 v{{ c.version }} · {{ c.qty }} 件 · 定制费 ¥{{ fmtCent(Number(c.feeCent ?? 0)) }}
+                </span>
+              </div>
+              <div class="od-custom__ops">
+                <button
+                  v-if="canUploadDraft(c)"
+                  type="button"
+                  class="od-mini od-mini--primary"
+                  :disabled="uploadingCustomId === c.customOrderId"
+                  data-testid="order-custom-upload"
+                  @click="pickDraft(c)"
+                >
+                  {{ uploadingCustomId === c.customOrderId
+                    ? '上传中…'
+                    : (Number(c.version) > 0 ? '重新上传图稿' : '上传图稿') }}
+                </button>
+                <span v-else class="od-custom__hint">{{ customHint(c) }}</span>
+                <button type="button" class="od-mini" @click="goCustomDetail(c.customOrderId)">
+                  查看定制详情
+                </button>
+              </div>
+            </li>
+          </ul>
+          <input
+            ref="draftInput"
+            type="file"
+            accept="image/*,.ai,.pdf"
+            class="od-custom__input"
+            @change="onDraftPicked"
+          />
+        </section>
+
+        <!-- ④ 店铺 + 商品表格 + 物流 -->
         <section class="od-shop">
           <div class="od-shop__head">
             <span class="od-shop__mark">森特</span>
@@ -330,11 +403,23 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { fmtCent, fmtDateTime, statusLabel, statusTone, type StatusTone } from '@sent/shared';
+import {
+  CUSTOM_REFUND_BLOCK_TEXT,
+  fmtCent,
+  fmtDateTime,
+  isCustomRefundBlocked,
+  isCustomRefundManual,
+  statusLabel,
+  statusTone,
+  type StatusTone,
+} from '@sent/shared';
+
 import { unwrap } from '@/utils/http';
 import { orderApi, type OrderItemLine, type OrderVO } from '@/api/order';
 import { cartApi } from '@/api/cart';
 import { invoiceApi, type InvoiceVO } from '@/api/invoice';
+import { customApi, type OrderCustomVO } from '@/api/custom';
+import { fileApi } from '@/api/file';
 import ProductThumb from '@/components/ProductThumb.vue';
 import InvoiceApplyDialog from '@/components/InvoiceApplyDialog.vue';
 
@@ -355,14 +440,36 @@ const invoiceVisible = ref(false);
 
 function label(s: string | null | undefined): string { return statusLabel(s); }
 function tone(s: string | null | undefined): StatusTone { return statusTone(s); }
-function goBack(): void { router.back(); }
+/**
+ * 返回我的订单：**固定落到订单列表**，不再用 `router.back()`。
+ *
+ * 历史栈经常是「确认订单 → 支付成功 → 订单详情」，回退必然回到结算页；
+ * 而结算页的购物车行已在下单时清空，退回去只剩一个「去选购」空态
+ * （用户 2026-11-21 反馈：点「返回我的订单」回到了空白确认订单页）。
+ * 上一页本来就是列表时仍用回退，保留状态 Tab / 搜索词的现场。
+ */
+function goBack(): void {
+  const prev = (window.history.state as { back?: string } | null)?.back ?? '';
+  if (prev.startsWith('/orders')) router.back();
+  else void router.push('/orders');
+}
 function goChat(): void { router.push('/chat'); }
 /**
  * 申请退款 / 售后：跳「这一单专属」的申请页（`/refund/apply/:orderNo`）。
  * 以前点了跳「我的售后」列表，用户还得在列表里再找一遍自己刚看的单；
  * 详情页里那套弹窗也一并撤掉——申请要选商品行、传凭证，一页放得下比弹窗清楚。
+ *
+ * 2026-11-21 增补：定制单一旦排产（IN_PRODUCTION / FINISHED / SHIPPED）后端会直接拒单，
+ * 前端在点按钮这一刻就拦住并说清原因，别让用户填完凭证才吃一个 409。
  */
 function goRefundApply(): void {
+  if (customRefundBlocked.value) {
+    void ElMessageBox.alert(CUSTOM_REFUND_BLOCK_TEXT, '无法申请退款', {
+      confirmButtonText: '我知道了',
+      type: 'warning',
+    });
+    return;
+  }
   router.push(`/refund/apply/${String(route.params.orderNo ?? '')}`);
 }
 
@@ -377,6 +484,95 @@ const pointDeductCent = computed(() => Number(order.value?.pointDeductCent ?? 0)
 const savedCent = computed(() => discountCent.value + pointDeductCent.value);
 const items = computed<OrderItemLine[]>(() => order.value?.items ?? []);
 const totalQty = computed(() => items.value.reduce((sum, it) => sum + Number(it.qty ?? 0), 0));
+
+/* ---------------- UV 定制图稿 ---------------- */
+/**
+ * 商品页勾选 UV 定制、结算页也写着「下单后需上传图稿」，但这个入口原来只存在于
+ * 「我的定制」列表里 —— 用户在订单详情根本传不了图（2026-11-21 反馈）。
+ * 这里按订单号把定制单带出来，直接给上传入口。
+ */
+const customOrders = ref<OrderCustomVO[]>([]);
+const uploadingCustomId = ref('');
+const draftTarget = ref('');
+const draftInput = ref<HTMLInputElement | null>(null);
+
+/** 含定制件就渲染卡片：定制费 > 0，或后端已能查到定制单 */
+const hasCustom = computed(
+  () => Number(order.value?.customFeeCent ?? 0) > 0 || customOrders.value.length > 0,
+);
+
+/** 与后端状态机同口径：只有「待提交图稿 / 审核驳回」能传新稿 */
+function canUploadDraft(c: OrderCustomVO): boolean {
+  return c.status === 'WAIT_DRAFT' || c.status === 'REJECTED';
+}
+
+function customHint(c: OrderCustomVO): string {
+  switch (c.status) {
+    case 'WAIT_REVIEW': return '图稿审核中，请留意站内信';
+    case 'APPROVED': return '审图通过，等待排产';
+    case 'IN_PRODUCTION': return '已排产，生产中';
+    case 'FINISHED': return '定制已完工';
+    case 'SHIPPED': return '已随订单发货';
+    default: return '当前状态无需上传图稿';
+  }
+}
+
+function goMyCustom(): void { router.push('/custom'); }
+function goCustomDetail(id: string): void { router.push(`/custom/${id}`); }
+
+function pickDraft(c: OrderCustomVO): void {
+  if (!canUploadDraft(c)) {
+    ElMessage.warning('当前状态不可上传图稿');
+    return;
+  }
+  draftTarget.value = c.customOrderId;
+  draftInput.value?.click();
+}
+
+/**
+ * 选图即上传：先 `POST /api/files` 拿真实 fileId，再提交为图稿版本。
+ * 只提交文件名会让管理端审图台拿到一个访问不到的假 ID（历史缺陷）。
+ */
+async function onDraftPicked(e: Event): Promise<void> {
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = '';
+  const target = draftTarget.value;
+  if (!file || !target) return;
+  if (file.size > 20 * 1024 * 1024) {
+    ElMessage.error('单个图稿不超过 20MB');
+    return;
+  }
+  uploadingCustomId.value = target;
+  try {
+    const stored = await unwrap(fileApi.upload(file));
+    if (!stored?.fileId) throw new Error('图稿上传失败');
+    await unwrap(customApi.uploadDraft(target, {
+      fileId: stored.fileId,
+      fileName: stored.fileName || file.name,
+      fileSize: Number(stored.size ?? file.size),
+    }));
+    ElMessage.success('图稿已上传，等待客服审核');
+    await loadCustomOrders();
+  } catch (err) {
+    ElMessage.error((err as Error).message || '上传失败');
+  } finally {
+    uploadingCustomId.value = '';
+  }
+}
+
+/** 订单没有定制件时不发这次请求，避免每看一单都多打一个接口 */
+async function loadCustomOrders(): Promise<void> {
+  if (Number(order.value?.customFeeCent ?? 0) <= 0 && customOrders.value.length === 0) {
+    customOrders.value = [];
+    return;
+  }
+  try {
+    customOrders.value = (await unwrap(customApi.byOrder(String(route.params.orderNo ?? '')))) ?? [];
+  } catch {
+    customOrders.value = [];
+  }
+}
 
 /** 状态大字：淘宝写「交易成功」这类句子，比「已完成」三个字更有结论感 */
 const statusTitle = computed(() => {
@@ -419,6 +615,19 @@ const canRefund = computed(() => {
   const s = order.value?.status;
   return s === 'WAIT_SHIP' || s === 'WAIT_RECEIVE' || s === 'PART_SHIPPED' || s === 'PAID';
 });
+
+/**
+ * 定制行退款三档：口径与提示语统一在 `@sent/shared`（`isCustomRefundBlocked` / `CUSTOM_REFUND_BLOCK_TEXT`），
+ * 定制单详情页也消费同一份，避免两个页面各写一套判断。
+ * 判定真源仍在后端（申请退款时逐行联查定制单状态）。
+ */
+const customStatusList = computed(() => customOrders.value.map((c) => String(c.status ?? '')));
+const customRefundBlocked = computed(
+  () => customStatusList.value.some((s) => isCustomRefundBlocked(s)),
+);
+const customRefundManual = computed(
+  () => !customRefundBlocked.value && customStatusList.value.some((s) => isCustomRefundManual(s)),
+);
 
 const canConfirm = computed(() => {
   const s = order.value?.status;
@@ -736,6 +945,7 @@ async function load(): Promise<void> {
   } finally {
     loading.value = false;
   }
+  await loadCustomOrders();
   startPayCountdown();
   await loadInvoice();
 }
@@ -1021,8 +1231,147 @@ onMounted(load);
 .od-actions :deep(.od-btn--main) {
   font-weight: 600;
 }
+/* 定制已排产：按钮留可点（点了给解释），但视觉上先降权 */
+.od-actions :deep(.od-btn--blocked) {
+  color: var(--sent-muted);
+  border-style: dashed;
+}
+/* 定制退款口径提示：常规=灰字说明，拦截=琥珀警示条 */
+.od-refund-tip {
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #8a5a00;
+  background: #fdf6ec;
+  border-left: 3px solid #e6a23c;
+}
+.od-refund-tip--block {
+  color: #a8071a;
+  background: #fff1f0;
+  border-left-color: #cf1322;
+}
 
-/* ---------- ③ 店铺 + 商品表格 ---------- */
+/* ---------- ③ UV 定制图稿 ---------- */
+.od-custom {
+  margin-top: 14px;
+  background: #fff;
+  border-radius: var(--sent-radius);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  padding: 14px 16px 16px;
+  border-left: 3px solid var(--sent-accent);
+}
+.od-custom__head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.od-custom__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--sent-text);
+}
+.od-custom__sub {
+  font-size: 12px;
+  color: var(--sent-muted);
+}
+.od-custom__empty {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--sent-muted);
+}
+.od-custom__link {
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--sent-primary);
+  cursor: pointer;
+}
+.od-custom__list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.od-custom__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px solid #f0f2f4;
+  border-radius: 8px;
+  background: #fafbfc;
+}
+.od-custom__meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.od-custom__no {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: var(--sent-text);
+}
+.od-custom__status {
+  font-size: 11px;
+  border-radius: 3px;
+  padding: 1px 6px;
+  background: #eef2f5;
+  color: var(--sent-text-2);
+}
+.od-custom__status--warning {
+  background: #fff7e6;
+  color: #b8741a;
+}
+.od-custom__status--danger {
+  background: #fdeaec;
+  color: #c93644;
+}
+.od-custom__status--success {
+  background: var(--sent-primary-soft);
+  color: var(--sent-primary);
+}
+.od-custom__info {
+  font-size: 12px;
+  color: var(--sent-muted);
+}
+.od-custom__ops {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+.od-custom__hint {
+  font-size: 12px;
+  color: var(--sent-muted);
+}
+.od-custom__input {
+  display: none;
+}
+.od-mini--primary {
+  border-color: var(--sent-accent);
+  background: var(--sent-accent);
+  color: #fff;
+}
+.od-mini--primary:hover:not(:disabled) {
+  border-color: var(--sent-accent-dark);
+  background: var(--sent-accent-dark);
+  color: #fff;
+}
+
+/* ---------- ④ 店铺 + 商品表格 ---------- */
 .od-shop {
   margin-top: 14px;
   background: #fff;
@@ -1433,6 +1782,7 @@ onMounted(load);
   .od-shop__snap,
   .od-goods__ops,
   .od-serv,
+  .od-custom__ops,
   .el-dialog__wrapper,
   .el-overlay {
     display: none !important;

@@ -1,6 +1,8 @@
 packages:
   - 'web-admin'
   - 'web-user'
+  # 独立客服工作台（2026-11-20 从 web-admin 剥离）：端口 5175，契约仍走 @sent/shared
+  - 'web-cs'
   - 'packages/shared'
 
 # pnpm 12 默认不执行依赖构建脚本；esbuild / vue-demi 需要 postinstall 才能正常工作，

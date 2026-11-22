@@ -97,8 +97,24 @@ public class CustomQueryServiceImpl implements CustomQueryService {
         return PageResult.of(list, total, pageQuery.getPage(), pageQuery.getSize());
     }
 
-    private CustomDtos.MyCustomOrderVO toVo(CustomOrderListItemPO po) {
-        long deadlineMillis = po.getReviewDeadline() == null ? 0L
+    @Override
+    public List<CustomDtos.OrderCustomVO> ordersOfOrder(long customerId, String orderNo) {
+        if (orderNo == null || orderNo.isBlank()) {
+            return List.of();
+        }
+        return customOrderMapper.selectByOrderNo(customerId, orderNo).stream()
+                .map(r -> new CustomDtos.OrderCustomVO(
+                        r.getCustomOrderId(),
+                        r.getStatus(),
+                        r.getVersion() == null ? 0 : r.getVersion(),
+                        r.getRejectCount() == null ? 0 : r.getRejectCount(),
+                        r.getQty() == null ? 0 : r.getQty(),
+                        r.getFeeCent() == null ? 0L : r.getFeeCent(),
+                        toMillis(r.getReviewDeadline())))
+                .toList();
+    }
+
+    private CustomDtos.MyCustomOrderVO toVo(CustomOrderListItemPO po) {        long deadlineMillis = po.getReviewDeadline() == null ? 0L
                 : po.getReviewDeadline().atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
         return new CustomDtos.MyCustomOrderVO(
                 po.getCustomOrderId(),

@@ -85,13 +85,18 @@ export async function openConfirm(options: OpenConfirmOptions): Promise<ConfirmG
   // 用 VNode 构造而非 HTML 字符串，避免业务摘要里的 <> 造成注入
   const message = h('div', [
     h('p', { style: 'margin:0 0 8px' }, `即将执行「${label}」，该操作不可撤销。`),
-    ...(summary ? [h('p', { style: 'margin:0 0 8px;color:#5c6b65' }, summary)] : []),
+    ...(summary
+      ? [h('p', { style: 'margin:0 0 8px;color:var(--sent-ink-2)' }, summary)]
+      : []),
     h('p', { style: 'margin:0' }, `请准确输入「${phrase}」以继续：`),
   ]);
 
   const { value } = await ElMessageBox.prompt(message, options.title ?? '危险操作确认', {
     confirmButtonText: '确认继续',
     cancelButtonText: '取消',
+    // 危险操作不该用黄色感叹号 + 品牌绿确认键：挂 sent-confirm 后由 theme.css
+    // 去图标、把确认键改成 danger 实心（语义与颜色一致）。
+    customClass: 'sent-confirm',
     inputPlaceholder: phrase,
     inputValidator: (input: string) =>
       (matchesPhrase(action, input) ? true : `请准确输入「${phrase}」`),

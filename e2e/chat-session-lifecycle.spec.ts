@@ -6,7 +6,7 @@
  */
 import { test, expect, type Page } from '@playwright/test';
 import {
-  ADMIN_URL, USER_URL, join, apiCall, loginApi, clearOpenSessions,
+  CS_URL, USER_URL, join, apiCall, loginApi, clearOpenSessions,
   setStaffPresence, startConsultation, currentOpenSession,
   ADMIN_NAME, ADMIN_PASSWORD, CUSTOMER_ID, CUSTOMER_PHONE, CUSTOMER_PASSWORD,
 } from './chat-helpers';
@@ -20,11 +20,14 @@ async function loginUserUi(page: Page): Promise<void> {
 }
 
 async function loginAdminUi(page: Page): Promise<void> {
-  await page.goto(join(ADMIN_URL, '/login'));
+  await page.goto(join(CS_URL, '/login'));
   await page.getByPlaceholder('用户名').fill(ADMIN_NAME);
   await page.getByPlaceholder('密码').fill(ADMIN_PASSWORD);
   await page.getByRole('button', { name: '登录' }).click();
-  await expect(page).toHaveURL(/\/admin\/dashboard/, { timeout: 20_000 });
+  await expect(page).toHaveURL(/\/workbench/, { timeout: 20_000 });
+  // 2026-11-21 起客服登录默认离线：真实客服也要手动切在线才开始接单，用例照做
+  await page.locator('[data-testid="presence-online"]').click();
+  await expect(page.locator('[data-testid="presence-online"]')).toHaveClass(/is-active/, { timeout: 15_000 });
 }
 
 test('首条消息才建会话；结束后双端感知；Tab 手动关闭；小结必填；客户可重新咨询', async ({ browser, request }) => {
@@ -79,7 +82,7 @@ test('首条消息才建会话；结束后双端感知；Tab 手动关闭；小�
     await expect(userPage.getByPlaceholder('请输入想咨询的问题')).toBeEnabled({ timeout: 15_000 });
 
     await loginAdminUi(adminPage);
-    await adminPage.goto(join(ADMIN_URL, '/chat/workbench'));
+    await adminPage.goto(join(CS_URL, '/workbench'));
     const tab = adminPage.locator('.el-tabs__item', { hasText: `#${sessionId}` }).first();
     await expect(tab).toBeVisible({ timeout: 25_000 });
     await expect(adminPage.locator('.chat-head__name')).toContainText('进行中');

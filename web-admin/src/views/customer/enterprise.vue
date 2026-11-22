@@ -427,7 +427,6 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.section-title { margin: 0 0 14px; font-size: 15px; color: #33463f; }
 .sub-title { margin: 18px 0 10px; font-size: 14px; color: #33463f; }
 /* 营业执照缩略图：点击可放大预览，审核时能看清企业名称与信用代码 */
 .license-thumb {

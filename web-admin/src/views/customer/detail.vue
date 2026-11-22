@@ -21,7 +21,7 @@
         <el-descriptions-item label="创建时间">{{ fmtDateTime(detail?.createdAt) }}</el-descriptions-item>
       </el-descriptions>
 
-      <h3 class="section-title">客户运营</h3>
+      <h3 class="section-title section-title--spaced">客户运营</h3>
       <div class="sent-form-row">
         <el-button type="primary" @click="levelVisible = true">授予等级</el-button>
         <el-button @click="pointVisible = true">积分调整</el-button>
@@ -224,5 +224,4 @@ onMounted(() => { void loadStaff(); void load(); });
 
 <style scoped>
 .customer-id { margin-left: auto; font-weight: 600; color: #12664f; }
-.section-title { margin: 22px 0 12px; font-size: 15px; color: #33463f; }
 </style>

@@ -307,7 +307,6 @@ async function submit(): Promise<void> {
 </script>
 
 <style scoped>
-.section-title { margin: 0 0 14px; font-size: 15px; color: #33463f; }
 .ship-form { margin-top: 16px; }
 .ship-lines { width: 100%; min-height: 40px; }
 .ship-line {

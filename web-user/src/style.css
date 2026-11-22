@@ -20,7 +20,10 @@
   --sent-muted: #8b93a1;
   --sent-border: #ececec;
   --sent-radius: 8px;
-  --sent-container: 1200px;
+  /* 2026-11-21 设计决策：版心 1200 → 1440。目标是让内容区占屏接近淘宝的 93%
+     （1440 容器在 1600 视口下约 90%），并在 1440 容器下把商品网格排出 6 列。
+     所有页面都带 `max-width: calc(100% - 32px)` 兜底，窄屏不会横向溢出。 */
+  --sent-container: 1440px;
 
   /* Element Plus 主色覆盖 */
   --el-color-primary: #12664f;
@@ -288,9 +291,19 @@ a {
   padding: 20px 0 14px;
 }
 .searchbar__inner {
-  display: flex;
+  /* 2026-11-21 对齐淘宝 + 对齐首页中栏：
+     搜索框宽度 = 首页 hero 中栏（券卡 + 轮播）宽度，左边缘也与中栏左边缘重合。
+     左轨道 224 = 分类栏 210 + 间距 14；右轨道 274 = 用户卡 260 + 间距 14。
+     1440 版心下中间一列正好 942，和 hero 中栏一像素不差。 */
+  display: grid;
+  grid-template-columns: 224px minmax(0, 1fr) 274px;
   align-items: flex-start;
-  gap: 28px;
+}
+/* 1380 以下 hero 降为两栏（分类 190 + 间距 14），搜索框跟着对齐新的中栏 */
+@media (max-width: 1380px) and (min-width: 901px) {
+  .searchbar__inner {
+    grid-template-columns: 204px minmax(0, 1fr);
+  }
 }
 .brand {
   display: flex;
@@ -330,9 +343,9 @@ a {
 }
 
 .searchbox {
-  flex: 1;
-  max-width: 640px;
+  /* 宽度由父级中间轨道决定（1440 版心下约 1054），不再写死上限 */
   padding-top: 4px;
+  min-width: 0;
 }
 .searchbox__field {
   position: relative;
@@ -413,6 +426,19 @@ a {
   color: var(--sent-accent);
 }
 
+/* 窄屏（手机）：三列栅格会把中间搜索框挤到几乎没有宽度，退回「Logo + 搜索」两段式 */
+@media (max-width: 900px) {
+  .searchbar__inner {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+  }
+  .searchbox {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+}
+
 /* ============================ 主体 ============================ */
 .site {
   min-height: 100vh;
@@ -425,15 +451,14 @@ a {
 }
 
 /* ============================ 商品卡片（列表/首页共用） ============================ */
+/* 商品网格唯一真源：不再写死列数，由容器宽度自动决定。
+   minmax(216px, 1fr) 的下限是刻意设的 —— 低于 216 时卡片底部的
+   「包邮 / UV定制 / 已售 N」会因为 nowrap + overflow:hidden 被静默裁字。
+   1440 版心 → 6 列（单卡 230）；1280 视口（容器 1248）→ 5 列（单卡 240）。 */
 .goods-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
-}
-@media (max-width: 1240px) {
-  .goods-grid {
-    grid-template-columns: repeat(3, 1fr);
-  }
+  grid-template-columns: repeat(auto-fill, minmax(216px, 1fr));
+  gap: 12px;
 }
 .good-card {
   background: var(--sent-card);

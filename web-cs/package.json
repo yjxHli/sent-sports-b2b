@@ -1,0 +1,32 @@
+{
+  "name": "web-cs",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "森特体育 · 独立客服工作台（从 web-admin 剥离，端口 5175）",
+  "scripts": {
+    "dev": "vite --port 5175 --host",
+    "build": "vue-tsc -b && vite build",
+    "preview": "vite preview --port 5175",
+    "test": "node --experimental-strip-types --test test/csAccess.test.ts"
+  },
+  "dependencies": {
+    "vue": "^3.4.21",
+    "vue-router": "^4.3.0",
+    "pinia": "^2.1.7",
+    "element-plus": "^2.7.3",
+    "@element-plus/icons-vue": "^2.3.1",
+    "axios": "^1.7.2",
+    "@sent/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.4",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.4.5",
+    "vite": "^5.2.11",
+    "vue-tsc": "^2.0.16",
+    "tailwindcss": "^3.4.3",
+    "postcss": "^8.4.38",
+    "autoprefixer": "^10.4.19"
+  }
+}

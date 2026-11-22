@@ -278,61 +278,68 @@ onMounted(() => {
 </script>
 
 <style scoped>
+/* 三个统计数字 + 一段口径说明：一条横带，不用三张卡 */
 .sw-stats {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 32px;
-  padding: 16px 20px;
-  margin-bottom: 14px;
+  flex-wrap: wrap;
 }
 .sw-stat {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  min-width: 80px;
+  gap: 4px;
+  min-width: 72px;
 }
 .sw-stat b {
-  font-size: 24px;
+  font-size: 20px;
+  font-weight: 500;
   line-height: 1.2;
-  color: var(--sent-text, #1f2d3d);
+  font-variant-numeric: tabular-nums;
+  color: var(--sent-ink);
 }
 .sw-stat span {
   font-size: 12px;
-  color: var(--sent-text-muted, #8a94a6);
-}
-.sw-stat--on b {
-  color: #1f9d55;
+  color: var(--sent-ink-3);
 }
 .sw-stat--off b {
-  color: #b88230;
+  color: var(--sent-ink-3);
 }
 .sw-stats__hint {
-  flex: 1;
+  flex: 1 1 320px;
   margin: 0;
-  line-height: 1.7;
 }
+
 .sw-word {
-  font-size: 14px;
-  color: #c0392b;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--sent-ink);
 }
+
+/* 分类：6px 色点 + 文字。原来四种淡底药丸里有一个是薰衣草紫。 */
 .sw-category {
-  display: inline-block;
-  padding: 1px 8px;
-  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
-  background: #eef2f7;
-  color: #4b5b6f;
+  color: var(--sent-ink-2);
+  white-space: nowrap;
 }
-.sw-category--profanity {
-  background: #fdecea;
-  color: #c0392b;
+.sw-category::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--sent-ink-3);
 }
-.sw-category--ad {
-  background: #fff5e6;
-  color: #b88230;
+.sw-category--profanity::before {
+  background: var(--sent-danger);
 }
-.sw-category--illegal {
-  background: #f0ecff;
-  color: #6d4bd1;
+.sw-category--ad::before {
+  background: var(--sent-warn);
+}
+.sw-category--illegal::before {
+  background: var(--sent-primary);
 }
 </style>

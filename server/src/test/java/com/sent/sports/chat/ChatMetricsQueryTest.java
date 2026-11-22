@@ -30,6 +30,9 @@ import static org.mockito.Mockito.when;
  * <p>口径与工作台「今日满意率」一致：满意率 = SATISFIED ÷ 有效评价，无评价为 -1（前端 --）；
  * 解决率 = 小结 result=DONE 的会话 ÷ 已结束会话，无会话为 -1。
  * 区间统一半开 [from, to)，保证「近 7 天」「自定义时间」边界不重不漏。</p>
+ *
+ * <p>2026-11-21 增补：指标行带坐席当前状态（在线/忙碌/离线），并支持按状态过滤——
+ * 状态是「此刻」的值，与统计区间的历史聚合互不影响。</p>
  */
 class ChatMetricsQueryTest extends BaseUnitTest {
 
@@ -59,8 +62,8 @@ class ChatMetricsQueryTest extends BaseUnitTest {
     @Test
     void metricsAggregatesEachStaffAndComputesRates() {
         when(metricsMapper.selectMetrics(eq(FROM), eq(TO), eq(null))).thenReturn(List.of(
-                po(9001L, "客服甲", 10, 8, 6, 7, 300),
-                po(9002L, "客服乙", 5, 0, 0, 0, 0)));
+                po(9001L, "客服甲", 10, 8, 6, 7, 300, "ONLINE"),
+                po(9002L, "客服乙", 5, 0, 0, 0, 0, "BUSY")));
 
         var result = queryService.metrics(FROM, TO, null);
 
@@ -76,6 +79,7 @@ class ChatMetricsQueryTest extends BaseUnitTest {
         assertEquals(75, first.satisfactionRate(), "满意 6 / 有效 8 = 75%");
         assertEquals(70, first.resolutionRate(), "解决 7 / 接待 10 = 70%");
         assertEquals(300L, first.avgDurationSeconds());
+        assertEquals("ONLINE", first.presence(), "指标行要带坐席当前状态，指标页据此实时展示");
         var second = result.rows().get(1);
         assertEquals(-1, second.satisfactionRate(), "无评价显示 --，不能误显示 0%");
         assertEquals(0, second.resolutionRate(), "有接待但没填小结 = 0%，与无接待不同");
@@ -94,17 +98,18 @@ class ChatMetricsQueryTest extends BaseUnitTest {
     @Test
     void metricsWithoutAnyClosedSessionShowsDashForBothRates() {
         when(metricsMapper.selectMetrics(any(), any(), any())).thenReturn(List.of(
-                po(9003L, "客服丙", 0, 0, 0, 0, 0)));
+                po(9003L, "客服丙", 0, 0, 0, 0, 0, "OFFLINE")));
 
         var row = queryService.metrics(FROM, TO, null).rows().get(0);
 
         assertEquals(-1, row.satisfactionRate());
         assertEquals(-1, row.resolutionRate(), "零接待时解决率也应显示 --");
         assertEquals(0L, row.avgDurationSeconds());
+        assertEquals("OFFLINE", row.presence(), "没有在职状态记录时按离线展示，不能显示成在线");
     }
 
     private static ChatMetricsRowPO po(long staffId, String name, int closed, int rated,
-                                       int satisfied, int resolved, long avgSeconds) {
+                                       int satisfied, int resolved, long avgSeconds, String presence) {
         ChatMetricsRowPO po = new ChatMetricsRowPO();
         po.setStaffId(staffId);
         po.setStaffName(name);
@@ -113,6 +118,7 @@ class ChatMetricsQueryTest extends BaseUnitTest {
         po.setSatisfiedCount(satisfied);
         po.setResolvedCount(resolved);
         po.setAvgDurationSeconds(avgSeconds);
+        po.setPresence(presence);
         return po;
     }
 }

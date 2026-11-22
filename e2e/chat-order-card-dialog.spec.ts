@@ -17,7 +17,8 @@ import { test, expect, type APIRequestContext, type Page } from '@playwright/tes
 import { startConsultation } from './chat-helpers';
 
 const USER_URL = process.env.E2E_USER_URL ?? 'http://127.0.0.1:5173';
-const ADMIN_URL = process.env.E2E_ADMIN_URL ?? 'http://127.0.0.1:5174/admin/';
+const CS_URL = process.env.E2E_CS_URL ?? 'http://127.0.0.1:5175';
+// 客服工作台已剥离到独立工程 web-cs：登录后直落 /workbench，Token 前缀 cs-token_*
 const API_URL = process.env.E2E_API_URL ?? 'http://127.0.0.1:8088/api';
 const CUSTOMER_PHONE = process.env.E2E_USER_NAME ?? '13800138000';
 const CUSTOMER_PASSWORD = process.env.E2E_USER_PASSWORD ?? '123456';
@@ -46,7 +47,7 @@ const apiPost = (r: APIRequestContext, s: string, d: unknown, t?: string) => api
 const apiGet = (r: APIRequestContext, s: string, t?: string) => apiCall(r, 'GET', s, undefined, t);
 
 async function loginAdmin(page: Page): Promise<void> {
-  await page.goto(join(ADMIN_URL, '/login'));
+  await page.goto(join(CS_URL, '/login'));
   await page.getByPlaceholder('用户名').fill(ADMIN_NAME);
   await page.getByPlaceholder('密码').fill(ADMIN_PASSWORD);
   const resp = page.waitForResponse(
@@ -56,7 +57,10 @@ async function loginAdmin(page: Page): Promise<void> {
   await page.getByRole('button', { name: '登录' }).click();
   const body: any = await (await resp).json().catch(() => null);
   expect(body?.code).toBe(0);
-  await expect(page).toHaveURL(/\/admin\/dashboard/, { timeout: 20_000 });
+  await expect(page).toHaveURL(/\/workbench/, { timeout: 20_000 });
+  // 2026-11-21 起客服登录默认离线：真实客服也要手动切在线才开始接单，用例照做
+  await page.locator('[data-testid="presence-online"]').click();
+  await expect(page.locator('[data-testid="presence-online"]')).toHaveClass(/is-active/, { timeout: 15_000 });
 }
 
 test('客服点聊天订单卡片：当前页弹详情且左上角可关闭，不跳页', async ({ browser, request }) => {
@@ -116,7 +120,7 @@ test('客服点聊天订单卡片：当前页弹详情且左上角可关闭，�
 
   try {
     await loginAdmin(adminPage);
-    await adminPage.goto(join(ADMIN_URL, '/chat/workbench'));
+    await adminPage.goto(join(CS_URL, '/workbench'));
     await expect(adminPage.locator('.el-tag', { hasText: 'WebSocket 已连接' })).toBeVisible({ timeout: 20_000 });
     const sessionItem = adminPage.locator('.session-item', { hasText: `会话 #${sessionId}` }).first();
     await expect(sessionItem).toBeVisible({ timeout: 20_000 });
@@ -130,7 +134,7 @@ test('客服点聊天订单卡片：当前页弹详情且左上角可关闭，�
     // 2) 点卡片按钮：不跳页
     await card.locator('.chat-order__btn').click();
     await expect.poll(() => new URL(adminPage.url()).pathname, { timeout: 10_000 })
-      .toBe('/admin/chat/workbench');
+      .toBe('/workbench');
 
     // 3) 当前页弹详情，显示该订单号
     const dialog = adminPage.locator('.order-detail-dialog');

@@ -140,7 +140,6 @@ onMounted(() => { void load(); });
 </script>
 
 <style scoped>
-.section-title { margin: 0 0 14px; font-size: 15px; color: #33463f; }
 .perm-groups { margin-top: 8px; }
 .perm-group { border: 1px solid #e6ece9; border-radius: 6px; padding: 10px 12px; margin-bottom: 10px; }
 .perm-group-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }

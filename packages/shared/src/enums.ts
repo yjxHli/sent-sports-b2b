@@ -233,3 +233,31 @@ export function statusTone(
   const key = status ? status.toUpperCase() : '';
   return (key && (dict?.[key] ?? TONE_MAP[key])) || 'info';
 }
+
+// ---------------------------------------------------------------------------
+// 定制退款三档（与后端 customize/service/CustomRefundPolicy 同口径，2026-11-21）
+// ---------------------------------------------------------------------------
+//
+// 三档规则：审核通过前随便退、审核通过未排产要人工确认、一旦排产绝对不退。
+// **前端只做展示层预判**（按钮能不能点、点了说什么），判定真源永远在后端
+// （申请退款时逐行联查定制单状态，已排产回 CUSTOM_REFUND_NOT_ALLOWED 40980）。
+// 放在 shared 里是因为「订单详情」与「定制单详情」两处都要用，各抄一份必然漂。
+
+/** 已进入生产链路：绝对不可退（IN_PRODUCTION 生产中 / FINISHED 已完工 / SHIPPED 已发货）。 */
+export const CUSTOM_REFUND_BLOCKED_STATUS: readonly string[] = ['IN_PRODUCTION', 'FINISHED', 'SHIPPED'];
+
+/** 图纸已过审未排产：可申请，但必须由客服人工确认是否已备料。 */
+export const CUSTOM_REFUND_MANUAL_STATUS: readonly string[] = ['APPROVED', 'ESCALATED'];
+
+/** 定制已排产时的统一提示语（弹窗与提示条共用一份，别再各写一句）。 */
+export const CUSTOM_REFUND_BLOCK_TEXT = '定制商品已开始生产，无法申请退款。如有质量问题请联系客服。';
+
+/** 该定制状态是否已进入生产链路（不可退）。 */
+export function isCustomRefundBlocked(status?: string | null): boolean {
+  return CUSTOM_REFUND_BLOCKED_STATUS.includes(String(status ?? '').toUpperCase());
+}
+
+/** 该定制状态是否属于「可申请但需人工复核」。 */
+export function isCustomRefundManual(status?: string | null): boolean {
+  return CUSTOM_REFUND_MANUAL_STATUS.includes(String(status ?? '').toUpperCase());
+}

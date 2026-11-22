@@ -1,0 +1,146 @@
+[
+  {
+    "viewport": "1280",
+    "page": "home",
+    "overflow": 0,
+    "cols": 5,
+    "cardWidth": 234,
+    "containerWidth": 1216
+  },
+  {
+    "viewport": "1280",
+    "page": "products",
+    "overflow": 0,
+    "cols": 5,
+    "cardWidth": 240,
+    "containerWidth": 1248
+  },
+  {
+    "viewport": "1280",
+    "page": "cart",
+    "overflow": 0,
+    "cols": null,
+    "cardWidth": null,
+    "containerWidth": null
+  },
+  {
+    "viewport": "1280",
+    "page": "mine",
+    "overflow": 0,
+    "cols": null,
+    "cardWidth": 233,
+    "containerWidth": null
+  },
+  {
+    "viewport": "1280",
+    "page": "coupon",
+    "overflow": 0,
+    "cols": 5,
+    "cardWidth": 240,
+    "containerWidth": 1248
+  },
+  {
+    "viewport": "1280",
+    "page": "group-buy",
+    "overflow": 0,
+    "cols": 5,
+    "cardWidth": 233,
+    "containerWidth": 1212
+  },
+  {
+    "viewport": "1440",
+    "page": "home",
+    "overflow": 0,
+    "cols": 6,
+    "cardWidth": 219,
+    "containerWidth": 1376
+  },
+  {
+    "viewport": "1440",
+    "page": "products",
+    "overflow": 0,
+    "cols": 6,
+    "cardWidth": 225,
+    "containerWidth": 1408
+  },
+  {
+    "viewport": "1440",
+    "page": "cart",
+    "overflow": 0,
+    "cols": null,
+    "cardWidth": null,
+    "containerWidth": null
+  },
+  {
+    "viewport": "1440",
+    "page": "mine",
+    "overflow": 0,
+    "cols": null,
+    "cardWidth": 265,
+    "containerWidth": null
+  },
+  {
+    "viewport": "1440",
+    "page": "coupon",
+    "overflow": 0,
+    "cols": 6,
+    "cardWidth": 225,
+    "containerWidth": 1408
+  },
+  {
+    "viewport": "1440",
+    "page": "group-buy",
+    "overflow": 0,
+    "cols": 6,
+    "cardWidth": 219,
+    "containerWidth": 1372
+  },
+  {
+    "viewport": "1920",
+    "page": "home",
+    "overflow": 0,
+    "cols": 6,
+    "cardWidth": 225,
+    "containerWidth": 1408
+  },
+  {
+    "viewport": "1920",
+    "page": "products",
+    "overflow": 0,
+    "cols": 6,
+    "cardWidth": 230,
+    "containerWidth": 1440
+  },
+  {
+    "viewport": "1920",
+    "page": "cart",
+    "overflow": 0,
+    "cols": null,
+    "cardWidth": null,
+    "containerWidth": null
+  },
+  {
+    "viewport": "1920",
+    "page": "mine",
+    "overflow": 0,
+    "cols": null,
+    "cardWidth": 271,
+    "containerWidth": null
+  },
+  {
+    "viewport": "1920",
+    "page": "coupon",
+    "overflow": 0,
+    "cols": 6,
+    "cardWidth": 230,
+    "containerWidth": 1440
+  },
+  {
+    "viewport": "1920",
+    "page": "group-buy",
+    "overflow": 0,
+    "cols": 6,
+    "cardWidth": 224,
+    "containerWidth": 1404
+  }
+]

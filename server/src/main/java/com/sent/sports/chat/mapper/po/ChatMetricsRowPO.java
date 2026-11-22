@@ -10,6 +10,8 @@ public class ChatMetricsRowPO {
     private int satisfiedCount;
     private int resolvedCount;
     private long avgDurationSeconds;
+    /** 坐席当前状态（staff_presence.status），无记录为 OFFLINE */
+    private String presence;
 
     public long getStaffId() {
         return staffId;
@@ -65,5 +67,13 @@ public class ChatMetricsRowPO {
 
     public void setAvgDurationSeconds(long avgDurationSeconds) {
         this.avgDurationSeconds = avgDurationSeconds;
+    }
+
+    public String getPresence() {
+        return presence;
+    }
+
+    public void setPresence(String presence) {
+        this.presence = presence;
     }
 }

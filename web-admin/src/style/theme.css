@@ -1,22 +1,143 @@
 /**
- * 森特品牌主题（P6-11）：主色 #12664F、强调 #FF7A1A。
- * 使用原生 CSS 变量覆盖 ElementPlus，避免为一份变量表引入 sass 工具链。
+ * 森特体育 · 管理端设计令牌
+ *
+ * 设计语言（2026-11-21 第二轮，参照企业级数据后台的排版结构）：
+ * 1. 三层表面：页面底（浅暖灰）/ 卡片白 / 卡片内发丝线分区；卡片只在需要"浮起来"时给
+ *    1px 边框 + 极轻投影，不靠大阴影堆叠；
+ * 2. 一条中性 ramp（暖绿灰，像纸箱与器材标签），三档文字色；
+ * 3. 品牌墨绿 #12664f 用在可点 / 选中 / 主按钮；强调橙 #ff7a1a 只用在"要你动手的那件事"
+ *    （告警、待办、增量），大面积一律不用；
+ * 4. 排版骨架：页头（标题 + 说明 + 右侧操作）→ 指标卡行 → 内容卡；卡片内的信息靠
+ *    字号与色阶分主次，不靠边框和底色堆。
+ * 5. 所有数字等宽（tabular-nums）。
+ *
+ * 用原生 CSS 变量覆盖 Element Plus，避免为一份变量表引入 sass 工具链。
  */
 :root {
-  --sent-primary: #12664f;
-  --sent-accent: #ff7a1a;
+  /* ---------- 中性 ramp ---------- */
+  --sent-bg: #f5f6f3;
+  --sent-surface: #ffffff;
+  --sent-fill: #eef0eb;
+  --sent-fill-2: #e5e8e2;
+  /* 表头专用：比通用浅底更浅、更中性（不带绿灰的脏感），与白卡只差一层发丝线 */
+  --sent-thead-bg: #f7f8f7;
+  --sent-line: rgba(27, 42, 36, 0.09);
+  --sent-line-2: rgba(27, 42, 36, 0.16);
+  --sent-ink: #1b2a24;
+  --sent-ink-2: #4e5f57;
+  --sent-ink-3: #6f7e76;
 
-  --el-color-primary: #12664f;
+  /* ---------- 品牌与语义 ---------- */
+  --sent-primary: #12664f;
+  --sent-primary-hover: #0e5240;
+  --sent-primary-soft: #e7f0ec;
+  /* 强调橙：品牌色原值，用于点/填充/告警图标；做文字时用 --sent-accent-ink 保证对比度 */
+  --sent-accent: #ff7a1a;
+  --sent-accent-ink: #a34708;
+  --sent-accent-soft: #fff2e6;
+  --sent-danger: #b4322a;
+  --sent-danger-soft: #fbeeec;
+  --sent-warn: #9a6410;
+  --sent-warn-soft: #fbf3e4;
+  --sent-ok: #186b4e;
+  --sent-ok-soft: #e8f2ee;
+
+  /* ---------- 图表色阶（只用于数据可视化：KPI 顶条 / 环形扇区 / 图例点） ----------
+     不进正文文字；与暖绿灰基调同明度层，第 1 档就是品牌墨绿。 */
+  --sent-chart-1: #12664f;
+  --sent-chart-2: #2f7d8c;
+  --sent-chart-3: #9a6410;
+  --sent-chart-4: #6b5b95;
+  --sent-chart-5: #b4322a;
+  --sent-chart-6: #7f8c86;
+  /* 中性图表阶：热销商品饼图里"第一名之后"的档位 —— 只有第一名拿强调橙，
+     其余退到墨色深浅，避免 5 种彩色抢走"要动手"的橙色语义。 */
+  --sent-chart-mute-1: var(--sent-ink-2);
+  --sent-chart-mute-2: var(--sent-ink-3);
+  --sent-chart-mute-3: #8b9992;
+  --sent-chart-mute-4: #a9b4ae;
+  --sent-chart-mute-5: #c8d0cb;
+
+  /* ---------- 字号 / 字重 ---------- */
+  /* 中文在 12px 下笔画会糊，13px 是阅读性下限；12px 只留给表头、标签、分页这类非阅读文本 */
+  --fs-meta: 13px;
+  --fs-label: 13px;
+  --fs-body: 14px;
+  --fs-title: 20px;
+  --fs-figure: 28px;
+  --fs-display: 40px;
+  --fw-normal: 400;
+  --fw-medium: 500;
+  --fw-strong: 600;
+
+  /* ---------- 间距（4px 栅格） ---------- */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+  --sent-page-pad: var(--sp-5);
+
+  /* ---------- 圆角 / 阴影 / 动效 ---------- */
+  --r-control: 8px;
+  --r-card: 12px;
+  --r-panel: 12px;
+  --r-tag: 4px;
+  /* 卡片投影：只在卡片这一层用，轻到几乎看不见，作用是让白卡从浅底上"抬"1px */
+  --sent-shadow-card: 0 1px 2px rgba(27, 42, 36, 0.04), 0 1px 3px rgba(27, 42, 36, 0.03);
+  --sent-shadow: 0 8px 24px rgba(27, 42, 36, 0.12);
+  --sent-ease: 0.15s ease-out;
+
+  /* ---------- Element Plus 变量映射 ---------- */
+  --el-color-primary: var(--sent-primary);
   --el-color-primary-light-3: #4b917c;
   --el-color-primary-light-5: #7db3a1;
   --el-color-primary-light-7: #aed3c6;
   --el-color-primary-light-8: #c8e2d8;
-  --el-color-primary-light-9: #e3f1eb;
-  --el-color-primary-dark-2: #0d4b3a;
+  --el-color-primary-light-9: var(--sent-primary-soft);
+  --el-color-primary-dark-2: var(--sent-primary-hover);
 
-  --el-color-warning: #ff7a1a;
-  --el-border-radius-base: 6px;
-  --el-font-family: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --el-color-success: var(--sent-ok);
+  --el-color-success-light-9: var(--sent-ok-soft);
+  --el-color-warning: var(--sent-warn);
+  --el-color-warning-light-9: var(--sent-warn-soft);
+  --el-color-danger: var(--sent-danger);
+  --el-color-danger-light-9: var(--sent-danger-soft);
+  --el-color-error: var(--sent-danger);
+  --el-color-info: var(--sent-ink-3);
+
+  --el-text-color-primary: var(--sent-ink);
+  --el-text-color-regular: var(--sent-ink-2);
+  --el-text-color-secondary: var(--sent-ink-3);
+  --el-text-color-placeholder: #9aa79f;
+  --el-text-color-disabled: #a9b4ae;
+
+  --el-border-color: var(--sent-line-2);
+  --el-border-color-light: var(--sent-line);
+  --el-border-color-lighter: var(--sent-line);
+  --el-border-color-extra-light: var(--sent-line);
+
+  --el-bg-color: var(--sent-surface);
+  --el-bg-color-page: var(--sent-bg);
+  --el-bg-color-overlay: var(--sent-surface);
+  --el-fill-color-blank: var(--sent-surface);
+  --el-fill-color-light: var(--sent-fill);
+  --el-fill-color-lighter: var(--sent-bg);
+  --el-fill-color-extra-light: var(--sent-bg);
+
+  --el-border-radius-base: var(--r-control);
+  --el-border-radius-small: var(--r-tag);
+  --el-border-radius-round: 999px;
+
+  /* 不引外部字体：中文后台用系统栈最快，且 Segoe UI / PingFang 都支持 tabular-nums */
+  --el-font-family: system-ui, -apple-system, 'Segoe UI', 'PingFang SC',
+    'Microsoft YaHei', sans-serif;
+  --el-font-size-base: var(--fs-body);
+  --el-box-shadow-light: var(--sent-shadow);
+  --el-transition-duration: 0.15s;
 }
 
 html,
@@ -25,34 +146,483 @@ body,
   margin: 0;
   padding: 0;
   height: 100%;
-  font-family: var(--el-font-family);
 }
 
-/* 页面内不出现模板作者、演示入口等无关文案 */
+body {
+  font-family: var(--el-font-family);
+  font-size: var(--fs-body);
+  color: var(--sent-ink);
+  background: var(--sent-bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* 选中态用品牌浅绿，而不是系统蓝 */
+::selection {
+  background: var(--sent-primary-soft);
+  color: var(--sent-ink);
+}
+
 a {
   text-decoration: none;
+  color: var(--sent-primary);
 }
 
-/* 业务页通用排版，避免每个页面重复写一套 padding */
+/* ---------------------------------------------------------------------------
+ * 通用排版：页面级只有这一套，页面内不再各写一份
+ * ------------------------------------------------------------------------- */
+
+/* 页面标题：一屏里唯一的主标题（顶栏面包屑不再是标题） */
 .sent-page-title {
-  margin: 0 0 16px;
-  font-size: 18px;
-  color: #1f2d28;
+  margin: 0 0 var(--sp-4);
+  font-size: var(--fs-title);
+  font-weight: var(--fw-strong);
+  letter-spacing: -0.01em;
+  color: var(--sent-ink);
+  line-height: 1.3;
 }
+
+/* 页头：标题 + 说明（左） / 操作（右）。参照的排版结构里，页头是独立一层，
+   下面是卡片区，不再把标题塞进第一张卡里。 */
+.sent-page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-4);
+}
+.sent-page-head__main {
+  min-width: 0;
+}
+.sent-page-head .sent-page-title {
+  margin-bottom: 0;
+}
+.sent-page-desc {
+  margin: 6px 0 0;
+  font-size: var(--fs-label);
+  line-height: 1.6;
+  color: var(--sent-ink-3);
+}
+.sent-page-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-shrink: 0;
+}
+
+/* 卡片：白面 + 1px 发丝边 + 12px 圆角 + 极轻投影（只在卡片这一层抬起来） */
 .sent-panel {
-  background: #fff;
-  border-radius: 8px;
-  padding: 18px;
-  margin-bottom: 16px;
+  background: var(--sent-surface);
+  border: 1px solid var(--sent-line);
+  border-radius: var(--r-card);
+  padding: var(--sp-5);
+  margin-bottom: var(--sp-4);
+  box-shadow: var(--sent-shadow-card);
 }
+/* 面板头：标题在左、操作在右，与卡片内容用发丝线分开 */
+.sent-panel__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin: calc(var(--sp-1) * -1) 0 var(--sp-4);
+  padding-bottom: var(--sp-3);
+  border-bottom: 1px solid var(--sent-line);
+}
+.sent-panel__head .section-title {
+  margin: 0;
+}
+.sent-panel__meta {
+  font-size: var(--fs-meta);
+  color: var(--sent-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 指标卡行：label / 数字 + 单位 / 说明，右上角一个 16px 语义图标 */
+.sent-stat-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-4);
+}
+.sent-stat {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: 18px var(--sp-5);
+  background: var(--sent-surface);
+  border: 1px solid var(--sent-line);
+  border-radius: var(--r-card);
+  box-shadow: var(--sent-shadow-card);
+}
+.sent-stat__label {
+  padding-right: 28px; /* 给右上角的图标留位，长标签不会跑到图标下面 */
+  font-size: var(--fs-meta);
+  color: var(--sent-ink-3);
+  line-height: 1.4;
+}
+.sent-stat__value {
+  font-size: var(--fs-figure);
+  font-weight: var(--fw-strong);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--sent-ink);
+}
+.sent-stat__unit {
+  margin-left: 4px;
+  font-size: var(--fs-meta);
+  font-weight: var(--fw-normal);
+  letter-spacing: 0;
+  color: var(--sent-ink-3);
+}
+.sent-stat__hint {
+  margin-top: var(--sp-1);
+  font-size: var(--fs-meta);
+  line-height: 1.5;
+  color: var(--sent-ink-3);
+}
+.sent-stat__icon {
+  position: absolute;
+  top: 16px;
+  right: 18px;
+  font-size: 16px;
+  color: #aebbaf;
+}
+/* 需要人动手的那个数字才上强调色 */
+.sent-stat--alert .sent-stat__value {
+  color: var(--sent-accent-ink);
+}
+.sent-stat--alert .sent-stat__icon {
+  color: var(--sent-accent);
+}
+
+/* 面板内小节标题（原本 11 个页面各抄一份，三处 margin 已经漂移）
+ * refund-detail 的 E2E 依赖 h3.section-title 这个类名，所以沿用原名做全局定义。 */
+.section-title {
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-strong);
+  color: var(--sent-ink);
+  line-height: 1.4;
+}
+/* 不在面板里、用来切分段落的小节标题需要一点上方留白 */
+.section-title--spaced {
+  margin-top: var(--sp-6);
+}
+
 .sent-form-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--sp-2);
   flex-wrap: wrap;
-  margin-bottom: 12px;
+  margin-bottom: var(--sp-3);
 }
+
+/* 说明文字：12px 弱色，最多两行，不做卡片 */
 .sent-hint {
+  font-size: var(--fs-meta);
+  line-height: 1.7;
+  color: var(--sent-ink-3);
+}
+
+/* 数字：等宽，右对齐由使用处决定 */
+.sent-num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+/* ---------------------------------------------------------------------------
+ * Element Plus 组件覆盖：让默认脸退回到这套令牌里
+ * ------------------------------------------------------------------------- */
+
+/* 按钮：字重 500，圆角跟随令牌，去掉 Element 的 700 观感 */
+.el-button {
+  font-weight: var(--fw-medium);
+  border-radius: var(--r-control);
+}
+.el-button--primary {
+  --el-button-bg-color: var(--sent-primary);
+  --el-button-border-color: var(--sent-primary);
+  --el-button-hover-bg-color: var(--sent-primary-hover);
+  --el-button-hover-border-color: var(--sent-primary-hover);
+}
+.el-button.is-link {
+  font-weight: var(--fw-medium);
+}
+
+/* 输入类控件 */
+.el-input__wrapper,
+.el-textarea__inner,
+.el-select__wrapper {
+  border-radius: var(--r-control);
+  box-shadow: 0 0 0 1px var(--sent-line-2) inset;
+}
+.el-input__wrapper.is-focus,
+.el-select__wrapper.is-focused {
+  box-shadow: 0 0 0 1px var(--sent-primary) inset;
+}
+
+/* 卡片：与 .sent-panel 同一套表面，保留 Element 的 header 结构给 el-card 页面用 */
+.el-card {
+  border-radius: var(--r-card);
+  border-color: var(--sent-line);
+  box-shadow: var(--sent-shadow-card) !important;
+}
+.el-card__header {
+  padding: var(--sp-3) var(--sp-5);
+  border-bottom: 1px solid var(--sent-line);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-strong);
+  color: var(--sent-ink);
+}
+.el-card__body {
+  padding: var(--sp-5);
+}
+
+/* 表格：无竖线、无斑马纹；表头浅底 + 发丝下线（参照的表头是浅灰条，不是透明）；
+   行高 44，数字等宽 */
+.el-table {
+  --el-table-border-color: transparent;
+  --el-table-border: none;
+  --el-table-header-bg-color: var(--sent-thead-bg);
+  --el-table-header-text-color: var(--sent-ink-2);
+  --el-table-text-color: var(--sent-ink);
+  --el-table-row-hover-bg-color: var(--sent-bg);
+  --el-table-current-row-bg-color: var(--sent-primary-soft);
+  font-size: var(--fs-label);
+}
+.el-table th.el-table__cell {
+  padding: 0;
+  height: 40px;
+  background: var(--sent-thead-bg) !important;
+  border-bottom: 1px solid var(--sent-line-2) !important;
+  /* 表头是标签不是正文：保持 12px，列宽才不会被顶开 */
   font-size: 12px;
-  color: #9aa8a2;
+  font-weight: var(--fw-medium);
+  letter-spacing: 0.02em;
+}
+.el-table td.el-table__cell {
+  padding: 0;
+  height: 44px;
+  border-bottom: 1px solid var(--sent-line) !important;
+  font-variant-numeric: tabular-nums;
+}
+.el-table__inner-wrapper::before {
+  display: none;
+}
+.el-table--border .el-table__cell {
+  border-right: none !important;
+}
+.el-table .cell {
+  padding: 0 var(--sp-3);
+  line-height: 1.5;
+  /* Element 默认 word-break: break-all，会把单号从中间劈成两行
+     （回款页的「SO20261121924482」被撕成 2 行，行高 40 装不下）。
+     统一改单行 + 省略号：列窄时截断，行高恒定。 */
+  white-space: nowrap;
+  word-break: keep-all;
+  text-overflow: ellipsis;
+}
+/* 紧凑表（size="small"）左右留白同步收一格，否则窄分栏里列宽永远差 40px */
+.el-table--small .cell {
+  padding: 0 var(--sp-2);
+}
+.el-table__body tr:last-child td.el-table__cell {
+  border-bottom: none !important;
+}
+/* 固定列必须是不透明表面：表头底色改成浅色后，右侧固定列若透明，
+   下面的列文字会透上来（客户列表的「创建时间」被「操作」压住就是这个原因） */
+.el-table .el-table-fixed-column--left,
+.el-table .el-table-fixed-column--right {
+  background: var(--sent-surface) !important;
+}
+.el-table th.el-table-fixed-column--left,
+.el-table th.el-table-fixed-column--right {
+  background: var(--sent-thead-bg) !important;
+}
+.el-table__body tr:hover > td.el-table-fixed-column--left,
+.el-table__body tr:hover > td.el-table-fixed-column--right {
+  background: var(--sent-bg) !important;
+}
+.el-table .el-table-fixed-column--right {
+  box-shadow: inset 1px 0 0 var(--sent-line);
+}
+.el-table .el-table-fixed-column--left.is-last-column {
+  box-shadow: inset -1px 0 0 var(--sent-line);
+}
+
+/* 分页器：小一号，去掉每块都圆角发亮的方块感 */
+.el-pagination {
+  --el-pagination-button-bg-color: transparent;
+  --el-pagination-hover-color: var(--sent-primary);
+  font-size: 12px;
+  font-weight: var(--fw-normal);
+  color: var(--sent-ink-3);
+  /* 一行放不下就折行：窄面板里分页器溢到隔壁列上时，右侧列的盒子会盖住「下一页」，
+     鼠标点不到（回款登记页就是这样被 E2E 抓到的）。 */
+  flex-wrap: wrap;
+  row-gap: var(--sp-1);
+  max-width: 100%;
+}
+.el-pagination.is-background .el-pager li {
+  border-radius: var(--r-tag);
+  background: transparent;
+  font-weight: var(--fw-medium);
+  color: var(--sent-ink-2);
+}
+.el-pagination.is-background .el-pager li.is-active {
+  background: var(--sent-primary);
+  color: #fff;
+}
+.el-pagination.is-background .btn-prev,
+.el-pagination.is-background .btn-next {
+  border-radius: var(--r-tag);
+  background: transparent;
+}
+
+/* 标签：去边框、4px 圆角、12px，不再是药丸 */
+.el-tag {
+  height: 20px;
+  padding: 0 var(--sp-1);
+  border: none;
+  border-radius: var(--r-tag);
+  font-size: 12px;
+  font-weight: var(--fw-medium);
+  line-height: 20px;
+}
+.el-tag--small {
+  height: 18px;
+  line-height: 18px;
+  padding: 0 4px;
+}
+
+/* 弹窗 / 抽屉 / 气泡：圆角 12，唯一允许投影的地方 */
+.el-dialog,
+.el-drawer,
+.el-message-box {
+  border-radius: var(--r-panel);
+  box-shadow: var(--sent-shadow);
+}
+.el-dialog__header,
+.el-message-box__header {
+  padding: var(--sp-5) var(--sp-5) var(--sp-2);
+}
+.el-message-box__title {
+  font-size: var(--fs-body);
+  font-weight: var(--fw-strong);
+  color: var(--sent-ink);
+}
+.el-message-box__content {
+  padding: 0 var(--sp-5) var(--sp-4);
+  font-size: var(--fs-label);
+  color: var(--sent-ink-2);
+  line-height: 1.7;
+}
+.el-message-box__btns {
+  padding: 0 var(--sp-5) var(--sp-5);
+}
+
+/* 下拉 / 提示 */
+.el-dropdown-menu__item,
+.el-select-dropdown__item {
+  font-size: var(--fs-label);
+}
+.el-popper {
+  border-radius: var(--r-card);
+}
+
+/* 空状态：默认 3D 插画是"没设计过"的信号，全站隐藏，只留一句话 */
+.el-empty__image {
+  display: none;
+}
+.el-empty {
+  padding: var(--sp-8) 0;
+}
+.el-empty__description p {
+  font-size: var(--fs-label);
+  color: var(--sent-ink-3);
+}
+
+/* 描述列表：默认是「每个单元格都带框」的表格感，改成标签弱、内容主、只留横向发丝线 */
+.el-descriptions__label.el-descriptions__cell.is-bordered-label {
+  background: transparent;
+  color: var(--sent-ink-3);
+  font-weight: var(--fw-normal);
+  font-size: var(--fs-meta);
+}
+.el-descriptions__cell {
+  border-left: none !important;
+  border-right: none !important;
+  border-top: none !important;
+  border-bottom: 1px solid var(--sent-line) !important;
+  font-size: var(--fs-label);
+}
+.el-descriptions__body .el-descriptions__table {
+  border: none !important;
+}
+.el-descriptions__body .el-descriptions__table tbody tr:last-child .el-descriptions__cell {
+  border-bottom: none !important;
+}
+
+/* 表单 / 树 / 步骤条 / 提示条：统一字号与圆角，避免每个页面各自微调 */
+.el-form-item__label {
+  font-size: var(--fs-label);
+  color: var(--sent-ink-2);
+}
+
+.el-tree {
+  --el-tree-node-hover-bg-color: var(--sent-fill);
+  font-size: var(--fs-label);
+  color: var(--sent-ink);
+}
+.el-tree-node__content {
+  height: 32px;
+  border-radius: var(--r-tag);
+}
+.el-tree-node.is-current > .el-tree-node__content {
+  background: var(--sent-primary-soft);
+  color: var(--sent-primary);
+  font-weight: var(--fw-medium);
+}
+
+.el-steps .el-step__title {
+  font-size: var(--fs-meta);
+  line-height: 1.4;
+  color: var(--sent-ink-3);
+}
+.el-steps .el-step__title.is-process {
+  color: var(--sent-ink);
+  font-weight: var(--fw-medium);
+}
+.el-steps .el-step__icon {
+  width: 20px;
+  height: 20px;
+  font-size: 11px;
+}
+
+.el-alert {
+  border-radius: var(--r-control);
+  padding: 10px 12px;
+}
+.el-alert .el-alert__title {
+  font-size: var(--fs-label);
+}
+.el-radio-button__inner {
+  font-size: var(--fs-meta);
+}
+
+/* 危险确认弹窗（openConfirm 挂 customClass: sent-confirm） */
+.sent-confirm .el-message-box__status {
+  display: none;
+}
+.sent-confirm .el-message-box__header {
+  padding-bottom: 0;
+}
+.sent-confirm .el-message-box__btns .el-button--primary {
+  --el-button-bg-color: var(--sent-danger);
+  --el-button-border-color: var(--sent-danger);
+  --el-button-hover-bg-color: #9c2a23;
+  --el-button-hover-border-color: #9c2a23;
 }

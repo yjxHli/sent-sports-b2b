@@ -17,4 +17,10 @@ public interface CustomQueryService {
 
     /** 用户端「我的定制单」分页：联查订单状态与最新图稿版本。 */
     PageResult<CustomDtos.MyCustomOrderVO> myOrders(long customerId, PageQuery pageQuery);
+
+    /**
+     * 按订单号查该订单下的定制单（订单详情页「UV 定制」卡片用）。
+     * <p>只返回当前客户自己的订单（越权返回空列表），订单无定制件时返回空列表。</p>
+     */
+    java.util.List<CustomDtos.OrderCustomVO> ordersOfOrder(long customerId, String orderNo);
 }

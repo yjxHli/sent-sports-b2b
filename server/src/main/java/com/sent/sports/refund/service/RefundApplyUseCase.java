@@ -4,6 +4,7 @@ import com.sent.sports.common.anno.UseCase;
 import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
 import com.sent.sports.common.util.IdGen;
+import com.sent.sports.customize.service.CustomRefundPolicy;
 import com.sent.sports.customize.service.CustomizeRefundGateway;
 import com.sent.sports.order.service.OrderRefundViewService;
 import com.sent.sports.order.service.dto.OrderRefundView;
@@ -23,9 +24,10 @@ import java.util.Optional;
 import org.springframework.stereotype.Service;
 
 /**
- * 申请退款用例（P3-19）：plan §7.6 与验收项——凭证必填、定制已排产不可退款、超退拒绝、未知行/订单不存在、生成待审核退款单。
+ * 申请退款用例（P3-19）：plan §7.6 与验收项——凭证必填、定制三档退款处置、超退拒绝、未知行/订单不存在、生成待审核退款单。
  * 经 order 模块 OrderRefundViewService 门面读取退款项（不直连 order.domain），
- * 经 customize 模块 CustomizeRefundGateway 门面判定定制是否进入生产（不直接依赖 customize.domain，ArchUnit 规则 4）。
+ * 经 customize 模块 CustomizeRefundGateway 门面取定制行的退款档位
+ * （{@link CustomRefundPolicy}：可自助 / 需人工 / 禁止；不直接依赖 customize.domain，ArchUnit 规则 4）。
  */
 @Service
 public class RefundApplyUseCase {
@@ -55,11 +57,17 @@ public class RefundApplyUseCase {
         // 2) 订单及其退款项（行实付、已退、运费、是否已发货）
         OrderRefundView view = orderRefundViewService.getView(cmd.orderNo())
                 .orElseThrow(() -> new BizException(ErrorCode.PARAM_INVALID, "订单不存在"));
-        // 3) 定制已排产不可退款
+        // 3) 定制三档处置（唯一真源在 customize 门面，这里只按档位分流）
+        //    BLOCKED：已进生产链路，整单拒绝——不能只退普通行，留个退不掉又已经破损的定制单给客户；
+        //    MANUAL_REVIEW：APPROVED 未排产，允许提交但要客服确认是否已备料，故给退款单打标记。
+        boolean needManualReview = false;
         for (RefundApplyLineCmd line : cmd.lines()) {
-            if (customizeRefundGateway.isRefundBlocked(cmd.orderNo(), line.skuId())) {
-                throw new BizException(ErrorCode.STATE_CONFLICT, "定制已排产，不可退款");
+            CustomRefundPolicy policy = customizeRefundGateway.policyOf(cmd.orderNo(), line.skuId());
+            if (policy.isBlocked()) {
+                throw new BizException(ErrorCode.CUSTOM_REFUND_NOT_ALLOWED,
+                        "定制商品已开始生产，无法申请退款。如有质量问题请联系客服。");
             }
+            needManualReview |= policy.needsManualReview();
         }
         // 4) 逐行 + 整单超退校验
         List<RefundCalculator.RefundLine> refundLines = new ArrayList<>();
@@ -81,6 +89,7 @@ public class RefundApplyUseCase {
         RefundOrder ro = new RefundOrder(refundNo, cmd.orderNo(), view.orderId(), totalRequested, "REFUND",
                 cmd.reason(), RefundStatus.PENDING, clock.instant().toEpochMilli());
         ro.setImages(cmd.images());
+        ro.setNeedManualReview(needManualReview);
         refundRepository.save(ro);
         return new RefundApplyResult(refundNo, cmd.orderNo(), ro.getStatus().name(), totalRequested);
     }

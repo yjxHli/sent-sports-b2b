@@ -15,7 +15,8 @@
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
 
 const USER_URL = process.env.E2E_USER_URL ?? 'http://127.0.0.1:5173';
-const ADMIN_URL = process.env.E2E_ADMIN_URL ?? 'http://127.0.0.1:5174/admin/';
+const CS_URL = process.env.E2E_CS_URL ?? 'http://127.0.0.1:5175';
+// 客服工作台已剥离到独立工程 web-cs：登录后直落 /workbench，Token 前缀 cs-token_*
 const API_URL = process.env.E2E_API_URL ?? 'http://127.0.0.1:8088/api';
 const CUSTOMER_PHONE = process.env.E2E_USER_NAME ?? '13800138000';
 const CUSTOMER_PASSWORD = process.env.E2E_USER_PASSWORD ?? '123456';
@@ -44,7 +45,7 @@ async function api(
 }
 
 async function loginAdmin(page: Page): Promise<void> {
-  await page.goto(join(ADMIN_URL, '/login'));
+  await page.goto(join(CS_URL, '/login'));
   await page.getByPlaceholder('用户名').fill(ADMIN_NAME);
   await page.getByPlaceholder('密码').fill(ADMIN_PASSWORD);
   const resp = page.waitForResponse(
@@ -54,7 +55,10 @@ async function loginAdmin(page: Page): Promise<void> {
   await page.getByRole('button', { name: '登录' }).click();
   const body: any = await (await resp).json().catch(() => null);
   expect(body?.code, `管理端登录失败：${JSON.stringify(body)}`).toBe(0);
-  await expect(page).toHaveURL(/\/admin\/dashboard/, { timeout: 20_000 });
+  await expect(page).toHaveURL(/\/workbench/, { timeout: 20_000 });
+  // 2026-11-21 起客服登录默认离线：真实客服也要手动切在线才开始接单，用例照做
+  await page.locator('[data-testid="presence-online"]').click();
+  await expect(page.locator('[data-testid="presence-online"]')).toHaveClass(/is-active/, { timeout: 15_000 });
 }
 
 async function loginCustomer(page: Page): Promise<void> {
@@ -115,6 +119,10 @@ test('工作台常驻时，每位新客户进线都要自动弹出聊天框', as
   for (const staffId of STAFF_IDS) {
     await api(request, 'POST', '/admin/chat/presence', { staffId, presence: 'OFFLINE' }, adminToken);
   }
+  // 先把 9001 切在线再清场：离线坐席的 /sessions/open 不下发排队栏，且 close 只对 ACTIVE 生效，
+  // 直接按离线队列去关，那两条 2026-06 的 WAITING 演示会话永远清不掉，
+  // 9001 一上线就被补位成 ACTIVE，工作台开场就多出一个 Tab（`.el-tabs__item` 计数断言必挂）。
+  await api(request, 'POST', '/admin/chat/presence', { staffId: 9001, presence: 'ONLINE' }, adminToken);
   // 清「所有」未结束会话：排队栏（/sessions/open）不受分页影响，能捞到 id 最小、落在列表最后一页的
   // 两条 2026-06 演示会话——服务端启动时 DemoDataGenerator 会把它们重置成 WAITING「待接入」，
   // 工作台一开始就不空，`.el-tabs__item` 计数断言必挂
@@ -136,7 +144,7 @@ test('工作台常驻时，每位新客户进线都要自动弹出聊天框', as
   try {
     // 1) 工作台先打开、此时列表为空
     await loginAdmin(adminPage);
-    await adminPage.goto(join(ADMIN_URL, '/chat/workbench'));
+    await adminPage.goto(join(CS_URL, '/workbench'));
     await expect(adminPage.locator('.el-tag', { hasText: 'WebSocket 已连接' })).toBeVisible({ timeout: 20_000 });
     await expect(adminPage.locator('.el-tabs__item')).toHaveCount(0);
 

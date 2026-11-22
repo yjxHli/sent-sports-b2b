@@ -1,5 +1,6 @@
 package com.sent.sports.support;
 
+import com.sent.sports.common.config.ClockConfig;
 import com.sent.sports.common.config.MybatisPlusConfig;
 import org.apache.ibatis.annotations.Mapper;
 import org.mybatis.spring.annotation.MapperScan;
@@ -17,6 +18,8 @@ import org.springframework.context.annotation.Import;
  * 数据源 / Flyway / MyBatis-Plus / JdbcTemplate 四块，既快又能精准定位问题；
  * 全链路集成测试（P5-48~P5-50）会在装配完成后另用全量上下文。
  * <p>{@code @MapperScan} 显式限定「带 {@code @Mapper} 注解的接口」，避免把仓储端口等业务接口误注册成 Mapper。
+ * <p>{@code ClockConfig} 也必须导入：{@code ProductPriceRepositoryImpl} 等仓储注入 {@code java.time.Clock}
+ * 用「传入的现在」查生效秒杀（V54），切片应用漏装配会让整片 context 起不来（2026-11-21 踩过）。
  */
 @SpringBootConfiguration
 @EnableAutoConfiguration
@@ -24,6 +27,6 @@ import org.springframework.context.annotation.Import;
 @ComponentScan(basePackages = "com.sent.sports", useDefaultFilters = false,
         includeFilters = @ComponentScan.Filter(type = FilterType.REGEX,
                 pattern = "com\\.sent\\.sports\\..*\\.repository\\..*RepositoryImpl"))
-@Import(MybatisPlusConfig.class)
+@Import({MybatisPlusConfig.class, ClockConfig.class})
 public class PersistenceTestApplication {
 }

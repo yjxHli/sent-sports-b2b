@@ -75,6 +75,35 @@ public interface OrderMapper extends BaseMapper<OrderPO> {
     int markCustomerDeleted(@Param("orderNo") String orderNo, @Param("customerId") long customerId);
 
     /**
+     * 批量删除前的一次性读：拿这批单号在当前客户名下的订单（只回未软删的）。
+     *
+     * <p>不逐单 {@code selectByOrderNo}：一次多选可能有几十单，逐条查询就是几十次往返。
+     * 归属条件写在 SQL 里，他人的单号查不出来 → 调用方按「不存在或已删除」跳过，
+     * 与单条删除的 404 口径一致（不泄露单号是否存在）。</p>
+     */
+    @Select({"<script>",
+            "SELECT * FROM orders WHERE customer_id = #{customerId}",
+            "AND customer_deleted_at IS NULL AND order_no IN",
+            "<foreach collection='orderNos' item='no' open='(' separator=',' close=')'>#{no}</foreach>",
+            "</script>"})
+    List<OrderPO> selectByOrderNosForCustomer(@Param("customerId") long customerId,
+                                              @Param("orderNos") List<String> orderNos);
+
+    /**
+     * 批量软删：条件里再带一次 {@code customer_id} 与终态集合，
+     * 即使调用方漏判状态也不会把在途订单删掉（影响行数 &lt; 选中数即表示有单被并发改状态）。
+     */
+    @Update({"<script>",
+            "UPDATE orders SET customer_deleted_at = NOW(3), version = version + 1 ",
+            "WHERE customer_id = #{customerId} AND customer_deleted_at IS NULL ",
+            "AND status IN <foreach collection='statuses' item='st' open='(' separator=',' close=')'>#{st}</foreach> ",
+            "AND order_no IN <foreach collection='orderNos' item='no' open='(' separator=',' close=')'>#{no}</foreach>",
+            "</script>"})
+    int batchMarkCustomerDeleted(@Param("customerId") long customerId,
+                                 @Param("orderNos") List<String> orderNos,
+                                 @Param("statuses") List<String> statuses);
+
+    /**
      * 按订单 id 批量取订单行（列表页展示商品行，避免逐单 N+1 查询）。
      * <p>标题/规格与管理端详情同口径兜底：快照为空时回退 {@code product.title} /
      * {@code sku.spec_json.spec} / {@code sku_no}，否则老订单卡片会出现空白商品名。</p>
@@ -126,6 +155,28 @@ public interface OrderMapper extends BaseMapper<OrderPO> {
     /** 按订单号读取（业务唯一键，前台入口）。 */
     @Select("SELECT * FROM orders WHERE order_no = #{orderNo}")
     OrderPO selectByOrderNo(@Param("orderNo") String orderNo);
+
+    /**
+     * 评价资格（V55）：该客户「含此商品且已完成」的最近一笔订单号。
+     *
+     * <p>用 JOIN 而不是逐个 id 回查：资格判定只关心「有没有」，取一条即可。
+     * {@code skuId} 用 {@code <if>} 动态拼——写成 {@code (#{skuId} IS NULL OR ...)} 时，
+     * 参数为 null 会让 MySQL 推断不出列类型（历史上秒杀生效判定踩过同一个坑）。</p>
+     * <p>不排除 {@code customer_deleted_at}：客户把订单从「我的订单」里删掉，
+     * 不代表这笔交易没发生过，删单不该被剥夺评价权。</p>
+     */
+    @Select({"<script>",
+            "SELECT o.order_no FROM orders o ",
+            "JOIN order_item oi ON oi.order_id = o.id ",
+            "JOIN sku sk ON sk.id = oi.sku_id ",
+            "WHERE o.customer_id = #{customerId} AND o.status = 'COMPLETED' ",
+            "AND sk.spu_id = #{productId} ",
+            "<if test='skuId != null'> AND oi.sku_id = #{skuId} </if>",
+            "ORDER BY o.id DESC LIMIT 1",
+            "</script>"})
+    String selectCompletedOrderNoForReview(@Param("customerId") long customerId,
+                                           @Param("productId") long productId,
+                                           @Param("skuId") Long skuId);
 
     /**
      * 某位顾客的最近 N 笔订单（客服工作台右侧侧栏）。

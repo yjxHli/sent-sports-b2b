@@ -14,6 +14,7 @@ public class SkuPO extends BasePO {
     private String skuNo;
     private String barcode;
     private String specJson;
+    private String imageFileId;
     private Long retailPriceCent;
     private Long floorPriceCent;
     private Long costPriceCent;
@@ -50,6 +51,14 @@ public class SkuPO extends BasePO {
 
     public void setSpecJson(String specJson) {
         this.specJson = specJson;
+    }
+
+    public String getImageFileId() {
+        return imageFileId;
+    }
+
+    public void setImageFileId(String imageFileId) {
+        this.imageFileId = imageFileId;
     }
 
     public Long getRetailPriceCent() {

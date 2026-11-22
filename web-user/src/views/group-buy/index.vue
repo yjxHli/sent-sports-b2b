@@ -62,7 +62,7 @@
       </div>
       <div v-if="loading" class="list-hint">加载中…</div>
       <el-empty v-else-if="products.length === 0" description="暂无商品" />
-      <div v-else class="goods-grid gb-grid">
+      <div v-else class="goods-grid">
         <GoodsCard
           v-for="p in products"
           :key="p.productId"
@@ -359,11 +359,7 @@ onMounted(loadProducts);
   color: var(--sent-muted);
 }
 
-/* ---------- 商品网格：与分类页一致的 5 列 ---------- */
-.gb-grid {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 12px;
-}
+/* ---------- 商品网格：列数由全局 .goods-grid 自适应（1440 版心 → 6 列） ---------- */
 .list-hint {
   padding: 18px 0;
   text-align: center;
@@ -425,9 +421,6 @@ onMounted(loadProducts);
   .gb-tiers,
   .gb-rights {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .gb-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 </style>

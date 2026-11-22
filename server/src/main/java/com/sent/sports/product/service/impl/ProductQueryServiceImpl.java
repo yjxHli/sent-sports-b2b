@@ -4,14 +4,18 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
+import com.sent.sports.common.util.JsonListCodec;
 import com.sent.sports.common.util.MoneyUtil;
 import com.sent.sports.common.web.PageQuery;
 import com.sent.sports.common.web.PageResult;
 import com.sent.sports.product.dto.CatalogDtos;
 import com.sent.sports.product.mapper.CatalogMapper;
+import com.sent.sports.product.mapper.ProductMapper;
 import com.sent.sports.product.service.ProductQueryService;
 import org.springframework.stereotype.Service;
 
+import java.time.Clock;
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -24,9 +28,13 @@ import java.util.List;
 public class ProductQueryServiceImpl implements ProductQueryService {
 
     private final CatalogMapper catalogMapper;
+    private final ProductMapper productMapper;
+    private final Clock clock;
 
-    public ProductQueryServiceImpl(CatalogMapper catalogMapper) {
+    public ProductQueryServiceImpl(CatalogMapper catalogMapper, ProductMapper productMapper, Clock clock) {
         this.catalogMapper = catalogMapper;
+        this.productMapper = productMapper;
+        this.clock = clock;
     }
 
     @Override
@@ -34,7 +42,9 @@ public class ProductQueryServiceImpl implements ProductQueryService {
         Page<CatalogMapper.ProductRow> page = new Page<>(pageQuery.getPage(), pageQuery.getSize());
         IPage<CatalogMapper.ProductRow> rows = catalogMapper.selectProductPage(
                 page, filter.categoryId(), filter.keyword());
-        List<CatalogDtos.ProductVO> list = rows.getRecords().stream().map(this::toProductVo).toList();
+        // 列表不查秒杀：一页 10 条就是 10 次额外查询，而列表卡片用不到秒杀快照
+        List<CatalogDtos.ProductVO> list = rows.getRecords().stream()
+                .map(row -> toProductVo(row, null)).toList();
         return PageResult.of(list, rows.getTotal(), pageQuery.getPage(), pageQuery.getSize());
     }
 
@@ -55,7 +65,8 @@ public class ProductQueryServiceImpl implements ProductQueryService {
         if (row == null) {
             throw new BizException(ErrorCode.NOT_FOUND);
         }
-        return toProductVo(row);
+        // 详情页才查秒杀：展示价与结算价同源（同一个 SQL 口径 + 同一个 Clock）
+        return toProductVo(row, LocalDateTime.ofInstant(clock.instant(), clock.getZone()));
     }
 
     @Override
@@ -64,7 +75,8 @@ public class ProductQueryServiceImpl implements ProductQueryService {
         if (catalogMapper.selectProductById(spuId) == null) {
             throw new BizException(ErrorCode.NOT_FOUND);
         }
-        return skuVos(spuId);
+        // 纯规格列表接口不返回秒杀价：详情接口已带，这里再查一次毫无意义
+        return skuVos(spuId, List.of());
     }
 
     @Override
@@ -88,14 +100,71 @@ public class ProductQueryServiceImpl implements ProductQueryService {
                         (a, b) -> a));
     }
 
-    private CatalogDtos.ProductVO toProductVo(CatalogMapper.ProductRow row) {
+    /**
+     * @param now 非空时才查秒杀快照（列表传 null，避免一页 N 次查询）
+     */
+    private CatalogDtos.ProductVO toProductVo(CatalogMapper.ProductRow row, LocalDateTime now) {
+        // 富内容一律容错解析：库里可能存着历史脏 JSON，详情页不能因此 500
+        List<String> images = JsonListCodec.read(row.getImagesJson(), String.class);
+        // 主图缺省回退到图集第一张：老商品只有 images_json 时也不会出现空主图
+        String mainImage = row.getMainImage();
+        if (mainImage == null || mainImage.isBlank()) {
+            mainImage = images.isEmpty() ? null : images.get(0);
+        }
+        // 一次查出该商品全部生效秒杀明细：既供 SKU 级展示，也供横幅取最低价
+        List<ProductMapper.FlashSaleSkuRow> flashRows = now == null
+                ? List.of()
+                : productMapper.selectActiveFlashSaleSkus(row.getId(), now);
         return new CatalogDtos.ProductVO(
                 String.valueOf(row.getId()), row.getTitle(), row.getCategoryId(), row.getCategoryName(),
-                row.getMainImage(), row.getSalesCount(),
-                "ON_SHELF".equals(row.getStatus()), skuVos(row.getId()), row.getDetailHtml());
+                mainImage, row.getSalesCount(),
+                "ON_SHELF".equals(row.getStatus()), skuVos(row.getId(), flashRows), row.getDetailHtml(),
+                row.getSubtitle(), row.getBrand(), images,
+                JsonListCodec.read(row.getDetailImagesJson(), String.class),
+                JsonListCodec.read(row.getParamsJson(), CatalogDtos.ParamVO.class),
+                JsonListCodec.read(row.getServiceTagsJson(), String.class),
+                now == null ? null : flashSale(flashRows),
+                canCustomize(row));
     }
 
-    private List<CatalogDtos.SkuVO> skuVos(long spuId) {
+    /**
+     * 是否支持 UV 定制：库里是 {@code tinyint(1)}（0/1），列表 SQL 不取该列时为 null，
+     * 一律按「不支持」处理，避免编辑页回显成 true。
+     */
+    private static boolean canCustomize(CatalogMapper.ProductRow row) {
+        return Integer.valueOf(1).equals(row.getCanCustomize());
+    }
+
+    /**
+     * 秒杀横幅快照：取活动内最低秒杀价那条（SQL 已按价格升序），原价用<b>同一行</b>的零售价，
+     * 而不是全商品最低零售价——否则「¥9.9 秒杀（原价 ¥15）」会配上一个不存在的原价。
+     * <p>无生效活动返回 null，前端据此整块不渲染。</p>
+     */
+    private CatalogDtos.FlashSaleVO flashSale(List<ProductMapper.FlashSaleSkuRow> rows) {
+        if (rows.isEmpty()) {
+            return null;
+        }
+        ProductMapper.FlashSaleSkuRow row = rows.get(0);
+        if (row.getPriceCent() == null) {
+            return null;
+        }
+        long flashPrice = row.getPriceCent();
+        long originPrice = row.getRetailPriceCent() == null ? flashPrice : row.getRetailPriceCent();
+        return new CatalogDtos.FlashSaleVO(
+                row.getActivityId() == null ? null : String.valueOf(row.getActivityId()),
+                row.getTitle(), flashPrice, MoneyUtil.toYuan(flashPrice),
+                originPrice, MoneyUtil.toYuan(originPrice),
+                row.getStartAt() == null ? null : row.getStartAt().toString(),
+                row.getEndAt() == null ? null : row.getEndAt().toString());
+    }
+
+    private List<CatalogDtos.SkuVO> skuVos(long spuId, List<ProductMapper.FlashSaleSkuRow> flashRows) {
+        java.util.Map<Long, ProductMapper.FlashSaleSkuRow> flashBySku = new java.util.HashMap<>();
+        for (ProductMapper.FlashSaleSkuRow flashRow : flashRows) {
+            if (flashRow.getSkuId() != null) {
+                flashBySku.put(flashRow.getSkuId(), flashRow);
+            }
+        }
         return catalogMapper.selectSkusWithStock(spuId).stream().map(s -> {
             long cent = s.getRetailPriceCent() == null ? 0L : s.getRetailPriceCent();
             Long ladder = s.getLadderPriceCent();
@@ -110,8 +179,13 @@ public class ProductQueryServiceImpl implements ProductQueryService {
             if (spec.isBlank()) {
                 spec = skuNo;
             }
+            // 秒杀价只挂在真正参加活动的规格上，未参加的保持 null（详情页据此回落零售价）
+            ProductMapper.FlashSaleSkuRow flash = flashBySku.get(s.getId());
+            Long flashPriceCent = flash == null ? null : flash.getPriceCent();
             return new CatalogDtos.SkuVO(String.valueOf(s.getId()), skuNo, spec, qty,
-                    "ON".equalsIgnoreCase(s.getStatus()), price);
+                    "ON".equalsIgnoreCase(s.getStatus()), price, s.getImageFileId(),
+                    flashPriceCent,
+                    flashPriceCent == null ? null : MoneyUtil.toYuan(flashPriceCent));
         }).toList();
     }
 

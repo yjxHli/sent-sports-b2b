@@ -16,6 +16,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue';
+import { resolveImageUrl } from '@/utils/image';
 
 const props = defineProps<{
   src?: string | null;
@@ -27,12 +28,12 @@ const props = defineProps<{
 
 const failed = ref(false);
 
-/** 演示数据里的 demo.sent.test 是虚构域名，直接走占位，避免无谓的 404。 */
-const resolvedSrc = computed(() => {
-  const s = props.src;
-  if (!s || /demo\.sent\.test/i.test(s)) return '';
-  return s;
-});
+/**
+ * 地址解析统一交给 `utils/image.resolveImageUrl`（V54）：
+ * 演示域名（demo.sent.test）走占位，fileId 拼文件服务前缀，绝对地址原样用。
+ * 组件内不再各写一份判断，避免详情页图集 / 款式图 / 详情长图三套规则漂移。
+ */
+const resolvedSrc = computed(() => resolveImageUrl(props.src));
 
 const EMOJI_MAP: Record<string, string> = {
   球类运动: '🏀',

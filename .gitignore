@@ -6,6 +6,8 @@
 
 # ---------- 构建产物与依赖 ----------
 target/
+# 历史构建残留（mvn 前的 target 备份目录，含编译后的 classes 与 _probe 临时文件）
+target_stale/
 node_modules/
 dist/
 dist-ssr/
@@ -80,3 +82,5 @@ e2e/*.log
 # ---------- 本机智能体 / 会话记忆 ----------
 # 内含开发环境笔记、本机路径与演示口令，不应出现在公开仓库。
 .workbuddy/
+# 第三方智能体技能（如 unslop），本地工具代码不进入公开仓库。
+.agents/

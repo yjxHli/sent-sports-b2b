@@ -5,7 +5,6 @@
     <el-empty v-if="items.length === 0" description="没有可结算的商品">
       <el-button type="primary" @click="goProducts">去选购</el-button>
     </el-empty>
-
     <template v-else>
       <!-- ① 收货地址：默认地址预选；一条都没有时引导新增（下单必填） -->
       <div class="sent-card co-addr">
@@ -47,11 +46,24 @@
       <div class="sent-card">
         <div class="sent-title">商品清单</div>
         <div v-for="it in items" :key="it.skuId" class="co-line">
-          <span>{{ it.name }}</span>
+          <span class="co-line__name">
+            {{ it.name }}
+            <!--
+              取价来源提示（V54）：结算价由服务端取价引擎决定，可能是一客一价 / 企业协议价 /
+              秒杀价 / 阶梯价 / 会员价。不标出来的话，用户看到的价格和详情页不一致会以为被坑。
+            -->
+            <span
+              v-if="sourceLabelFor(it.skuId)"
+              class="co-line__source"
+              :data-testid="`checkout-price-source-${it.skuId}`"
+            >
+              {{ sourceLabelFor(it.skuId) }}
+            </span>
+          </span>
           <span>×{{ it.qty }}</span>
         </div>
-        <el-checkbox v-model="customFlag" class="co-custom" @change="refreshQuote">
-          含 UV 定制件（下单后需上传图稿并经客服审图）
+        <el-checkbox v-model="customFlag" class="co-custom" :disabled="paid" @change="refreshQuote">
+          含 UV 定制件（下单后在「订单详情」上传图稿，客服审图后生产）
         </el-checkbox>
       </div>
 
@@ -123,16 +135,27 @@
         </div>
       </div>
 
+      <!-- 定制退款口径（2026-11-21）：必须在支付按钮上方讲清楚，别等下单后才发现不能退 -->
+      <div
+        v-if="customFlag && !paid"
+        class="co-custom-refund-tip"
+        data-testid="checkout-custom-refund-tip"
+      >
+        <strong>定制商品在审核通过前支持退款，一旦开始生产将不支持退款。</strong>
+        <span>审核通过但尚未排产的，退款需客服先与生产确认是否已备料。</span>
+      </div>
+
       <div class="co-submit-row">
-        <el-button type="primary" class="co-submit" :loading="submitting" @click="submitAndPay">
+        <el-button type="primary" class="co-submit" :loading="submitting" :disabled="paid" @click="submitAndPay">
           提交订单并支付
         </el-button>
         <!-- 暂不支付：只生成订单，进详情页给你 5 分钟倒计时，超时自动取消 -->
-        <el-button class="co-submit co-submit--later" :loading="submitting" @click="submitLater">
+        <el-button class="co-submit co-submit--later" :loading="submitting" :disabled="paid" @click="submitLater">
           暂不支付
         </el-button>
       </div>
-      <p class="co-submit-hint">暂不支付也可下单，请在 5 分钟内完成支付，超时订单将自动取消</p>
+      <p v-if="paid" class="co-submit-hint">订单已提交并支付成功，可在「我的订单」查看进度</p>
+      <p v-else class="co-submit-hint">暂不支付也可下单，请在 5 分钟内完成支付，超时订单将自动取消</p>
     </template>
 
     <!-- 新增收货地址 -->
@@ -225,7 +248,10 @@ const submitting = ref(false);
 const paid = ref(false);
 const paidOrderNo = ref('');
 const paidAmount = ref('');
-/** UV 定制件标记：勾选中后下单行携带 customFlag，后端即时生成 custom_order 供上传图稿。 */
+/**
+ * UV 定制件标记：勾选中后下单行携带 customFlag，后端即时生成 custom_order 供上传图稿。
+ * 默认不勾：勾选会按件加收定制费（10 元/件），不能因为本地残留过一张旧图稿就替用户加钱。
+ */
 const customFlag = ref(false);
 /** 积分抵扣：余额来自后端（/api/member/points），输入上限与最终提交值都以此为准 */
 const availablePoints = ref(0);
@@ -233,6 +259,15 @@ const usePoints = ref(false);
 const pointsToUse = ref(0);
 /** 本地持有「立即购买」项：进入即捕获并清空 store，避免污染后续购物车结算 */
 const buyNowLocal = ref<BuyNowItem | null>(null);
+/**
+ * 已提交订单的商品行快照。
+ *
+ * 下单成功后会把购物车已选行删掉（必须删，否则用户回购物车还能重复下单），
+ * 此时 `items` 会变空 —— 结算页就退化成「没有可结算的商品 + 去选购」空态，
+ * 而支付成功弹窗正盖在它上面（用户 2026-11-21 反馈「弹窗背景是空白确认订单页」）。
+ * 这里在下单成功瞬间留一份快照，支付成功弹窗期间继续按这份快照渲染，背景仍是这一单的商品。
+ */
+const submittedItems = ref<PayItem[] | null>(null);
 
 /** 地址簿与当前选中项（后端 Long 序列化成字符串，统一按 String 比较） */
 const addresses = ref<AddressVO[]>([]);
@@ -278,10 +313,33 @@ const orderIdem = createIdempotencyScope('user-order');
 const payIdem = createIdempotencyScope('user-pay');
 
 const items = computed<PayItem[]>(() => {
+  // 下单成功后购物车已选行会被清空，这里优先用快照，避免支付成功弹窗背后变成空态
+  const snapshot = submittedItems.value;
+  if (snapshot) return snapshot;
   const bn = buyNowLocal.value;
   if (bn) return [{ skuId: bn.skuId, qty: bn.qty, name: `${bn.name} ${bn.spec}`.trim() }];
   return cart.selectedItems.map((i) => ({ skuId: i.skuId, qty: i.qty, name: i.skuName || `SKU ${i.skuId}` }));
 });
+
+/**
+ * 取价来源文案（V54）：秒杀价 / 一客一价 / 企业协议价 都可能低于商品零售价，
+ * 用户只看到「金额对不上详情页」会以为被坑，所以逐行标出来源。
+ * RETAIL（零售价）是默认口径，标出来只会是噪音，故不显示。
+ */
+const SOURCE_LABELS: Record<string, string> = {
+  CUSTOMER_SKU: '一客一价',
+  AGREEMENT: '企业协议价',
+  FLASH_SALE: '秒杀价',
+  LADDER: '阶梯价',
+  MEMBER: '会员价',
+  STACKED: '叠加优惠',
+};
+
+function sourceLabelFor(skuId: number | string): string {
+  const line = quote.value?.lines?.find((l) => String(l.skuId) === String(skuId));
+  if (!line) return '';
+  return SOURCE_LABELS[line.sourceCode] ?? '';
+}
 
 function goProducts(): void { router.push('/products'); }
 /** 支付成功「查看订单」→ 直接进该订单详情（不再先落到列表） */
@@ -582,6 +640,10 @@ async function submit(payNow: boolean): Promise<void> {
       items: orderItems(),
     }, { headers: orderIdem.headers() }));
 
+    // 下单成功：先留一份商品行快照，再清购物车已选行——清空后 `items` 会变空，
+    // 支付成功弹窗背后的结算页就会退化成「去选购」空态（2026-11-21 用户反馈）。
+    submittedItems.value = items.value.map((i) => ({ ...i }));
+
     // 下单成功：购物车结算才清理已选行；「立即购买」不碰购物车，避免误删用户已加购商品
     if (!fromBuyNow) {
       const ids = cart.selectedItems.map((i) => i.itemId);
@@ -640,6 +702,23 @@ function submitLater(): void {
   color: #333;
   padding: 4px 0;
 }
+.co-line__name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+/* 取价来源小标签：只在命中非默认口径（秒杀/协议/一客一价等）时出现 */
+.co-line__source {
+  flex: none;
+  font-size: 11px;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: 9px;
+  color: var(--sent-accent);
+  background: #fff2e6;
+  border: 1px solid #ffe0c7;
+}
 .quote-line {
   display: flex;
   justify-content: space-between;
@@ -660,6 +739,25 @@ function submitLater(): void {
   border-top: 1px dashed #eee;
   margin-top: 4px;
   padding-top: 8px;
+}
+/* 定制退款提示：琥珀底＋左描边，比普通灰字提示更「显眼」，但不至于像报错 */
+.co-custom-refund-tip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 10px 10px 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border-left: 3px solid #e6a23c;
+  background: #fdf6ec;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #8a5a00;
+}
+.co-custom-refund-tip strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: #7a4a00;
 }
 /* 两个提交入口并排：主操作「提交订单并支付」、次操作「暂不支付」 */
 .co-submit-row {

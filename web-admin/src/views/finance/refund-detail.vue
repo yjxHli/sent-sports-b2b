@@ -46,6 +46,19 @@
       </div>
     </div>
 
+    <!-- 定制单审核通过但未排产：这一档允许退，但必须先跟生产确认是否已备料（2026-11-21） -->
+    <el-alert
+      v-if="detail?.needManualReview"
+      class="audit-manual"
+      type="warning"
+      :closable="false"
+      show-icon
+      title="该退款涉及已过审但未排产的定制商品"
+      data-testid="refund-need-manual-review"
+    >
+      定制图稿已审核通过、尚未进入生产。请先与生产确认是否已备料/打样，再决定通过或驳回。
+    </el-alert>
+
     <div class="audit-grid">
       <div class="audit-col">
         <section class="sent-panel">
@@ -370,28 +383,42 @@ onMounted(() => { void load(); });
 .audit-head__title { display: flex; align-items: center; gap: 10px; }
 .audit-head__no {
   font-size: 18px;
-  font-weight: 700;
-  color: #1d2b26;
-  letter-spacing: 0.3px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--sent-ink);
+  letter-spacing: 0;
 }
 .audit-head__ops { margin-left: auto; display: flex; gap: 4px; }
+/* 规格行：一排关键值只靠竖向发丝线分隔，不做成 5 张小卡 */
 .audit-head__stats {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 16px;
+  gap: 0;
+  margin-top: var(--sp-4);
+  border-top: 1px solid var(--sent-line);
+  padding-top: var(--sp-3);
 }
 .stat {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px 14px;
-  border-radius: 8px;
-  background: #f5f8f6;
+  gap: 4px;
+  padding: 4px var(--sp-3) 4px 0;
+  border-radius: 0;
+  background: transparent;
 }
-.stat__label { font-size: 12px; color: #86909c; }
-.stat__value { font-size: 14px; color: #1d2b26; font-weight: 600; word-break: break-all; }
-.stat__value--amount { font-size: 20px; color: #12664f; }
+.stat + .stat {
+  padding-left: var(--sp-4);
+  border-left: 1px solid var(--sent-line);
+}
+.stat__label { font-size: 12px; color: var(--sent-ink-3); }
+.stat__value {
+  font-size: 14px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--sent-ink);
+  word-break: break-all;
+}
+.stat__value--amount { font-size: 20px; font-weight: 500; letter-spacing: -0.01em; }
 
 .audit-grid {
   display: grid;
@@ -401,7 +428,6 @@ onMounted(() => { void load(); });
 }
 .audit-col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .audit-col--side { position: sticky; top: 12px; }
-.section-title { margin: 0 0 12px; font-size: 15px; color: #33463f; }
 .sub-title { margin: 18px 0 10px; font-size: 13px; color: #4b5f57; font-weight: 600; }
 .muted { color: #99a1a8; }
 
@@ -420,11 +446,12 @@ onMounted(() => { void load(); });
 .audit-tips {
   margin: 0;
   padding-left: 18px;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.9;
   color: #5c6b66;
 }
 .audit-tips li { list-style: disc; }
 .audit-side :deep(.el-timeline) { padding-left: 2px; }
 .audit-side :deep(.el-timeline-item__timestamp) { font-size: 12px; }
+.audit-manual { margin-bottom: 16px; }
 </style>

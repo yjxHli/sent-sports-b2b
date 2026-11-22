@@ -51,10 +51,10 @@ app:
   upload:
     # 相对路径落在工程目录下，Windows / Linux 都能直接跑；部署时用 UPLOAD_BASE_DIR 指到持久盘
     base-dir: ${UPLOAD_BASE_DIR:./data/upload}
-  # CORS 白名单：默认只放行本机两个 Vite dev server。
+  # CORS 白名单：默认放行本机三个 Vite dev server（商城 5173 / 管理端 5174 / 客服台 5175）。
   # 部署时用 APP_CORS_ORIGINS 覆盖为真实前端域名（逗号分隔），生产环境禁止使用通配符。
   cors:
-    allowed-origins: ${APP_CORS_ORIGINS:http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://127.0.0.1:5174}
+    allowed-origins: ${APP_CORS_ORIGINS:http://localhost:5173,http://localhost:5174,http://localhost:5175,http://127.0.0.1:5173,http://127.0.0.1:5174,http://127.0.0.1:5175}
   # 发票 PDF（增值税电子普通发票，后端现场渲染；票面数据来自 invoice_request + orders + order_item）
   # 【重要】下面 5 项销售方信息全部是虚构演示数据：公司名、税号、地址电话、银行账号、
   # 发票代码前缀均不对应任何真实主体，禁止用于真实开票。

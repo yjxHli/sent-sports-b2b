@@ -13,40 +13,84 @@
         <el-breadcrumb-item>{{ product.name }}</el-breadcrumb-item>
       </el-breadcrumb>
 
-      <div class="detail-main">
-        <!-- 左：40% 大图 + 缩略图 -->
+      <!-- 三列：竖排缩略图 | 主图 | 购买决策栏
+           注意：`.gallery-rail` 是 v-if，图集 ≤1 张时该节点不渲染。三列栅格若仍按
+           56px | 1fr | 420px 排，Grid 会把剩下的 [gallery, buy] 顺序塞进前两列，
+           主图被压成 56px 小方块、购买区吃掉 1fr、右侧空一列（2026-11-22 缺陷）。
+           因此无 rail 时加修饰类收掉第一列轨道。 -->
+      <div class="detail-main" :class="{ 'detail-main--no-rail': galleryImages.length <= 1 }">
+        <div v-if="galleryImages.length > 1" class="gallery-rail">
+          <button
+            v-for="(img, i) in galleryImages"
+            :key="'rail-' + i"
+            type="button"
+            class="gallery-rail__item"
+            :class="{ active: activeThumb === i }"
+            @mouseenter="activeThumb = i"
+            @focus="activeThumb = i"
+            @click="activeThumb = i"
+          >
+            <ProductThumb
+              :src="img"
+              :category="product.categoryName"
+              :name="product.name"
+              :seed="product.productId + '-rail-' + i"
+            />
+          </button>
+        </div>
+
         <div class="gallery">
           <div class="gallery__main">
             <ProductThumb
-              :src="product.mainImage"
+              :src="activeImage"
               :category="product.categoryName"
               :name="product.name"
               :seed="product.productId + '-' + activeThumb"
             />
           </div>
-          <div class="gallery__thumbs">
+          <!-- 窄屏才出现的横排缩略图（宽屏用左侧竖排 rail） -->
+          <div v-if="galleryImages.length > 1" class="gallery__thumbs">
             <div
-              v-for="i in 4"
-              :key="i"
+              v-for="(img, i) in galleryImages"
+              :key="'thumb-' + i"
               class="gallery__thumb"
-              :class="{ active: activeThumb === i - 1 }"
-              @mouseenter="activeThumb = i - 1"
+              :class="{ active: activeThumb === i }"
+              @mouseenter="activeThumb = i"
+              @click="activeThumb = i"
             >
               <ProductThumb
-                :src="product.mainImage"
+                :src="img"
                 :category="product.categoryName"
                 :name="product.name"
-                :seed="product.productId + '-' + (i - 1)"
+                :seed="product.productId + '-' + i"
               />
             </div>
           </div>
         </div>
 
-        <!-- 右：60% 购买区（浅灰底） -->
+        <!-- 购买区 -->
         <div class="buy">
           <h1 class="buy__title">{{ product.name }}</h1>
           <div class="buy__subtitle">
-            {{ product.categoryName || '运动装备' }} · 森特体育官方自营 · 支持企业采购与账期结算
+            {{ product.subtitle || (product.categoryName || '运动装备') + ' · 森特体育官方自营 · 支持企业采购与账期结算' }}
+          </div>
+
+          <!-- 秒杀横幅：无生效活动时整块 DOM 不存在 -->
+          <div v-if="flashSale" class="flash-sale" data-testid="flash-sale-banner">
+            <div class="flash-sale__badge">限时秒杀</div>
+            <div class="flash-sale__body">
+              <div class="flash-sale__pricebox">
+                <span class="flash-sale__sym">¥</span>
+                <b class="flash-sale__num" data-testid="flash-sale-price">{{ fmtCent(bannerPrice) }}</b>
+                <span v-if="!skuFlashPrice" class="flash-sale__low">起</span>
+                <span class="flash-sale__origin">¥{{ fmtCent(bannerOrigin) }}</span>
+              </div>
+              <div class="flash-sale__meta">
+                <span class="flash-sale__title">{{ flashSale.title || '限时秒杀' }}</span>
+                <span class="flash-sale__countdown" data-testid="flash-sale-countdown">{{ countdownText }}</span>
+                <span class="flash-sale__end">{{ fmtDateTime(flashSale.endAt) }} 结束</span>
+              </div>
+            </div>
           </div>
 
           <div class="buy__pricebox">
@@ -173,23 +217,77 @@
         </div>
       </div>
 
-      <!-- 商品详情占位区 -->
-      <section class="detail-desc">
+      <!-- 锚点导航：只在有对应内容时出现（不造假区块） -->
+      <nav class="detail-tabs">
+        <button
+          v-for="tab in visibleTabs"
+          :key="tab.id"
+          type="button"
+          class="detail-tabs__item"
+          :class="{ active: activeTab === tab.id }"
+          @click="goSection(tab.id)"
+        >
+          {{ tab.label }}
+        </button>
+      </nav>
+
+      <section id="section-desc" class="detail-desc">
         <div class="detail-desc__head">商品详情</div>
         <div class="detail-desc__body">
-          <p>本商品由森特体育官方自营，适用于专业训练、赛事及企业团购场景，支持 UV 印花、烫印队徽等定制服务。</p>
-          <p>规格：{{ product.name }} · 分类：{{ product.categoryName || '运动装备' }} · 品牌：森特 / SENT</p>
+          <p v-if="product.description" class="detail-desc__text">{{ product.description }}</p>
+          <div v-if="detailImages.length" class="detail-desc__images">
+            <img
+              v-for="(img, i) in detailImages"
+              :key="'detail-' + i"
+              class="detail-desc__img"
+              :src="resolveImageUrl(img)"
+              :alt="product.name + ' 详情图 ' + (i + 1)"
+              loading="lazy"
+            />
+          </div>
+          <p v-if="!product.description && !detailImages.length" class="detail-desc__empty">暂无详情</p>
         </div>
       </section>
+
+      <section v-if="params.length" id="section-params" class="detail-params">
+        <div class="detail-params__head">规格参数</div>
+        <div class="detail-params__grid">
+          <div v-for="(p, i) in paramsTop" :key="'p-top-' + i" class="detail-params__card">
+            <span class="detail-params__label">{{ p.label }}</span>
+            <span class="detail-params__value">{{ p.value }}</span>
+          </div>
+        </div>
+        <table v-if="paramsRest.length" class="detail-params__table">
+          <tbody>
+            <tr v-for="(p, i) in paramsRest" :key="'p-rest-' + i">
+              <th>{{ p.label }}</th>
+              <td>{{ p.value }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section v-if="serviceTags.length" id="section-service" class="detail-service">
+        <div class="detail-service__head">服务承诺</div>
+        <div class="detail-service__tags">
+          <span v-for="(tag, i) in serviceTags" :key="'tag-' + i" class="detail-service__tag">
+            {{ tag }}
+          </span>
+        </div>
+      </section>
+
+      <!-- 用户评价（V55）：独立区块，写入/读取都在组件内部，不影响上方购买逻辑 -->
+      <ProductReview :product-id="String(route.params.productId || '')" :sku-id="selectedSkuId || null" />
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { unwrap } from '@/utils/http';
+import { resolveImageUrl } from '@/utils/image';
 import { productApi, type CatalogProductVO, type CatalogSkuVO } from '@/api/product';
 import { cartApi } from '@/api/cart';
 import { fileApi } from '@/api/file';
@@ -197,8 +295,9 @@ import { favoriteApi } from '@/api/favorite';
 import { footprintApi } from '@/api/footprint';
 import { savePendingDraft, clearPendingDraft } from '@/api/custom';
 import { useCartStore } from '@/store/modules/useCartStore';
-import { fmtCent } from '@sent/shared';
+import { fmtCent, fmtDateTime } from '@sent/shared';
 import ProductThumb from '@/components/ProductThumb.vue';
+import ProductReview from '@/components/ProductReview.vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -216,8 +315,28 @@ const uploadingDraft = ref(false);
 const fileInput = ref<HTMLInputElement | null>(null);
 
 const currentSku = computed(() => product.value?.skus?.find((s) => s.skuId === selectedSkuId.value));
-const currentPrice = computed(() => currentSku.value?.price.retailPriceCent ?? 0);
-const originPrice = computed(() => Math.round(currentPrice.value * 1.25));
+
+/**
+ * 秒杀价按 SKU 归属（V54）：只有选中的规格真的参加了活动才有秒杀价。
+ * 拿 SPU 级最低价顶替会让「活动只挂了 A 规格」时的 B 规格显示一个结算拿不到的低价。
+ */
+const skuFlashPrice = computed<number | null>(() => {
+  const cent = currentSku.value?.flashPriceCent;
+  return cent == null ? null : Number(cent);
+});
+
+const currentPrice = computed(() => {
+  if (skuFlashPrice.value != null) return skuFlashPrice.value;
+  return currentSku.value?.price.retailPriceCent ?? 0;
+});
+/**
+ * 划线原价：秒杀生效时用该规格真实零售价（库里的值），
+ * 无秒杀时保留原有「参考价 = 零售价 ×1.25」的展示口径，避免历史页面观感突变。
+ */
+const originPrice = computed(() => {
+  if (skuFlashPrice.value != null) return currentSku.value?.price.retailPriceCent ?? 0;
+  return Math.round(currentPrice.value * 1.25);
+});
 const currentStock = computed(() => currentSku.value?.stockQty ?? 0);
 /**
  * 可售库存固定显示该 SKU 的真实可售数，不随已选数量递减。
@@ -239,8 +358,120 @@ const salesText = computed(() => {
   return n.toLocaleString('zh-CN');
 });
 
+/* ---------------- 富内容（V54）：空数组就不渲染对应区块 ---------------- */
+
+const galleryImages = computed(() => {
+  const list = (product.value?.images ?? []).filter((s) => !!s && s.trim() !== '');
+  if (list.length) return list;
+  // 没有图集时退回主图单图：老商品只有 main_image
+  return product.value?.mainImage ? [product.value.mainImage] : [];
+});
+
+const detailImages = computed(() =>
+  (product.value?.detailImages ?? []).filter((s) => !!s && s.trim() !== ''));
+
+const params = computed(() =>
+  (product.value?.params ?? []).filter((p) => !!p && !!(p.label || p.value)));
+
+/** 前 4 条放大成宫格（淘宝「核心参数」的读法），其余走表格。 */
+const paramsTop = computed(() => params.value.slice(0, 4));
+const paramsRest = computed(() => params.value.slice(4));
+
+const serviceTags = computed(() =>
+  (product.value?.serviceTags ?? []).filter((s) => !!s && s.trim() !== ''));
+
+/** 选中规格的款式图优先；否则用图集当前张。 */
+const activeImage = computed(() => {
+  const skuImage = currentSku.value?.imageFileId;
+  if (skuImage) return skuImage;
+  const list = galleryImages.value;
+  return list[activeThumb.value] ?? product.value?.mainImage ?? '';
+});
+
+/* ---------------- 秒杀横幅 + 倒计时 ---------------- */
+
+const flashSale = computed(() => product.value?.flashSale ?? null);
+
+/** 横幅价格：当前规格参加活动就用它的价，否则展示「低至 X」。 */
+const bannerPrice = computed(() => {
+  if (skuFlashPrice.value != null) return skuFlashPrice.value;
+  return Number(flashSale.value?.flashPriceCent ?? 0);
+});
+const bannerOrigin = computed(() => {
+  if (skuFlashPrice.value != null) return currentSku.value?.price.retailPriceCent ?? 0;
+  return Number(flashSale.value?.originPriceCent ?? 0);
+});
+
+const nowMs = ref(Date.now());
+let countdownTimer: number | null = null;
+
+const remainingMs = computed(() => {
+  const end = flashSale.value?.endAt;
+  if (!end) return 0;
+  const endMs = new Date(end).getTime();
+  return Number.isFinite(endMs) ? Math.max(0, endMs - nowMs.value) : 0;
+});
+
+const countdownText = computed(() => {
+  const total = Math.floor(remainingMs.value / 1000);
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  return `${pad(h)}:${pad(m)}:${pad(s)}`;
+});
+
+/**
+ * 倒计时归零后重新拉详情：活动一结束，横幅必须消失、价格回落零售价。
+ * 用一次性判断而不是每秒都请求，避免把后端打成筛子。
+ */
+function tickCountdown(): void {
+  nowMs.value = Date.now();
+  if (flashSale.value && remainingMs.value <= 0) {
+    stopCountdown();
+    void reloadDetail();
+  }
+}
+
+function startCountdown(): void {
+  stopCountdown();
+  if (!flashSale.value) return;
+  countdownTimer = window.setInterval(tickCountdown, 1000);
+}
+
+function stopCountdown(): void {
+  if (countdownTimer !== null) {
+    window.clearInterval(countdownTimer);
+    countdownTimer = null;
+  }
+}
+
+/* ---------------- 锚点导航 ---------------- */
+
+type SectionId = 'section-desc' | 'section-params' | 'section-service' | 'section-review';
+const activeTab = ref<SectionId>('section-desc');
+
+const visibleTabs = computed(() => {
+  const tabs: Array<{ id: SectionId; label: string }> = [{ id: 'section-desc', label: '商品详情' }];
+  if (params.value.length) tabs.push({ id: 'section-params', label: '规格参数' });
+  if (serviceTags.value.length) tabs.push({ id: 'section-service', label: '服务说明' });
+  // 评价区块恒在（空态也给入口），与「不造假区块」不冲突：这里展示的是真实空态
+  tabs.push({ id: 'section-review', label: '用户评价' });
+  return tabs;
+});
+
+function goSection(id: SectionId): void {
+  activeTab.value = id;
+  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 watch(uvCustom, (on) => {
   if (on && qty.value < 30) qty.value = 30;
+});
+
+/** 切规格时重置图集到主图，避免停留在上一个规格的款式图上。 */
+watch(selectedSkuId, () => {
+  activeThumb.value = 0;
 });
 
 function selectSku(s: CatalogSkuVO): void {
@@ -314,7 +545,8 @@ async function buyNow(): Promise<void> {
     qty: qty.value,
     name: product.value.name,
     spec: currentSku.value.spec,
-    priceCent: currentSku.value.price.retailPriceCent,
+    // 秒杀生效时按秒杀价展示；真实成交价仍由结算页取价引擎决定（企业协议价优先）
+    priceCent: currentPrice.value,
   });
   router.push('/checkout');
 }
@@ -371,6 +603,23 @@ async function toggleFavorite(): Promise<void> {
   }
 }
 
+/** 只刷新数据、不动收藏/足迹，供倒计时结束回落后复用。 */
+async function reloadDetail(): Promise<void> {
+  try {
+    const p = await unwrap(productApi.detail(String(route.params.productId)));
+    product.value = p;
+    const stillThere = p.skus?.some((s) => s.skuId === selectedSkuId.value);
+    if (!stillThere) {
+      const first = p.skus?.find((s) => s.onShelf && s.stockQty > 0) ?? p.skus?.[0];
+      selectedSkuId.value = first?.skuId ?? '';
+    }
+    nowMs.value = Date.now();
+    startCountdown();
+  } catch {
+    /* 刷新失败保留旧数据，下次交互再重试 */
+  }
+}
+
 onMounted(async () => {
   loading.value = true;
   try {
@@ -378,6 +627,7 @@ onMounted(async () => {
     product.value = p;
     const first = p.skus?.find((s) => s.onShelf && s.stockQty > 0) ?? p.skus?.[0];
     if (first) selectedSkuId.value = first.skuId;
+    startCountdown();
   } catch {
     product.value = null;
   } finally {
@@ -387,22 +637,56 @@ onMounted(async () => {
     await Promise.all([loadFavoriteStatus(), recordFootprint()]);
   }
 });
+
+onUnmounted(stopCountdown);
 </script>
 
 <style scoped>
 .detail {
   padding-top: 4px;
+  /* 详情页版心比列表页（1440）窄：主图列是 1fr，若仍按 1408 排，
+     主图会被放大到 890px 的巨型方块。收窄后主图 ≈520、购买栏 420，比例接近淘宝。 */
+  max-width: 1060px;
 }
 .detail-crumb {
   margin-bottom: 16px;
   font-size: 13px;
 }
 
+/* 三列：竖排缩略图 56px | 主图自适应 | 购买栏 420px */
 .detail-main {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
-  gap: 28px;
+  grid-template-columns: 56px minmax(0, 1fr) 420px;
+  gap: 20px;
   align-items: start;
+}
+/* 图集 ≤1 张：竖排缩略图轨道不存在，收掉第一列，主图与购买栏各占一列。
+   窄屏断点（≤1240）的 .detail-main 规则在文件末尾、优先级相同会正常覆盖本行。 */
+.detail-main--no-rail {
+  grid-template-columns: minmax(0, 1fr) 420px;
+}
+
+/* 竖排缩略图 */
+.gallery-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.gallery-rail__item {
+  padding: 0;
+  width: 56px;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #fff;
+  cursor: pointer;
+  opacity: 0.85;
+  transition: all 0.15s;
+}
+.gallery-rail__item:hover,
+.gallery-rail__item.active {
+  border-color: var(--sent-primary);
+  opacity: 1;
 }
 
 /* 画廊 */
@@ -411,14 +695,22 @@ onMounted(async () => {
   border-radius: var(--sent-radius);
   overflow: hidden;
   border: 1px solid #eee;
+  /* 主图上限：宽屏下不再随列宽继续放大（占位图/长宽比异常的图都不会撑成巨块） */
+  max-width: 520px;
 }
+/* 主图自身是 1:1，给个从父容器继承的上限，避免 max-width 之外再被 aspect-ratio 撑高 */
+.gallery__main .thumb {
+  max-width: 520px;
+}
+/* 宽屏用 rail，横排缩略图只在窄屏出现 */
 .gallery__thumbs {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  display: none;
   gap: 10px;
   margin-top: 12px;
 }
 .gallery__thumb {
+  flex: 1 1 0;
+  min-width: 0;
   border: 2px solid transparent;
   border-radius: 6px;
   overflow: hidden;
@@ -438,6 +730,8 @@ onMounted(async () => {
   border-radius: var(--sent-radius);
   padding: 24px 26px;
   border: 1px solid #eef0f2;
+  position: sticky;
+  top: 88px;
 }
 .buy__title {
   font-size: 22px;
@@ -449,6 +743,73 @@ onMounted(async () => {
   font-size: 13px;
   color: var(--sent-muted);
   margin-bottom: 16px;
+}
+
+/* 秒杀横幅：红底条，仅在活动生效期出现 */
+.flash-sale {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 12px;
+  background: linear-gradient(90deg, #e5342b, #ff6a3d);
+  color: #fff;
+}
+.flash-sale__badge {
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  background: rgba(0, 0, 0, 0.16);
+  writing-mode: vertical-rl;
+}
+.flash-sale__body {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 14px;
+}
+.flash-sale__pricebox {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.flash-sale__sym {
+  font-size: 14px;
+}
+.flash-sale__num {
+  font-size: 24px;
+  line-height: 1;
+  font-weight: 800;
+}
+.flash-sale__low {
+  font-size: 12px;
+  margin-right: 4px;
+}
+.flash-sale__origin {
+  font-size: 12px;
+  opacity: 0.8;
+  text-decoration: line-through;
+}
+.flash-sale__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 12px;
+  margin-top: 4px;
+  opacity: 0.95;
+}
+.flash-sale__title {
+  font-weight: 600;
+}
+.flash-sale__countdown {
+  font-variant-numeric: tabular-nums;
+  background: rgba(0, 0, 0, 0.22);
+  border-radius: 3px;
+  padding: 0 6px;
 }
 
 .buy__pricebox {
@@ -592,9 +953,24 @@ onMounted(async () => {
   border-radius: 8px;
   padding: 14px 16px;
 }
+/* Element Plus 的 .el-checkbox 默认 white-space: nowrap、固定 32px 高，
+   定制说明是一整行长文案，窄屏购买栏（400px）会横向撑出虚线边框。
+   这里放开换行并让勾选框与首行文字顶端对齐。 */
+.custom-panel__check {
+  display: flex;
+  align-items: flex-start;
+  height: auto;
+  white-space: normal;
+}
+.custom-panel__check :deep(.el-checkbox__input) {
+  margin-top: 3px;
+}
 .custom-panel__check :deep(.el-checkbox__label) {
   font-size: 13px;
   color: var(--sent-text-2);
+  white-space: normal;
+  line-height: 1.6;
+  word-break: break-word;
 }
 .custom-panel__check b {
   color: var(--sent-accent);
@@ -743,6 +1119,36 @@ onMounted(async () => {
   opacity: 0.7;
 }
 
+/* 锚点导航（V54）：sticky 在面包屑下方，滚动时始终可点 */
+.detail-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  display: flex;
+  gap: 6px;
+  margin-top: 26px;
+  padding: 8px 0;
+  background: var(--sent-bg, #f6f7f8);
+  border-bottom: 1px solid #eceef0;
+}
+.detail-tabs__item {
+  border: none;
+  background: transparent;
+  padding: 8px 18px;
+  font-size: 14px;
+  color: var(--sent-text-2);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.detail-tabs__item:hover {
+  color: var(--sent-primary);
+  background: var(--sent-primary-soft);
+}
+.detail-tabs__item.active {
+  color: #fff;
+  background: var(--sent-primary);
+}
+
 /* 详情描述 */
 .detail-desc {
   margin-top: 28px;
@@ -767,10 +1173,138 @@ onMounted(async () => {
 .detail-desc__body p {
   margin: 0 0 8px;
 }
+.detail-desc__text {
+  white-space: pre-wrap;
+}
+.detail-desc__images {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-top: 12px;
+}
+/* 详情长图按序贴满整宽，不加圆角间隙——长图之间有缝会显得断开 */
+.detail-desc__img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.detail-desc__empty {
+  color: var(--sent-muted);
+  margin: 0;
+}
 
+/* 规格参数（V54）：前 4 条放大成宫格，其余走表格 */
+.detail-params {
+  margin-top: 20px;
+  background: #fff;
+  border-radius: var(--sent-radius);
+  border: 1px solid #eee;
+  padding: 18px 22px 22px;
+}
+.detail-params__head {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--sent-text);
+  margin-bottom: 14px;
+}
+.detail-params__grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.detail-params__card {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.detail-params__label {
+  font-size: 12px;
+  color: var(--sent-muted);
+}
+.detail-params__value {
+  font-size: 15px;
+  color: var(--sent-text);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.detail-params__table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 16px;
+  font-size: 13px;
+}
+.detail-params__table th {
+  width: 140px;
+  text-align: left;
+  font-weight: 400;
+  color: var(--sent-muted);
+  padding: 10px 12px;
+  background: #fafbfb;
+  border: 1px solid #f0f2f3;
+}
+.detail-params__table td {
+  padding: 10px 12px;
+  color: var(--sent-text-2);
+  border: 1px solid #f0f2f3;
+}
+
+/* 服务承诺 */
+.detail-service {
+  margin-top: 20px;
+  margin-bottom: 30px;
+  background: #fff;
+  border-radius: var(--sent-radius);
+  border: 1px solid #eee;
+  padding: 18px 22px;
+}
+.detail-service__head {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--sent-text);
+  margin-bottom: 12px;
+}
+.detail-service__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.detail-service__tag {
+  font-size: 13px;
+  color: var(--sent-primary);
+  background: var(--sent-primary-soft);
+  border-radius: 14px;
+  padding: 5px 14px;
+}
+
+/* 窄屏：收起竖排缩略图（改用主图下方横排），购买栏不再 sticky */
 @media (max-width: 1240px) {
   .detail-main {
+    grid-template-columns: minmax(0, 1fr) 400px;
     gap: 20px;
+  }
+  .gallery-rail {
+    display: none;
+  }
+  .gallery__thumbs {
+    display: flex;
+  }
+}
+
+@media (max-width: 960px) {
+  .detail-main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .buy {
+    position: static;
+  }
+  .detail-params__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 </style>

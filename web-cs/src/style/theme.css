@@ -1,0 +1,65 @@
+/**
+ * 森特品牌主题（复制自 web-admin/src/style/theme.css，保持两端同源）
+ * 主色 #12664F、强调 #FF7A1A；用原生 CSS 变量覆盖 ElementPlus，不引入 sass 工具链。
+ *
+ * 客服端追加的只有「深色壳」一组变量（--cs-*）：顶栏/登录页要用深色，
+ * 但业务区仍是浅色，所以深色只作用于壳层，不在全局改 ElementPlus 的底色。
+ */
+:root {
+  --sent-primary: #12664f;
+  --sent-primary-dark: #0d4b3a;
+  --sent-primary-soft: #e7f1ec;
+  --sent-accent: #ff7a1a;
+
+  --el-color-primary: #12664f;
+  --el-color-primary-light-3: #4b917c;
+  --el-color-primary-light-5: #7db3a1;
+  --el-color-primary-light-7: #aed3c6;
+  --el-color-primary-light-8: #c8e2d8;
+  --el-color-primary-light-9: #e3f1eb;
+  --el-color-primary-dark-2: #0d4b3a;
+
+  --el-color-warning: #ff7a1a;
+  --el-border-radius-base: 6px;
+  --el-font-family: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+
+  /* ---------- 客服工作台壳层（深色） ---------- */
+  --cs-shell: #10231d;
+  --cs-shell-2: #0b1a15;
+  --cs-shell-line: rgba(255, 255, 255, 0.09);
+  --cs-shell-text: #eaf3ef;
+  --cs-shell-text-dim: #9db3aa;
+  --cs-topbar-h: 60px;
+  --cs-shadow-card: 0 1px 2px rgba(16, 35, 29, 0.06), 0 8px 24px rgba(16, 35, 29, 0.05);
+  --cs-shadow-pop: 0 18px 48px rgba(6, 20, 16, 0.35);
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: var(--el-font-family);
+}
+
+a {
+  text-decoration: none;
+}
+
+/* 业务页通用排版，避免每个页面重复写一套 padding */
+.sent-page-title {
+  margin: 0 0 16px;
+  font-size: 18px;
+  color: #1f2d28;
+}
+.sent-panel {
+  background: #fff;
+  border-radius: 8px;
+  padding: 18px;
+  margin-bottom: 16px;
+}
+.sent-hint {
+  font-size: 12px;
+  color: #9aa8a2;
+}

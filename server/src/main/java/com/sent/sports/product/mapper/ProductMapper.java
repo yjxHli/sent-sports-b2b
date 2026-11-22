@@ -59,6 +59,39 @@ public interface ProductMapper extends BaseMapper<ProductPO> {
     @Select("SELECT * FROM ladder_price WHERE sku_id = #{skuId} ORDER BY min_qty")
     List<LadderPricePO> selectLadderPrices(@Param("skuId") long skuId);
 
+    /**
+     * 某 SKU 在给定时刻生效的秒杀价（V54）。
+     * <p>生效条件 = 活动已发布 + 未软删 + 时间窗覆盖 now；{@code now} 由调用方用 {@code Clock}
+     * 传入而非 SQL {@code NOW()}，便于单测锁定时间。同一 SKU 若存在多条重叠（历史脏数据），
+     * 取最低价兜底。</p>
+     */
+    @Select("SELECT i.flash_price_cent AS priceCent, i.activity_id AS activityId, "
+            + "a.title AS title, a.end_at AS endAt "
+            + "FROM flash_sale_item i JOIN flash_sale_activity a ON a.id = i.activity_id "
+            + "WHERE i.sku_id = #{skuId} AND a.deleted = 0 AND a.status = 'ACTIVE' "
+            + "AND a.start_at <= #{now} AND a.end_at > #{now} "
+            + "ORDER BY i.flash_price_cent ASC LIMIT 1")
+    FlashSaleRow selectActiveFlashSale(@Param("skuId") long skuId, @Param("now") LocalDateTime now);
+
+    /**
+     * 某商品（SPU）下所有「当前生效」的秒杀明细，按秒杀价升序。
+     * <p>详情页需要<b>按 SKU 归属</b>展示秒杀价：活动可能只挂了其中一个规格，
+     * 若用 SPU 级最低价展示，未参加活动的规格会显示一个结算时拿不到的低价。
+     * 与 {@link #selectActiveFlashSale} 同口径（同一时间窗 + 同一 {@code Clock}），
+     * 保证「展示价」与「结算价」不会各算各的。</p>
+     */
+    @Select("SELECT i.sku_id AS skuId, i.flash_price_cent AS priceCent, i.activity_id AS activityId, "
+            + "a.title AS title, a.start_at AS startAt, a.end_at AS endAt, "
+            + "s.retail_price_cent AS retailPriceCent "
+            + "FROM flash_sale_item i JOIN flash_sale_activity a ON a.id = i.activity_id "
+            + "JOIN sku s ON s.id = i.sku_id "
+            + "WHERE s.spu_id = #{spuId} AND s.status = 'ON' "
+            + "AND a.deleted = 0 AND a.status = 'ACTIVE' "
+            + "AND a.start_at <= #{now} AND a.end_at > #{now} "
+            + "ORDER BY i.flash_price_cent ASC, i.sku_id ASC")
+    List<FlashSaleSkuRow> selectActiveFlashSaleSkus(@Param("spuId") long spuId,
+                                                    @Param("now") LocalDateTime now);
+
     /** 某客户在指定时刻生效的协议价（有效期为空视为不限期；同客户预期唯一）。 */
     @Select("SELECT * FROM agreement_price WHERE customer_id = #{customerId} "
             + "AND (valid_from IS NULL OR valid_from <= NOW(3)) "
@@ -169,6 +202,55 @@ public interface ProductMapper extends BaseMapper<ProductPO> {
         public void setSkuCode(String skuCode) { this.skuCode = skuCode; }
         public String getSpecJson() { return specJson; }
         public void setSpecJson(String specJson) { this.specJson = specJson; }
+        public Long getRetailPriceCent() { return retailPriceCent; }
+        public void setRetailPriceCent(Long retailPriceCent) { this.retailPriceCent = retailPriceCent; }
+    }
+
+    /** 秒杀明细行（V54）：详情页按 SKU 展示秒杀价 + 活动信息。 */
+    class FlashSaleSkuRow {
+        private Long skuId;
+        private Long priceCent;
+        private Long activityId;
+        private String title;
+        private LocalDateTime startAt;
+        private LocalDateTime endAt;
+        private Long retailPriceCent;
+
+        public Long getSkuId() { return skuId; }
+        public void setSkuId(Long skuId) { this.skuId = skuId; }
+        public Long getPriceCent() { return priceCent; }
+        public void setPriceCent(Long priceCent) { this.priceCent = priceCent; }
+        public Long getActivityId() { return activityId; }
+        public void setActivityId(Long activityId) { this.activityId = activityId; }
+        public String getTitle() { return title; }
+        public void setTitle(String title) { this.title = title; }
+        public LocalDateTime getStartAt() { return startAt; }
+        public void setStartAt(LocalDateTime startAt) { this.startAt = startAt; }
+        public LocalDateTime getEndAt() { return endAt; }
+        public void setEndAt(LocalDateTime endAt) { this.endAt = endAt; }
+        public Long getRetailPriceCent() { return retailPriceCent; }
+        public void setRetailPriceCent(Long retailPriceCent) { this.retailPriceCent = retailPriceCent; }
+    }
+
+    /** 秒杀命中行（V54）：成交价 + 活动标识，用于取价与详情页展示同源。 */
+    class FlashSaleRow {
+        private Long priceCent;
+        private Long activityId;
+        private String title;
+        private LocalDateTime startAt;
+        private LocalDateTime endAt;
+        private Long retailPriceCent;
+
+        public Long getPriceCent() { return priceCent; }
+        public void setPriceCent(Long priceCent) { this.priceCent = priceCent; }
+        public Long getActivityId() { return activityId; }
+        public void setActivityId(Long activityId) { this.activityId = activityId; }
+        public String getTitle() { return title; }
+        public void setTitle(String title) { this.title = title; }
+        public LocalDateTime getStartAt() { return startAt; }
+        public void setStartAt(LocalDateTime startAt) { this.startAt = startAt; }
+        public LocalDateTime getEndAt() { return endAt; }
+        public void setEndAt(LocalDateTime endAt) { this.endAt = endAt; }
         public Long getRetailPriceCent() { return retailPriceCent; }
         public void setRetailPriceCent(Long retailPriceCent) { this.retailPriceCent = retailPriceCent; }
     }

@@ -23,7 +23,7 @@ public interface CatalogMapper {
 
     @Select("<script>"
             + "SELECT p.id, p.product_no, p.title, p.category_id, c.name AS category_name, p.status, "
-            + "p.main_image, p.sales_count, p.detail_html AS detailHtml "
+            + "p.brand, p.main_image, p.sales_count, p.detail_html AS detailHtml "
             + "FROM product p LEFT JOIN product_category c ON c.id = p.category_id "
             + "WHERE p.deleted = 0 AND p.status = 'ON_SHELF' "
             + "<if test=\"categoryId != null\"> AND p.category_id = #{categoryId}</if> "
@@ -58,7 +58,7 @@ public interface CatalogMapper {
      */
     @Select("<script>"
             + "SELECT p.id, p.product_no, p.title, p.category_id, c.name AS category_name, p.status, "
-            + "p.main_image, p.sales_count, p.detail_html AS detailHtml "
+            + "p.brand, p.main_image, p.sales_count, p.detail_html AS detailHtml "
             + "FROM product p LEFT JOIN product_category c ON c.id = p.category_id "
             + "WHERE p.deleted = 0 "
             + "<if test=\"status != null and status != ''\"> AND p.status = #{status}</if> "
@@ -71,13 +71,16 @@ public interface CatalogMapper {
                                              @Param("keyword") String keyword,
                                              @Param("status") String status);
 
-    @Select("SELECT p.id, p.product_no, p.title, p.category_id, c.name AS category_name, p.status, "
-            + "p.main_image, p.sales_count, p.detail_html AS detailHtml "
+    @Select("SELECT p.id, p.product_no, p.title, p.subtitle, p.category_id, c.name AS category_name, p.status, "
+            + "p.brand, p.main_image, p.images_json AS imagesJson, "
+            + "p.detail_images_json AS detailImagesJson, p.sales_count, p.detail_html AS detailHtml, "
+            + "p.params_json AS paramsJson, p.service_tags_json AS serviceTagsJson, "
+            + "p.can_customize AS canCustomize "
             + "FROM product p LEFT JOIN product_category c ON c.id = p.category_id "
             + "WHERE p.id = #{productId} AND p.deleted = 0")
     ProductRow selectProductById(@Param("productId") long productId);
 
-    @Select("SELECT s.id, s.sku_no, s.spec_json, s.retail_price_cent, s.status, "
+    @Select("SELECT s.id, s.sku_no, s.spec_json, s.image_file_id AS imageFileId, s.retail_price_cent, s.status, "
             + "(SELECT MIN(l.price_cent) FROM ladder_price l WHERE l.sku_id = s.id) AS ladder_price_cent, "
             + "COALESCE(st.physical_qty - st.locked_qty - st.pending_qty - st.frozen_qty, 0) AS available_qty "
             + "FROM sku s LEFT JOIN sku_stock st ON st.sku_id = s.id "
@@ -96,12 +99,19 @@ public interface CatalogMapper {
         private Long id;
         private String productNo;
         private String title;
+        private String subtitle;
         private Long categoryId;
         private String categoryName;
         private String status;
+        private String brand;
         private String mainImage;
+        private String imagesJson;
+        private String detailImagesJson;
         private Long salesCount;
         private String detailHtml;
+        private String paramsJson;
+        private String serviceTagsJson;
+        private Integer canCustomize;
 
         public Long getId() { return id; }
         public void setId(Long id) { this.id = id; }
@@ -109,18 +119,32 @@ public interface CatalogMapper {
         public void setProductNo(String productNo) { this.productNo = productNo; }
         public String getTitle() { return title; }
         public void setTitle(String title) { this.title = title; }
+        public String getSubtitle() { return subtitle; }
+        public void setSubtitle(String subtitle) { this.subtitle = subtitle; }
         public Long getCategoryId() { return categoryId; }
         public void setCategoryId(Long categoryId) { this.categoryId = categoryId; }
         public String getCategoryName() { return categoryName; }
         public void setCategoryName(String categoryName) { this.categoryName = categoryName; }
         public String getStatus() { return status; }
         public void setStatus(String status) { this.status = status; }
+        public String getBrand() { return brand; }
+        public void setBrand(String brand) { this.brand = brand; }
         public String getMainImage() { return mainImage; }
         public void setMainImage(String mainImage) { this.mainImage = mainImage; }
+        public String getImagesJson() { return imagesJson; }
+        public void setImagesJson(String imagesJson) { this.imagesJson = imagesJson; }
+        public String getDetailImagesJson() { return detailImagesJson; }
+        public void setDetailImagesJson(String detailImagesJson) { this.detailImagesJson = detailImagesJson; }
         public Long getSalesCount() { return salesCount; }
         public void setSalesCount(Long salesCount) { this.salesCount = salesCount; }
         public String getDetailHtml() { return detailHtml; }
         public void setDetailHtml(String detailHtml) { this.detailHtml = detailHtml; }
+        public String getParamsJson() { return paramsJson; }
+        public void setParamsJson(String paramsJson) { this.paramsJson = paramsJson; }
+        public String getServiceTagsJson() { return serviceTagsJson; }
+        public void setServiceTagsJson(String serviceTagsJson) { this.serviceTagsJson = serviceTagsJson; }
+        public Integer getCanCustomize() { return canCustomize; }
+        public void setCanCustomize(Integer canCustomize) { this.canCustomize = canCustomize; }
     }
 
     /**
@@ -148,6 +172,7 @@ public interface CatalogMapper {
         private Long id;
         private String skuNo;
         private String specJson;
+        private String imageFileId;
         private Long retailPriceCent;
         private Long ladderPriceCent;
         private String status;
@@ -159,6 +184,8 @@ public interface CatalogMapper {
         public void setSkuNo(String skuNo) { this.skuNo = skuNo; }
         public String getSpecJson() { return specJson; }
         public void setSpecJson(String specJson) { this.specJson = specJson; }
+        public String getImageFileId() { return imageFileId; }
+        public void setImageFileId(String imageFileId) { this.imageFileId = imageFileId; }
         public Long getRetailPriceCent() { return retailPriceCent; }
         public void setRetailPriceCent(Long retailPriceCent) { this.retailPriceCent = retailPriceCent; }
         public Long getLadderPriceCent() { return ladderPriceCent; }

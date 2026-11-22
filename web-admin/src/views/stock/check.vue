@@ -131,5 +131,9 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.check-diff { color: #d03050; font-weight: 700; }
+.check-diff {
+  color: var(--sent-danger);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
 </style>

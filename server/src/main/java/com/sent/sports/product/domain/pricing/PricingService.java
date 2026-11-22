@@ -21,6 +21,7 @@ public class PricingService {
 
     public PricingService() {
         this(List.of(
+                new FlashSalePriceStrategy(),
                 new CustomerSkuPriceStrategy(),
                 new AgreementPriceStrategy(),
                 new LadderPriceStrategy(),

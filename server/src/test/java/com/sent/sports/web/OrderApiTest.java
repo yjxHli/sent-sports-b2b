@@ -6,11 +6,13 @@ import com.sent.sports.common.web.PageResult;
 import com.sent.sports.common.web.CurrentUser;
 import com.sent.sports.order.controller.OrderController;
 import com.sent.sports.order.dto.OrderDtos;
+import com.sent.sports.order.service.BatchDeleteOrdersUseCase;
 import com.sent.sports.order.service.CancelOrderUseCase;
 import com.sent.sports.order.service.ConfirmReceiptUseCase;
 import com.sent.sports.order.service.CreateOrderUseCase;
 import com.sent.sports.order.service.DeleteOrderUseCase;
 import com.sent.sports.order.service.OrderQueryService;
+import com.sent.sports.order.service.dto.BatchDeleteOrdersResult;
 import com.sent.sports.order.service.dto.CancelOrderResult;
 import com.sent.sports.order.service.dto.ConfirmReceiptResult;
 import com.sent.sports.order.service.dto.CreateOrderResult;
@@ -59,6 +61,9 @@ class OrderApiTest extends BaseApiTest {
 
     @MockBean
     private DeleteOrderUseCase deleteOrderUseCase;
+
+    @MockBean
+    private BatchDeleteOrdersUseCase batchDeleteOrdersUseCase;
 
     @Test
     @DisplayName("下单返回订单号与应付金额 200")
@@ -199,6 +204,51 @@ class OrderApiTest extends BaseApiTest {
                 .when(deleteOrderUseCase).delete(eq("O1"), org.mockito.ArgumentMatchers.isNull());
 
         mvc.perform(delete("/api/orders/O1"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(40101));
+    }
+
+    @Test
+    @DisplayName("多选删除返回 200：能删的删掉，在途单逐条回原因（不给整批失败码）")
+    void batchDeleteReturnsDeletedAndSkipped() throws Exception {
+        when(batchDeleteOrdersUseCase.delete(any(), eq(9002L))).thenReturn(new BatchDeleteOrdersResult(
+                2, List.of(new BatchDeleteOrdersResult.Skipped("SO2", "在途订单不能删除，请先完成收货或取消订单"))));
+
+        mvc.perform(post("/api/orders/batch-delete")
+                        .requestAttr(CurrentUser.ATTR, new CurrentUser(CurrentUser.AUD_USER, 9002L, "jti"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"ids\":[\"SO1\",\"SO2\",\"SO3\"]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.deleted").value(2))
+                .andExpect(jsonPath("$.data.skipped.length()").value(1))
+                .andExpect(jsonPath("$.data.skipped[0].id").value("SO2"))
+                .andExpect(jsonPath("$.data.skipped[0].reason").value("在途订单不能删除，请先完成收货或取消订单"));
+
+        verify(batchDeleteOrdersUseCase).delete(any(), eq(9002L));
+    }
+
+    @Test
+    @DisplayName("多选删除：空选择被参数校验拦下 400，不进用例")
+    void batchDeleteRejectsEmptySelection() throws Exception {
+        mvc.perform(post("/api/orders/batch-delete")
+                        .requestAttr(CurrentUser.ATTR, new CurrentUser(CurrentUser.AUD_USER, 9002L, "jti"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"ids\":[]}"))
+                .andExpect(status().isBadRequest());
+
+        verify(batchDeleteOrdersUseCase, org.mockito.Mockito.never()).delete(any(), any());
+    }
+
+    @Test
+    @DisplayName("多选删除：未登录返回 40101（管理端令牌也不行）")
+    void batchDeleteWithoutCustomerReturns40101() throws Exception {
+        org.mockito.Mockito.doThrow(new BizException(ErrorCode.UNAUTHENTICATED))
+                .when(batchDeleteOrdersUseCase).delete(any(), org.mockito.ArgumentMatchers.isNull());
+
+        mvc.perform(post("/api/orders/batch-delete")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"ids\":[\"SO1\"]}"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value(40101));
     }

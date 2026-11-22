@@ -24,4 +24,14 @@ public interface OrderQueryService {
 
     /** 订单详情：四维度状态 + 金额（P4 桩，P5 接入仓储后替换）。 */
     OrderDtos.OrderVO getDetail(String orderNo);
+
+    /**
+     * 评价资格校验（V55）：该客户是否存在「含此商品（可限定 SKU）且已完成」的订单。
+     *
+     * <p>review 模块按下单事实判定「买过没买过」，自己不去读订单表（ArchUnit 规则 4），
+     * 因此把这条只读查询收敛到订单门面里。{@code skuId} 为空时按商品级判定。</p>
+     *
+     * @return 命中的订单号；无资格返回 {@link java.util.Optional#empty()}
+     */
+    java.util.Optional<String> findCompletedOrderNoForReview(long customerId, long productId, Long skuId);
 }

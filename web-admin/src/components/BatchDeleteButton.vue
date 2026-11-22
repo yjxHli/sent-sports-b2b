@@ -7,9 +7,10 @@
   -->
   <template v-if="!active">
     <el-button
+      class="batch-delete-trigger"
       type="danger"
+      text
       size="small"
-      plain
       data-testid="batch-delete-btn"
       @click="enter"
     >
@@ -111,9 +112,20 @@ async function onDelete(): Promise<void> {
 </script>
 
 <style scoped>
+/* 危险动作常态下是红色文字入口，不抢「查询」的位置，但必须一眼能看见：
+   原来用 --sent-ink-3 和「刷新/列显隐」混成一片灰，用户反馈顶部按钮看不清。 */
+.batch-delete-trigger {
+  padding: 0 8px;
+  font-weight: var(--fw-medium);
+  color: var(--sent-danger);
+}
+.batch-delete-trigger:hover {
+  color: var(--sent-danger);
+  background: var(--sent-danger-soft);
+}
 .batch-delete-tip {
   align-self: center;
   font-size: 12px;
-  color: var(--sent-text-2, #606266);
+  color: var(--sent-ink-3);
 }
 </style>

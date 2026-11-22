@@ -214,6 +214,12 @@ export interface RefundVO {
   amountCent: number;
   reason?: string;
   createdAt?: number;
+  images?: string[] | null;
+  /**
+   * 是否需客服人工复核（V52）：订单含「审核通过但未排产」的定制单时为 true。
+   * 这一档允许退款，但必须由客服与生产确认是否已备料/打样后再放行。
+   */
+  needManualReview?: boolean;
 }
 
 /** 退款审核详情里的订单行：金额一律「分」，行实付已扣掉分摊优惠，可直接与退款金额对账。 */
@@ -286,6 +292,8 @@ export interface RefundAuditDetailVO {
   createdAt?: number;
   refundedAt?: number | null;
   order?: AuditOrderVO | null;
+  /** 定制单「审核通过未排产」：放行前须与生产确认是否已备料（V52）。 */
+  needManualReview?: boolean;
 }
 
 // ---------------------------------------------------------------------------

@@ -23,8 +23,11 @@ public interface ChatMetricsMapper {
             + "COALESCE(r.ratedCount, 0) AS ratedCount, "
             + "COALESCE(r.satisfiedCount, 0) AS satisfiedCount, "
             + "COALESCE(n.resolvedCount, 0) AS resolvedCount, "
-            + "COALESCE(c.avgDurationSeconds, 0) AS avgDurationSeconds "
+            + "COALESCE(c.avgDurationSeconds, 0) AS avgDurationSeconds, "
+            // 坐席状态是「当前值」而不是历史聚合：LEFT JOIN 现场状态表，没有记录视为离线
+            + "COALESCE(sp.status, 'OFFLINE') AS presence "
             + "FROM sys_staff st "
+            + "LEFT JOIN staff_presence sp ON sp.staff_id = st.id "
             + "LEFT JOIN ("
             + "  SELECT staff_id, COUNT(*) AS closedCount, "
             + "  AVG(TIMESTAMPDIFF(SECOND, COALESCE(started_at, created_at), ended_at)) AS avgDurationSeconds "

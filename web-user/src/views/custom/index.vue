@@ -70,7 +70,43 @@
           <strong>定制单列表</strong>
           <span class="custom-section__count">本页 {{ rows.length }} / 共 {{ total }} 单</span>
         </div>
-        <el-button link type="primary" :loading="loading" @click="load">刷新</el-button>
+        <div class="custom-section__ops">
+          <el-button
+            size="small"
+            :type="manage ? 'primary' : 'default'"
+            data-testid="custom-batch-toggle"
+            @click="toggleManage"
+          >
+            {{ manage ? '退出批量' : '批量管理' }}
+          </el-button>
+          <el-button link type="primary" :loading="loading" @click="load">刷新</el-button>
+        </div>
+      </div>
+
+      <!-- 批量操作条：定制单只有「已发货 / 已取消」可删，进行中的单要等完成或取消 -->
+      <div v-if="manage" class="batch-bar" data-testid="custom-batch-bar">
+        <el-checkbox
+          :model-value="allSelected"
+          :indeterminate="indeterminate"
+          :disabled="selectableRows.length === 0"
+          data-testid="custom-batch-all"
+          @change="toggleAll"
+        >
+          全选本页
+        </el-checkbox>
+        <span class="batch-bar__hint">
+          已选 <b>{{ selected.length }}</b> 单 · 仅「已发货 / 已取消」可删除，进行中的定制单请等完成或取消
+        </span>
+        <el-button
+          type="danger"
+          size="small"
+          :disabled="selected.length === 0"
+          :loading="removing"
+          data-testid="custom-batch-delete"
+          @click="removeSelected"
+        >
+          删除所选
+        </el-button>
       </div>
 
       <div v-if="loading && rows.length === 0" class="custom-skeleton">
@@ -87,13 +123,23 @@
           v-for="row in rows"
           :key="row.customOrderId"
           class="custom-row"
+          :class="{ 'custom-row--selected': isSelected(row.customOrderId) }"
           role="link"
           tabindex="0"
-          @click="openDetail(row.customOrderId)"
-          @keyup.enter="openDetail(row.customOrderId)"
+          @click="onRowClick(row)"
+          @keyup.enter="onRowClick(row)"
         >
           <div class="row-main">
             <div class="row-main__left">
+              <span v-if="manage" class="row-check" @click.stop>
+                <el-checkbox
+                  :model-value="isSelected(row.customOrderId)"
+                  :disabled="!canDelete(row)"
+                  :title="canDelete(row) ? '选择这一单' : '进行中的定制单不能删除，请等完成或取消'"
+                  data-testid="custom-select"
+                  @change="toggle(row.customOrderId)"
+                />
+              </span>
               <span class="row-icon">
                 <svg width="19" height="19" viewBox="0 0 20 20" fill="none" aria-hidden="true">
                   <path
@@ -195,7 +241,7 @@
  */
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { unwrap } from '@/utils/http';
 import { customApi, type MyCustomOrderVO } from '@/api/custom';
 import { fmtDateTime, statusLabel, statusTone, type StatusTone } from '@sent/shared';
@@ -275,6 +321,9 @@ async function load(): Promise<void> {
     const data = await unwrap(customApi.my({ page: page.value, size: size.value }));
     rows.value = data?.list ?? [];
     total.value = Number(data?.total ?? 0);
+    // 翻页/删完重新取数后重置勾选集，避免把上一页的单号带进「删除所选」
+    selected.value = selected.value.filter((id) =>
+      rows.value.some((r) => r.customOrderId === id && canDelete(r)));
   } catch {
     rows.value = [];
     total.value = 0;
@@ -287,6 +336,92 @@ async function load(): Promise<void> {
 /** 点一行 → 详情页 */
 function openDetail(customOrderId: string): void {
   router.push(`/custom/${customOrderId}`);
+}
+
+/* ---------------- 批量删除（多选） ---------------- */
+/**
+ * 可删范围与后端 `CustomStatus.isTerminal()` 同口径：已发货 / 已取消。
+ * 待提交图稿、待审核、生产中、已完工都在流程里，删掉会让审图台少一条待办、排期对不上账，
+ * 所以复选框直接禁用并把原因写在 title 上；服务端还会再校验一次（不信前端）。
+ */
+const DELETABLE_STATUS = ['SHIPPED', 'CANCELLED'];
+const manage = ref(false);
+const selected = ref<string[]>([]);
+const removing = ref(false);
+
+function canDelete(row: MyCustomOrderVO): boolean {
+  return DELETABLE_STATUS.includes(String(row.status ?? ''));
+}
+const selectableRows = computed(() => rows.value.filter(canDelete));
+const allSelected = computed(
+  () => selectableRows.value.length > 0 && selected.value.length === selectableRows.value.length,
+);
+const indeterminate = computed(() => selected.value.length > 0 && !allSelected.value);
+
+function isSelected(customOrderId: string): boolean {
+  return selected.value.includes(customOrderId);
+}
+function toggleManage(): void {
+  manage.value = !manage.value;
+  selected.value = [];
+}
+function toggle(customOrderId: string): void {
+  selected.value = isSelected(customOrderId)
+    ? selected.value.filter((x) => x !== customOrderId)
+    : [...selected.value, customOrderId];
+}
+function toggleAll(value: boolean | string | number): void {
+  selected.value = value ? selectableRows.value.map((r) => r.customOrderId) : [];
+}
+
+/** 批量态点行 = 勾选；普通态点行 = 进详情（保持原交互） */
+function onRowClick(row: MyCustomOrderVO): void {
+  if (!manage.value) {
+    openDetail(row.customOrderId);
+    return;
+  }
+  if (!canDelete(row)) {
+    ElMessage.warning('进行中的定制单不能删除，请等完成发货或取消后再试');
+    return;
+  }
+  toggle(row.customOrderId);
+}
+
+/** 删除所选：二次确认 → 批量接口 → 分别提示「删了几单 / 几单没删掉及原因」 */
+async function removeSelected(): Promise<void> {
+  if (selected.value.length === 0) return;
+  const count = selected.value.length;
+  try {
+    await ElMessageBox.confirm(
+      `确定删除选中的 ${count} 张定制单吗？删除后将从「我的定制」中移除，图稿与审核记录仍保留在系统内。`,
+      '删除定制单',
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '再想想' },
+    );
+  } catch {
+    return;
+  }
+
+  removing.value = true;
+  try {
+    const res = await unwrap(customApi.batchRemove([...selected.value]));
+    const deleted = Number(res?.deleted ?? 0);
+    const skipped = res?.skipped ?? [];
+    if (deleted > 0) ElMessage.success(`已删除 ${deleted} 张定制单`);
+    if (skipped.length > 0) {
+      const detail = skipped
+        .slice(0, 3)
+        .map((s) => `${s.id}：${s.reason}`)
+        .join('；');
+      ElMessage.warning(`${skipped.length} 张未删除 —— ${detail}${skipped.length > 3 ? ' 等' : ''}`);
+    }
+    if (deleted === 0 && skipped.length === 0) ElMessage.info('所选定制单已删除，无需重复操作');
+    selected.value = [];
+    await load();
+  } catch (e) {
+    ElMessage.error((e as Error).message || '删除失败');
+  } finally {
+    removing.value = false;
+  }
 }
 
 /** 手输单号：合法就直接进详情页，非法给提示（不再原地展开） */
@@ -491,6 +626,11 @@ onMounted(() => {
   gap: 10px;
   font-size: 15px;
 }
+.custom-section__ops {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
 .custom-section__count {
   font-size: 11px;
   font-weight: 500;
@@ -498,6 +638,37 @@ onMounted(() => {
   background: var(--sent-primary-soft);
   padding: 2px 8px;
   border-radius: 10px;
+}
+
+/* ============ 批量删除 ============ */
+.batch-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 12px;
+  margin-top: 12px;
+  border: 1px solid var(--sent-border);
+  border-radius: 8px;
+  background: #fafbfc;
+}
+.batch-bar__hint {
+  font-size: 12px;
+  color: var(--sent-muted);
+}
+.batch-bar__hint b {
+  color: var(--sent-accent-dark);
+}
+.batch-bar .el-button {
+  margin-left: auto;
+}
+.row-check {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+.custom-row--selected {
+  border-color: var(--sent-primary);
+  box-shadow: 0 0 0 2px var(--sent-primary-soft);
 }
 
 /* ============ 定制单卡片 ============ */

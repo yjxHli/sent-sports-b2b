@@ -1,66 +1,23 @@
 /**
- * 客服 API（P6-20，对应 AdminChatController）。
- * 会话实时消息走 /ws/chat，这里只负责列表、接待、转接、结束与在线状态。
+ * 客服治理 API（管理端，对应 AdminChatController）。
+ *
+ * 2026-11-20 架构调整：**客服工作台已整体剥离到独立工程 `web-cs`（:5175）**。
+ * 接待类动作（在线状态 / 接待 / 转接 / 结束 / 实时消息 / 本次小结 / 顾客订单）
+ * 不再由管理端发起，相关方法与 VO 已从本文件删除——否则「两边都能接待」会出现
+ * 坐席状态与并发上限两套真源，还会让管理端继续背一份 WebSocket 长连接。
+ *
+ * 管理端只保留「治理」视角（客服审查 / 客服指标）用到的接口：
+ * - `auditSessions` / `auditStaff`：审查列表与客服下拉
+ * - `transcript`：单会话转录详情（审查弹窗复用）
+ * - `metrics`：按客服聚合的服务指标
+ * - `batchDeleteAuditSessions`：审查记录批量软删（需 X-Confirm-Token）
  */
 import { http, type SentRequestConfig } from '@/utils/http';
-import type { PageQuery, PageResult, ChatSessionVO, ChatMessageVO } from '@sent/shared';
+import type { PageQuery, PageResult } from '@sent/shared';
 
-export interface PresenceVO {
-  staffId: number;
-  presence: string;
-  releasedSessions: number;
-}
+/* ---------- 会话转录（审查弹窗） ---------- */
 
-export interface SessionActionVO {
-  sessionId: number;
-  status: string;
-  staffId: number | null;
-}
-
-export interface CloseVO {
-  sessionId: number;
-  status: string;
-  /** 结束会话后自动补位的排队会话号（无则 null） */
-  promotedSessionId?: number | null;
-}
-
-export interface WorkloadVO {
-  staffId: number;
-  staffName?: string;
-  activeSessions: number;
-  presence?: string;
-  maxSessions?: number;
-}
-
-/** 工作台左侧两栏的会话行（与后端 OpenSessionsResult.Row 对齐）。 */
-export interface OpenSessionRow {
-  sessionId: number;
-  status: string;
-  staffId: number | null;
-  customerId: number;
-  waitingSinceMillis: number;
-  /** 排队位置，1 开始；进行中为 0 */
-  queuePosition: number;
-}
-
-/** 工作台「今日完成接待数」：服务端按本地自然日统计，跨零点自动归零 */
-export interface TodayStatsVO {
-  staffId: number;
-  date: string;
-  closedCount: number;
-  /** 当日有效评价数（一般/不满意也算有效），Long 由 Jackson 序列化成字符串 */
-  ratedCount?: number;
-  satisfiedCount?: number;
-  /** 满意率百分比；-1 = 当日还没有评价，前端显示 -- */
-  ratePercent?: number;
-}
-
-export interface OpenSessionsVO {
-  active: OpenSessionRow[];
-  waiting: OpenSessionRow[];
-}
-
-/** 单会话状态（工作台 Tab 置灰用） */
+/** 单会话状态（转录详情头部用） */
 export interface ChatSessionDetailVO {
   sessionId: number;
   status: string;
@@ -96,16 +53,7 @@ export interface ChatTranscriptVO {
   note: ChatNoteVO | null;
 }
 
-export interface ChatHistoryRowVO {
-  sessionId: number;
-  staffId: number | null;
-  staffName?: string | null;
-  startedAtMillis: number;
-  endedAtMillis: number;
-  closeReason?: string | null;
-  result?: string | null;
-  messageCount: number;
-}
+/* ---------- 客服审查 ---------- */
 
 export interface ChatAuditRowVO {
   sessionId: number;
@@ -124,6 +72,8 @@ export interface ChatAuditStaffVO {
   name: string;
 }
 
+/* ---------- 客服指标 ---------- */
+
 /** 客服指标行（后端 ChatMetricsDtos.Row；Long 序列化成字符串，前端统一 Number()） */
 export interface ChatMetricsRowVO {
   staffId: number;
@@ -137,6 +87,8 @@ export interface ChatMetricsRowVO {
   /** -1 = 区间内无已结束会话，显示 -- */
   resolutionRate: number;
   avgDurationSeconds: number;
+  /** 坐席当前状态（不是区间内的历史值）：ONLINE / BUSY / OFFLINE */
+  presence: string;
 }
 
 export interface ChatMetricsVO {
@@ -145,60 +97,26 @@ export interface ChatMetricsVO {
   rows: ChatMetricsRowVO[];
 }
 
-export interface SaveNotePayload {
+/** 坐席负载行（/admin/chat/workload），指标页用它每 10 秒刷新一次「当前状态」 */
+export interface ChatWorkloadVO {
   staffId: number;
-  summary: string;
-  category: string;
-  info: string;
-  result: string;
-  solution: string;
+  presence: string;
+  activeSessions: number;
+  maxSessions: number;
 }
 
 export const chatApi = {
-  sessions: (query: PageQuery & { status?: string }) =>
-    http.get<PageResult<ChatSessionVO>>('/admin/chat/sessions', query),
-  /** 工作台左侧两栏：我的进行中 + 全员排队中（不分页，服务端限长） */
-  openSessions: (staffId: number) =>
-    http.get<OpenSessionsVO>('/admin/chat/sessions/open', { staffId }),
-  workload: () => http.get<WorkloadVO[]>('/admin/chat/workload'),
-  /** 今日完成接待数（顶栏右侧常驻） */
-  todayStats: (staffId: number) =>
-    http.get<TodayStatsVO>('/admin/chat/stats/today', { staffId }),
-  presence: (staffId: number, presence: string) =>
-    http.post<PresenceVO>('/admin/chat/presence', { staffId, presence }),
-  accept: (id: number, staffId: number) =>
-    http.post<SessionActionVO>(`/admin/chat/sessions/${id}/accept`, { staffId }),
-  transfer: (id: number, toStaffId: number, reason: string) =>
-    http.post<SessionActionVO>(`/admin/chat/sessions/${id}/transfer`, { toStaffId, reason }),
-  close: (id: number, reason: string) =>
-    http.post<CloseVO>(`/admin/chat/sessions/${id}/close`, { reason }),
-  /** 客服主动发「请评价本次服务」卡片；同会话幂等 */
-  sendSatisfaction: (id: number) =>
-    http.post<{ messageId: string }>(`/admin/chat/sessions/${id}/satisfaction`, {}),
-
-  /** 用户端会话历史（客服工作台三栏的消息区） */
-  history: (sessionId: number, seq?: number) =>
-    http.get<ChatMessageVO[]>(`/chat/sessions/${sessionId}/messages`, seq === undefined ? {} : { seq }),
-
-  /* ---------- 会话小结 / 历史服务 / 客服审查 ---------- */
-  sessionDetail: (sessionId: number) =>
-    http.get<ChatSessionDetailVO>(`/admin/chat/sessions/${sessionId}`),
   transcript: (sessionId: number) =>
     http.get<ChatTranscriptVO>(`/admin/chat/sessions/${sessionId}/transcript`),
-  customerHistory: (customerId: number, excludeSessionId = 0, limit = 10) =>
-    http.get<ChatHistoryRowVO[]>(`/admin/chat/customers/${customerId}/sessions`,
-      { excludeSessionId, limit }),
-  note: (sessionId: number) =>
-    http.get<ChatNoteVO | null>(`/admin/chat/sessions/${sessionId}/note`),
-  saveNote: (sessionId: number, payload: SaveNotePayload) =>
-    http.put<ChatNoteVO>(`/admin/chat/sessions/${sessionId}/note`, payload),
   auditSessions: (query: PageQuery & {
     staffId?: number; from?: string; to?: string; result?: string; keyword?: string;
   }) => http.get<PageResult<ChatAuditRowVO>>('/admin/chat/audit/sessions', query),
   auditStaff: () => http.get<ChatAuditStaffVO[]>('/admin/chat/audit/staff'),
-  /** 客服指标：今天 / 近 7 天 / 近 30 天 / 自定义区间，按客服聚合 */
-  metrics: (query: { staffId?: number; from?: string; to?: string }) =>
+  /** 客服指标：今天 / 近 7 天 / 近 30 天 / 自定义区间，按客服聚合；presence 按当前状态过滤 */
+  metrics: (query: { staffId?: number; from?: string; to?: string; presence?: string }) =>
     http.get<ChatMetricsVO>('/admin/chat/metrics', query),
+  /** 各坐席当前状态与负载（实时刷新的唯一来源） */
+  workload: () => http.get<ChatWorkloadVO[]>('/admin/chat/workload'),
   /** 客服审查批量软删：与发票一致，config 必须带 openConfirm 换来的 X-Confirm-Token */
   batchDeleteAuditSessions: (ids: string[], config?: SentRequestConfig) =>
     http.post<{ deleted: number }>('/admin/chat/audit/sessions/batch-delete', { ids }, config),

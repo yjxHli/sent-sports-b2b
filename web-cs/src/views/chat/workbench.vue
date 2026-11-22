@@ -3,7 +3,7 @@
     <!-- 顶部条：状态与工具收成一行，把空间让给会话 -->
     <header class="wb__bar">
       <div class="wb__bar-main">
-        <h2 class="wb__title">客服工作台</h2>
+        <!-- 页面身份由布局顶栏承担，这里不再重复 h2 标题，把宽度留给状态与统计 -->
         <el-tag :type="connected ? 'success' : 'info'" effect="dark" size="small">
           {{ connected ? 'WebSocket 已连接' : 'WebSocket 未连接' }}
         </el-tag>
@@ -42,14 +42,10 @@
             <div class="seat__name">客服 {{ staffId }}</div>
             <div class="seat__sub">
               <span class="seat__dot" :class="`seat__dot--${presence.toLowerCase()}`" />
-              {{ presenceText }} · 自动接入
+              <span data-testid="seat-presence-hint">{{ presenceHint }}</span>
             </div>
           </div>
-          <el-select v-model="presence" size="small" class="seat__presence" @change="changePresence">
-            <el-option label="在线" :value="PresenceStatus.ONLINE" />
-            <el-option label="忙碌" :value="PresenceStatus.BUSY" />
-            <el-option label="离线" :value="PresenceStatus.OFFLINE" />
-          </el-select>
+          <!-- 状态开关已上移到布局顶栏（cs-presence），这里只做只读回显（见 .seat__sub 的 presenceText） -->
         </div>
 
         <div class="side-search">
@@ -80,7 +76,7 @@
             </div>
           </section>
 
-          <section class="list-panel">
+          <section v-if="canSeeQueue" class="list-panel" data-testid="queue-panel">
             <h3 class="side-head">排队中 <span class="count">{{ waitingRows.length }}</span></h3>
             <p v-if="!waitingRowsView.length" class="side-empty">暂无排队客户</p>
             <div
@@ -102,6 +98,14 @@
               </div>
             </div>
           </section>
+          <!-- 离线：既看不到排队人数，也不能接线。给一句明确的出路，别让人以为系统坏了 -->
+          <section v-else class="list-panel list-panel--offline" data-testid="queue-offline-hint">
+            <h3 class="side-head">排队中 <span class="count">--</span></h3>
+            <p class="side-empty">
+              当前离线，看不到排队客户。<br />
+              切换到「在线」后才会显示排队并开始接入。
+            </p>
+          </section>
         </div>
       </aside>
 
@@ -111,7 +115,9 @@
           <div class="chat-empty__icon">💬</div>
           <p class="chat-empty__title">还没有打开任何会话</p>
           <p class="chat-empty__hint">
-            客户进线会自动弹出聊天框；也可以从左侧点会话打开（最多同时 3 个）
+            {{ canAccept
+              ? '客户进线会自动弹出聊天框；也可以从左侧点会话打开（最多同时 3 个）'
+              : '当前不是在线状态：切换顶栏「在线」后，客户进线才会自动接入' }}
           </p>
         </div>
 
@@ -158,6 +164,9 @@
                       v-if="tab.status === ChatSessionStatus.WAITING"
                       type="primary"
                       size="small"
+                      :disabled="!canAccept"
+                      :title="canAccept ? '' : '当前离线/忙碌，切换到在线后才能接待'"
+                      data-testid="accept-btn"
                       @click="accept(tab)"
                     >
                       接待
@@ -481,6 +490,7 @@ import {
 } from '@/api';
 import { fileApi } from '@/api/file';
 import { usePermissionStore } from '@/store/modules/permission';
+import { usePresenceStore } from '@/store/modules/presence';
 import {
   CHAT_CATEGORY_LABELS, CHAT_INFO_LABELS, ChatSessionStatus, PresenceStatus,
   SATISFY_LABELS, SenderType, statusLabel,
@@ -512,8 +522,10 @@ interface OpenTab {
 const MAX_TABS = 3;
 
 const permission = usePermissionStore();
+const presenceStore = usePresenceStore();
 const staffId = ref<number>(Number(permission.me?.userId ?? 0) || 1);
-const presence = ref<string>(PresenceStatus.ONLINE);
+/** 在线状态的唯一真源在 presence store（顶栏开关与这里共用），工作台只读不写 */
+const presence = computed(() => presenceStore.presence);
 const onlineCount = ref(0);
 const workload = ref<WorkloadVO[]>([]);
 const maxSessions = ref<number>(MAX_TABS);
@@ -537,11 +549,15 @@ const waitingRowsView = computed(() => waitingRows.value.filter(matchRow));
 
 /** 坐席头像用工号后两位，避免再引一个图片资源 */
 const staffInitial = computed(() => String(staffId.value).slice(-2));
-const presenceText = computed(() => {
-  if (presence.value === PresenceStatus.ONLINE) return '在线';
-  if (presence.value === PresenceStatus.BUSY) return '忙碌';
-  return '离线';
+/** 坐席状态副标题：说清「现在能不能接人」，别让客服对着空列表猜 */
+const presenceHint = computed(() => {
+  if (presence.value === PresenceStatus.ONLINE) return '在线 · 自动接入';
+  if (presence.value === PresenceStatus.BUSY) return '忙碌 · 暂停自动接入';
+  return '离线 · 不接待新客户';
 });
+/** 离线看不到排队（后端也不下发），忙碌仍可见队列但不能自动接入 */
+const canSeeQueue = computed(() => presence.value !== PresenceStatus.OFFLINE);
+const canAccept = computed(() => presence.value === PresenceStatus.ONLINE);
 
 const tabs = ref<OpenTab[]>([]);
 const activeTab = ref<string>('');
@@ -703,6 +719,13 @@ async function loadCustomerOrders(customerId: number): Promise<void> {
   }
 }
 
+/* 同一客户最近服务记录：服务端硬上限 10，当前会话不重复列出。
+ * 这两个 ref 必须声明在下面的 immediate watch 之前——immediate 让回调在本轮 setup
+ * 里同步执行，若声明在后会踩 const 的 TDZ（旧版报 "Cannot access 'historyRows' before initialization"，
+ * 结果是首屏「历史服务」永远不加载）。 */
+const historyRows = ref<ChatHistoryRowVO[]>([]);
+const historyLoading = ref(false);
+
 watch(activeCustomerId, (id) => {
   activeOrderNo.value = '';
   void loadCustomerOrders(id);
@@ -765,9 +788,7 @@ async function saveNote(): Promise<void> {
   }
 }
 
-/** 同一客户最近服务记录：服务端硬上限 10，当前会话不重复列出 */
-const historyRows = ref<ChatHistoryRowVO[]>([]);
-const historyLoading = ref(false);
+/** 拉取同一客户的最近服务记录（声明见上方 watch 之前的 historyRows） */
 async function loadHistoryService(): Promise<void> {
   const customer = activeCustomerId.value;
   if (!customer) {
@@ -981,7 +1002,22 @@ function normalizeRow(row: any): OpenSessionRow {
 const knownSessionIds = new Set<number>();
 function autoOpenFreshSession(): void {
   if (tabs.value.length > 0) return;
-  const rows = [...activeRows.value, ...waitingRows.value];
+  // 2026-11-21：只有「在线」才自动弹出排队客户；忙碌 = 暂停自动接入，离线连队列都看不到。
+  // 进行中的会话不受状态影响——那是已经接待中的客户，离线时后端已释放，这里主要是兜底。
+  //
+  // 两个约束（2026-11-21 两次踩坑后定稿）：
+  //   1) **只挑进行中的会话**。排队中的客户还没分配到本人（在线且有名额时后端会立刻补位成 ACTIVE），
+  //      给他开 Tab 也发不出消息；之前把 waiting 一起纳入候选，结果「排队中的第 4 位客户」
+  //      抢走了唯一 Tab 位，客服点进去发消息必失败。
+  //   2) 同时候选多条时**按会话号从新到旧**：切在线会按名额自动补位（PresenceUseCase.promoteWaiting），
+  //      演示库里那两条 2026-06 的历史会话会一起被拉成 ACTIVE；按后端返回顺序（id 升序）取第一个，
+  //      抢到 Tab 的永远是几个月前的僵尸会话，刚进线的那位客户反而没人接。
+  // 只有「一条进行中都没有」时，才退回看排队栏（离线/忙碌时队列本就为空，等于不自动弹）。
+  const candidates = activeRows.value.slice();
+  if (candidates.length === 0 && canAccept.value) {
+    candidates.push(...waitingRows.value);
+  }
+  const rows = candidates.sort((a, b) => b.sessionId - a.sessionId);
   const fresh = rows.find((row) => !knownSessionIds.has(row.sessionId));
   if (!fresh) return;
   knownSessionIds.add(fresh.sessionId);
@@ -1044,15 +1080,15 @@ async function loadWorkload(): Promise<void> {
   }
 }
 
-async function changePresence(): Promise<void> {
-  try {
-    await unwrap(chatApi.presence(meStaffId.value, presence.value));
-    ElMessage.success(`在线状态已设为 ${statusLabel(presence.value)}`);
-    await Promise.all([loadOpen(), loadWorkload()]);
-  } catch (error) {
-    ElMessage.error((error as Error)?.message || '状态更新失败');
-  }
-}
+/**
+ * 顶栏切换状态后工作台要跟着走：
+ * - 切「离线」后端会把名下会话释放回排队池 → 左侧列表必须重拉，否则显示幽灵会话；
+ * - 切「在线」才可能被分配新会话 → 并发上限/workload 也要刷新。
+ * 状态本身由 presence store 持有，这里只做副作用（拉数据），不重复维护一份状态。
+ */
+watch(() => presenceStore.presence, () => {
+  void Promise.all([loadOpen(), loadWorkload()]);
+});
 
 /**
  * 打开（或聚焦）一个会话 Tab。
@@ -1196,6 +1232,11 @@ async function onImagePicked(event: Event): Promise<void> {
 }
 
 async function accept(tab: OpenTab): Promise<void> {
+  // 前端先挡一道（后端 AssignSessionUseCase 同样会拒），避免离线时点了按钮只看到红字报错
+  if (!canAccept.value) {
+    ElMessage.warning('当前离线或忙碌，切换到「在线」后才能接待客户');
+    return;
+  }
   try {
     await unwrap(chatApi.accept(tab.sessionId, meStaffId.value));
     ElMessage.success(`已接待会话 #${tab.sessionId}`);
@@ -1237,23 +1278,21 @@ function reconnect(): void {
 }
 
 /**
- * 打开工作台即上报在线状态：后端建会话时按「在线坐席」自动分配，
- * 不报状态的话客户进线只能落 WAITING，队列永远补不上人。
+ * 进工作台时从后端读回坐席状态（不再主动上报）。
+ *
+ * <p>为什么不再 report()：2026-11-21 起登录默认离线，若进页面就上报，会把客服
+ * 在别的标签页刚切好的「在线」又冲回离线；反之若上报一个默认 ONLINE，又会绕过
+ * 「登录后必须手动点在线」。所以这里只同步、不写。</p>
  */
-async function reportPresence(): Promise<void> {
+async function syncPresence(): Promise<void> {
   const id = Number(permission.me?.userId ?? 0);
-  if (!Number.isFinite(id) || id <= 0) return;
-  staffId.value = id;
-  try {
-    await unwrap(chatApi.presence(id, presence.value));
-  } catch {
-    // 静默：上报失败不影响列表与实时消息
-  }
+  if (Number.isFinite(id) && id > 0) staffId.value = id;
+  await presenceStore.sync();
 }
 
 onMounted(async () => {
   connect();
-  void reportPresence();
+  void syncPresence();
   await Promise.all([loadOpen(), loadWorkload(), loadTodayStats()]);
   // 超时自动结束（10 分钟无消息）由服务端定时任务收，不回推 WebSocket 帧：
   // 不轮询的话工作台会一直挂着已经结束的 Tab，客服回一句才发现被拒（STATE_CONFLICT）。
@@ -1273,11 +1312,19 @@ onUnmounted(() => {
  * 高度铺满视口，三块各自滚动；配色沿用品牌绿 #12664f，层级靠底色与描边区分。
  * ===================================================================== */
 .wb {
+  /* 独立客服端：外层 cs-body 已经是 (100vh - 顶栏)，这里再显式写一次 calc，
+     是为了让「工作台必须铺满全屏」这件事在组件自己也成立（被单独挂载时也不会塌）。
+     min-height:0 + overflow:hidden：高度只由视口决定，滚动全部下沉到三栏内部。 */
   display: flex;
   flex-direction: column;
+  flex: 1;
   gap: 12px;
-  height: calc(100vh - 116px);
-  min-height: 540px;
+  height: calc(100vh - var(--cs-topbar-h));
+  min-height: 0;
+  padding: 12px 14px 14px;
+  box-sizing: border-box;
+  overflow: hidden;
+  background: #f4f7f5;
 }
 
 /* ---------- 顶部状态条 ---------- */
@@ -1373,13 +1420,21 @@ onUnmounted(() => {
 .seat__dot--online { background: #2f9e7a; }
 .seat__dot--busy { background: #e6a23c; }
 .seat__dot--offline { background: #c2c7cf; }
-.seat__presence { width: 78px; flex: none; }
+/* 坐席状态只在 .seat__sub 里以「在线/忙碌 · 自动接入」回显，不再单独占一个选择器 */
 
 .side-search { padding: 10px 12px; border-bottom: 1px solid #eef2f0; }
 .side-search :deep(.el-input__wrapper) { border-radius: 8px; }
 
 .side-list { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 10px 12px; }
 .list-panel { margin-top: 10px; }
+/* 离线占位：浅灰虚线框，视觉上明确「这里现在没有数据」而不是加载失败 */
+.list-panel--offline .side-empty {
+  border: 1px dashed #d8dfdb;
+  border-radius: 8px;
+  background: #fafbfa;
+  padding: 14px 10px;
+  line-height: 1.7;
+}
 .side-head {
   display: flex;
   align-items: center;
@@ -1566,6 +1621,11 @@ onUnmounted(() => {
 @media (min-width: 1600px) {
   .wb__grid { grid-template-columns: 320px minmax(0, 1fr); }
   .cust-orders { width: 340px; }
+}
+/* 1920x1080 及以上：三栏一起撑开，不留下大片空白（聊天区靠 minmax(0,1fr) 自动吃掉剩余宽度） */
+@media (min-width: 1920px) {
+  .wb__grid { grid-template-columns: 340px minmax(0, 1fr); gap: 14px; }
+  .cust-orders { width: 380px; }
 }
 .side-section { border-top: 1px solid #e9efec; padding: 8px 0; }
 .side-section__toggle {

@@ -27,7 +27,7 @@
           <h3>{{ group.label }}</h3>
           <span>{{ group.items.length }} 件</span>
         </header>
-        <div class="fp-grid">
+        <div class="goods-grid">
           <div v-for="f in group.items" :key="f.productId" class="fp-card" :class="{ 'fp-card--off': !f.onShelf }">
             <button
               type="button"
@@ -269,11 +269,7 @@ onMounted(() => {
   color: var(--sent-muted);
 }
 
-.fp-grid {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 12px;
-}
+/* ---------- 网格：统一走全局 .goods-grid（auto-fill，1440 版心 → 6 列） ---------- */
 .fp-card {
   position: relative;
   background: #fff;
@@ -425,9 +421,5 @@ onMounted(() => {
   color: var(--sent-primary);
 }
 
-@media (max-width: 1080px) {
-  .fp-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
+/* 窄屏列数由全局 .goods-grid 的 auto-fill 自动降列，原 1080px 三列断点已冗余，删除 */
 </style>

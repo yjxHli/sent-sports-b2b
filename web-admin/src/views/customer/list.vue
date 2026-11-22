@@ -47,7 +47,6 @@
           </el-select>
           <el-button type="primary" @click="onSearch">查询</el-button>
           <el-button @click="router.push('/customer/enterprise')">企业审核与授信</el-button>
-          <span class="sent-hint">数据范围（ALL/TEAM/SELF）由后端 SQL 改写决定，前端不做二次过滤</span>
         </template>
 
         <template #col-type="{ row }"><StatusTag :status="row.type" /></template>
@@ -109,16 +108,16 @@ import type { TableColumn } from '@/components/types';
 
 const router = useRouter();
 const columns: TableColumn[] = [
-  { prop: 'customerId', label: '客户 ID', width: 130 },
-  { prop: 'name', label: '客户名称', minWidth: 160 },
-  { prop: 'phone', label: '手机号', width: 150, formatter: (_r, v) => maskPhone(v) },
-  { prop: 'type', label: '类型', width: 100, align: 'center' },
-  { prop: 'level', label: '等级', width: 120, align: 'center' },
-  { prop: 'ownerStaffId', label: '归属员工', width: 110, align: 'center' },
-  { prop: 'creditLimitCent', label: '授信额度', width: 140, align: 'right',
+  { prop: 'customerId', label: '客户 ID', width: 96 },
+  { prop: 'name', label: '客户名称', minWidth: 120 },
+  { prop: 'phone', label: '手机号', width: 128, formatter: (_r, v) => maskPhone(v) },
+  { prop: 'type', label: '类型', width: 84, align: 'center' },
+  { prop: 'level', label: '等级', width: 72, align: 'center' },
+  { prop: 'ownerStaffId', label: '归属员工', width: 96, align: 'center' },
+  { prop: 'creditLimitCent', label: '授信额度', width: 120, align: 'right',
     // 个人客户没有企业授信；未授信（0）也不显示 ¥0.00
     formatter: (r, v) => (r?.type === 'PERSON' || Number(v) <= 0 ? '--' : fmtMoney(v)) },
-  { prop: 'createdAt', label: '创建时间', width: 160, formatter: (_r, v) => fmtDateTime(v) },
+  { prop: 'createdAt', label: '创建时间', minWidth: 140, formatter: (_r, v) => fmtDateTime(v) },
 ];
 
 const query = reactive<{ keyword: string; level?: string }>({ keyword: '' });

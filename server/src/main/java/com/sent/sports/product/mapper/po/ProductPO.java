@@ -14,12 +14,15 @@ public class ProductPO extends BasePO {
 
     private String productNo;
     private String title;
+    private String subtitle;
     private Long categoryId;
     private String brand;
     private String mainImage;
     private String imagesJson;
+    private String detailImagesJson;
     private String detailHtml;
     private String paramsJson;
+    private String serviceTagsJson;
     private Integer canCustomize;
     private String minVisibleLevel;
     private String status;
@@ -42,6 +45,14 @@ public class ProductPO extends BasePO {
 
     public void setTitle(String title) {
         this.title = title;
+    }
+
+    public String getSubtitle() {
+        return subtitle;
+    }
+
+    public void setSubtitle(String subtitle) {
+        this.subtitle = subtitle;
     }
 
     public Long getCategoryId() {
@@ -74,6 +85,22 @@ public class ProductPO extends BasePO {
 
     public void setImagesJson(String imagesJson) {
         this.imagesJson = imagesJson;
+    }
+
+    public String getDetailImagesJson() {
+        return detailImagesJson;
+    }
+
+    public void setDetailImagesJson(String detailImagesJson) {
+        this.detailImagesJson = detailImagesJson;
+    }
+
+    public String getServiceTagsJson() {
+        return serviceTagsJson;
+    }
+
+    public void setServiceTagsJson(String serviceTagsJson) {
+        this.serviceTagsJson = serviceTagsJson;
     }
 
     public String getDetailHtml() {

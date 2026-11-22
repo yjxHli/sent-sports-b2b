@@ -28,16 +28,23 @@ export const WHITE_LIST = ['/login', '/error/403', '/error/404'];
 
 export const MENU_ROUTES: MenuEntry[] = [
   { path: '/dashboard', title: '工作台', icon: '台' },
+  // 业务报表是与工作台同级的一级模块（2026-11-21）：不再塞进「报表」分组。
+  // URL 与权限码保持 /report/sales + report:sales，避免打断书签与 E2E。
+  { path: '/report/sales', title: '业务报表', perm: 'report:sales', icon: '业' },
 
   { path: '/product/list', title: '商品列表', group: '商品', perm: 'product:read', icon: '列' },
   { path: '/product/edit', title: '商品编辑', group: '商品', perm: 'product:update', hidden: true },
   { path: '/product/category', title: '分类管理', group: '商品', perm: 'product:update', icon: '类' },
   { path: '/product/customer-price', title: '一客一价', group: '商品', perm: 'product:update', icon: '价' },
+  // 秒杀活动是「活动」而不是商品属性：运营先发布活动，用户端才可能出现秒杀价
+  { path: '/product/flash-sale', title: '秒杀活动', group: '商品', perm: 'product:update', icon: '秒' },
 
   { path: '/stock/list', title: '库存列表', group: '库存', perm: 'stock:read', icon: '存' },
   { path: '/stock/inbound', title: '手工入库', group: '库存', perm: 'stock:inbound', icon: '入' },
   { path: '/stock/loss', title: '报损', group: '库存', perm: 'stock:loss', icon: '损' },
   { path: '/stock/check', title: '盘点', group: '库存', perm: 'stock:check:approve', icon: '盘' },
+  // 库存预警归到库存业务域（2026-11-21）：路径与权限码不变，只换菜单位置。
+  { path: '/report/stock-warning', title: '库存预警', group: '库存', perm: 'report:stock', icon: '警' },
 
   { path: '/order/list', title: '订单列表', group: '订单', perm: 'order:read', icon: '单' },
   { path: '/order/detail/:orderNo', title: '订单详情', group: '订单', perm: 'order:read', hidden: true },
@@ -54,7 +61,7 @@ export const MENU_ROUTES: MenuEntry[] = [
   { path: '/customer/coupon', title: '优惠券管理', group: '客户与会员', perm: 'customer:grant', icon: '券' },
   { path: '/member/index', title: '会员与积分', group: '客户与会员', perm: 'member:config', icon: '会' },
 
-  { path: '/chat/workbench', title: '客服工作台', group: '客服', perm: 'chat:serve', icon: '服' },
+  // 客服工作台已于 2026-11-20 剥离到独立工程 web-cs（:5175），管理端只保留审查与指标两个治理视图
   { path: '/chat/audit', title: '客服审查', group: '客服', perm: 'chat:audit', icon: '查' },
   { path: '/chat/metrics', title: '客服指标', group: '客服', perm: 'chat:audit', icon: '指' },
 
@@ -70,9 +77,6 @@ export const MENU_ROUTES: MenuEntry[] = [
   { path: '/system/config', title: '业务参数', group: '系统', perm: 'system:config', icon: '参' },
   { path: '/system/sensitive-words', title: '违禁词库', group: '系统', perm: 'system:sensitive', icon: '禁' },
   { path: '/system/log', title: '操作日志', group: '系统', perm: 'system:log', icon: '志' },
-
-  { path: '/report/sales', title: '销售报表', group: '报表', perm: 'report:sales', icon: '销' },
-  { path: '/report/stock-warning', title: '库存预警', group: '报表', perm: 'report:stock', icon: '警' },
 ];
 
 /** 已落地的真实页面：MENU_ROUTES 里每一条都在此登记；StubView 仅作兜底 */
@@ -84,6 +88,7 @@ const REAL_PAGES: Record<string, RouteComponentLoader> = {
   '/product/edit': () => import('@/views/product/edit.vue'),
   '/product/category': () => import('@/views/product/category.vue'),
   '/product/customer-price': () => import('@/views/product/customer-price.vue'),
+  '/product/flash-sale': () => import('@/views/product/flash-sale.vue'),
 
   '/stock/list': () => import('@/views/stock/list.vue'),
   '/stock/inbound': () => import('@/views/stock/inbound.vue'),
@@ -105,7 +110,6 @@ const REAL_PAGES: Record<string, RouteComponentLoader> = {
   '/customer/coupon': () => import('@/views/customer/coupon.vue'),
   '/member/index': () => import('@/views/member/index.vue'),
 
-  '/chat/workbench': () => import('@/views/chat/workbench.vue'),
   '/chat/audit': () => import('@/views/chat/audit.vue'),
   '/chat/metrics': () => import('@/views/chat/metrics.vue'),
 

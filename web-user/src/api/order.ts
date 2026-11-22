@@ -92,6 +92,16 @@ export interface OrderListItem {
   expireAtMillis?: number | null;
 }
 
+/**
+ * 批量删除结果：`deleted` 是实际软删条数，`skipped` 是逐条未删除原因。
+ * 后端刻意不给「一单在途整批失败」的错误码，前端据此提示「已删除 X 笔，Y 笔在途未删」。
+ */
+export interface OrderBatchDeleteResult {
+  deleted: number;
+  /** id = 订单号；reason 可直接展示给用户 */
+  skipped: { id: string; reason: string }[];
+}
+
 export const orderApi = {
   create: (cmd: {
     customerId: number;
@@ -115,6 +125,12 @@ export const orderApi = {
   /** 删除订单：客户侧软删，只从「我的订单」里移除；在途订单后端回 40901 */
   remove: (orderNo: string) =>
     http.delete<void>(`/orders/${orderNo}`),
+  /**
+   * 多选删除：只有终态（已完成 / 已取消 / 已关闭）会真的删，在途单逐条回原因。
+   * 一次最多 200 条（后端 BatchIds.MAX_SIZE），分页 size 上限 100，正常够用。
+   */
+  batchRemove: (orderNos: string[]) =>
+    http.post<OrderBatchDeleteResult>('/orders/batch-delete', { ids: orderNos }),
   confirm: (orderNo: string, lines: { skuId: number; qty: number }[]) =>
     http.post<OrderVO>(`/orders/${orderNo}/confirm`, { lines }),
 };

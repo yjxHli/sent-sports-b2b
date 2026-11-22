@@ -164,4 +164,51 @@ class CustomQueryServiceImplTest {
         BizException ex = assertThrows(BizException.class, () -> service.detail("CU404"));
         assertEquals(ErrorCode.NOT_FOUND, ex.getErrorCode());
     }
+
+    // ------------------------------------------------------------------
+    // 订单详情页的定制卡片（2026-11-21 用户反馈）
+    // ------------------------------------------------------------------
+
+    private static CustomOrderMapper.OrderCustomRow orderCustomRow(String no, String status,
+                                                                   int version, int reject, int qty) {
+        CustomOrderMapper.OrderCustomRow row = new CustomOrderMapper.OrderCustomRow();
+        row.setCustomOrderId(no);
+        row.setStatus(status);
+        row.setVersion(version);
+        row.setRejectCount(reject);
+        row.setQty(qty);
+        row.setFeeCent(300_00L);
+        row.setReviewDeadline(LocalDateTime.of(2026, 11, 22, 18, 0));
+        return row;
+    }
+
+    @Test
+    @DisplayName("按订单查定制单：订单详情页拿到定制单号、状态与图稿版本，可直接跳上传/详情")
+    void ordersOfOrderMapsRows() {
+        String orderNo = "SO20261121000001";
+        when(mapper.selectByOrderNo(9002L, orderNo)).thenReturn(List.of(
+                orderCustomRow(NO, "WAIT_DRAFT", 0, 0, 30),
+                orderCustomRow("CU20261121000002", "REJECTED", 2, 1, 10)));
+
+        List<CustomDtos.OrderCustomVO> list = service.ordersOfOrder(9002L, orderNo);
+
+        assertEquals(2, list.size());
+        CustomDtos.OrderCustomVO first = list.get(0);
+        assertEquals(NO, first.customOrderId());
+        assertEquals("WAIT_DRAFT", first.status());
+        assertEquals(0, first.version());
+        assertEquals(30, first.qty());
+        assertEquals(300_00L, first.feeCent());
+        assertEquals(millis(LocalDateTime.of(2026, 11, 22, 18, 0)), first.reviewDeadlineMillis());
+        assertEquals("REJECTED", list.get(1).status());
+        assertEquals(2, list.get(1).version());
+        assertEquals(1, list.get(1).rejectCount());
+    }
+
+    @Test
+    @DisplayName("按订单查定制单：订单没有定制件时返回空列表（不抛错，页面不渲染卡片）")
+    void ordersOfOrderReturnsEmptyForPlainOrder() {
+        when(mapper.selectByOrderNo(9002L, "SO20261121000003")).thenReturn(List.of());
+        assertTrue(service.ordersOfOrder(9002L, "SO20261121000003").isEmpty());
+    }
 }
