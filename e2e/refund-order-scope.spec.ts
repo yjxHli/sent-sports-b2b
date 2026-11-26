@@ -55,6 +55,10 @@ async function anyOrderNo(page: Page): Promise<string> {
   return String(orderNo);
 }
 
+// 数据强依赖：本文件内的用例共享演示库状态（购物车/库存/券/发票/会话/配置），
+// 必须按书写顺序在同一个 worker 里跑完，禁止拆到多 worker 并行。
+test.describe.configure({ mode: 'serial' });
+
 test('订单服务「退款/售后」进入该订单专属申请页，而不是售后列表', async ({ page }) => {
   test.setTimeout(120_000);
   const consoleErrors: string[] = [];

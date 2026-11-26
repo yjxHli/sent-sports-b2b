@@ -22,14 +22,17 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -316,6 +319,29 @@ class RefundQueryServiceImplTest {
                 .countMy(anyLong(), org.mockito.ArgumentMatchers.any());
         org.mockito.Mockito.verify(refundOrderMapper, org.mockito.Mockito.never())
                 .countMyInFlight(anyLong());
+    }
+
+    // ------------------------------------------------------------------
+    // 管理端订单列表的「退款申请中」提示（2026-11-26，TDD 红）
+    // 口径唯一真源 = refund_order 的在途状态，不读 orders.after_sale_status
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("在途退款单号：门面原样回传退款模块查出的订单号集合，供订单列表打标")
+    void inFlightOrderNosAreReturned() {
+        List<String> pageOrderNos = List.of("SO-A", "SO-B", "SO-C");
+        when(refundOrderMapper.selectInFlightOrderNos(pageOrderNos)).thenReturn(List.of("SO-A", "SO-C"));
+
+        Set<String> hit = service.inFlightOrderNos(pageOrderNos);
+
+        assertEquals(Set.of("SO-A", "SO-C"), hit);
+    }
+
+    @Test
+    @DisplayName("在途退款单号：空页不发 SQL，避免拼出 IN () 把列表接口打红")
+    void inFlightOrderNosSkipsEmptyPage() {
+        assertTrue(service.inFlightOrderNos(List.of()).isEmpty());
+        verifyNoInteractions(refundOrderMapper);
     }
 
     private static RefundOrderLinePO linePo() {

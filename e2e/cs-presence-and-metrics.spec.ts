@@ -86,6 +86,10 @@ async function queueOneCustomer(
   };
 }
 
+// 数据强依赖：本文件内的用例共享演示库状态（购物车/库存/券/发票/会话/配置），
+// 必须按书写顺序在同一个 worker 里跑完，禁止拆到多 worker 并行。
+test.describe.configure({ mode: 'serial' });
+
 test('登录默认离线：看不到排队、接不了线；切在线后队列出现并自动接入', async ({ browser, request }) => {
   test.setTimeout(180_000);
   const adminToken = await loginApi(request, ADMIN_NAME, ADMIN_PASSWORD, 'admin', `e2e-presence-a-${Date.now()}`);
@@ -110,19 +114,20 @@ test('登录默认离线：看不到排队、接不了线；切在线后队列�
       '客服登录后默认必须是离线状态，不能一登录就接单').toHaveClass(/is-active/, { timeout: 15_000 });
     await expect(page.locator('[data-testid="seat-presence-hint"]')).toContainText('离线');
 
-    // ② 离线看不到排队：接口不下发 + 页面给的是离线提示，而不是「暂无排队客户」
-    await expect(page.locator('[data-testid="queue-offline-hint"]'),
-      '离线时排队栏应显示离线提示').toBeVisible({ timeout: 15_000 });
-    await expect(page.locator('[data-testid="queue-panel"]'), '离线时不应出现排队列表').toHaveCount(0);
+    // ② 离线看不到排队：接口不下发，页面也没有排队列表/排队提示（2026-11-25 排队列表已删）
+    await expect(page.locator('[data-testid="queue-hint"]'),
+      '离线时不应提示有人在排队').toHaveCount(0);
+    await expect(page.locator('[data-testid="queue-panel"]'), '排队列表已按需求删除').toHaveCount(0);
 
     // ③ 离线不接线：会话仍是 WAITING
     expect((await sessionOf(request, adminToken, queued.sessionId))?.status).toBe('WAITING');
 
-    // ④ 切在线：后端把排队客户补位进来，列表与 Tab 都要出现
+    // ④ 切在线：后端把排队客户补位进来，聊天区自动打开该会话
     await goOnline(page);
-    await expect(page.locator('[data-testid="queue-panel"]'), '在线后应能看到排队栏').toBeVisible({ timeout: 15_000 });
-    const tab = page.locator('.el-tabs__item', { hasText: `#${queued.sessionId}` }).first();
-    await expect(tab, '切在线后排队客户应自动接入并弹出 Tab').toBeVisible({ timeout: 20_000 });
+    const panel = page.locator(`.chat-panel[data-session-id="${queued.sessionId}"]`);
+    await expect(panel, '切在线后排队客户应自动接入并弹出聊天窗').toBeVisible({ timeout: 20_000 });
+    await expect(page.locator('[data-testid="queue-hint"]'),
+      '客户已被补位，不应再显示排队人数').toHaveCount(0);
 
     await expect.poll(async () => (await sessionOf(request, adminToken, queued.sessionId))?.status,
       { timeout: 20_000 }).toBe('ACTIVE');
@@ -159,12 +164,12 @@ test('忙碌：排队客户可见但不自动接入，切回在线才补位', as
     await expect(page.locator('[data-testid="presence-busy"]')).toHaveClass(/is-active/, { timeout: 15_000 });
     await expect(page.locator('[data-testid="seat-presence-hint"]')).toContainText('忙碌');
 
-    // 忙碌可见队列（不清空），但不该自动弹出会话 / 不该被分配
-    await expect(page.locator('[data-testid="queue-panel"]'), '忙碌时队列仍应可见').toBeVisible({ timeout: 15_000 });
-    await expect(page.locator('[data-testid="queue-panel"]')).toContainText(`#${queued.sessionId}`);
+    // 忙碌可见排队人数（不清空），但不该自动弹出会话 / 不该被分配
+    await expect(page.locator('[data-testid="queue-hint"]'), '忙碌时仍应提示有人在排队')
+      .toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('[data-testid="queue-hint"]')).toContainText('另有');
     await page.waitForTimeout(4000);
-    await expect(page.locator('.el-tabs__item', { hasText: `#${queued.sessionId}` }),
-      '忙碌时不能自动接入排队客户').toHaveCount(0);
+    await expect(page.locator('.chat-panel'), '忙碌时不能自动接入排队客户').toHaveCount(0);
     expect((await sessionOf(request, adminToken, queued.sessionId))?.status,
       '忙碌时后端也不该把会话分配出去').toBe('WAITING');
 
@@ -172,8 +177,8 @@ test('忙碌：排队客户可见但不自动接入，切回在线才补位', as
     await goOnline(page);
     await expect.poll(async () => (await sessionOf(request, adminToken, queued.sessionId))?.status,
       { timeout: 20_000 }).toBe('ACTIVE');
-    await expect(page.locator('.el-tabs__item', { hasText: `#${queued.sessionId}` }))
-      .toBeVisible({ timeout: 20_000 });
+    await expect(page.locator(`.chat-panel[data-session-id="${queued.sessionId}"]`),
+      '切回在线后该会话应自动接入并显示聊天窗').toBeVisible({ timeout: 20_000 });
   } finally {
     await clearOpenSessions(request, adminToken).catch(() => undefined);
     await setStaffPresence(request, adminToken, STAFF_IDS, 'OFFLINE').catch(() => undefined);

@@ -47,6 +47,10 @@ async function userToken(request: APIRequestContext): Promise<string> {
   return token;
 }
 
+// 数据强依赖：本文件内的用例共享演示库状态（购物车/库存/券/发票/会话/配置），
+// 必须按书写顺序在同一个 worker 里跑完，禁止拆到多 worker 并行。
+test.describe.configure({ mode: 'serial' });
+
 test('商品零售价全部落在 10~40 元，且 cost < floor <= retail', async ({ request }) => {
   test.setTimeout(120_000);
   const token = await userToken(request);

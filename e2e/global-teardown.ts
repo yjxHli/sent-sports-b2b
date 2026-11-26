@@ -72,6 +72,24 @@ export default async function globalTeardown(): Promise<void> {
     ];
     for (const row of openRows) {
       if (row.status === 'CLOSED') continue;
+      // V61 工单门禁：清理时也要先补一份最小合法工单，否则关单会被 40005 拦住。
+      const staffId = Number(row.staffId ?? 0);
+      if (staffId > 0) {
+        await ctx
+          .put(`${API_URL}/admin/chat/sessions/${row.sessionId}/note`, {
+            data: {
+              staffId,
+              summary: 'E2E 清理服务工单',
+              category: 'INQUIRY',
+              info: 'CLEAR',
+              result: 'DONE',
+              solution: '测试结束后的统一清理',
+            },
+            headers: auth(token),
+            failOnStatusCode: false,
+          })
+          .catch(() => undefined);
+      }
       await ctx
         .post(`${API_URL}/admin/chat/sessions/${row.sessionId}/close`, {
           data: { reason: 'DONE' },

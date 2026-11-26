@@ -245,13 +245,52 @@ public interface CustomOrderMapper extends BaseMapper<CustomOrderPO> {
     /**
      * 定制单 → 关联订单（用户端详情页要能跳回订单详情）。
      * 表间无物理外键，归属由 custom_order.order_item_id → order_item.order_id 保证。
+     *
+     * <p>{@code paid_at} 一并带出：图稿上传倒计时从「支付成功」起算，
+     * 未支付订单由 OrderTimeoutJob 另行处理，两条链路不重叠。</p>
      */
-    @Select("SELECT o.order_no AS orderNo, o.status AS orderStatus "
+    @Select("SELECT o.order_no AS orderNo, o.status AS orderStatus, o.pay_status AS payStatus, "
+            + "o.paid_at AS paidAt "
             + "FROM custom_order co "
             + "LEFT JOIN order_item oi ON oi.id = co.order_item_id "
             + "LEFT JOIN orders o ON o.id = oi.order_id "
             + "WHERE co.custom_no = #{customNo}")
     OrderRefRow selectOrderRef(@Param("customNo") String customNo);
+
+    /**
+     * 待上传图稿且订单已支付的定制单（图稿上传超时任务的数据源）。
+     *
+     * <p>只认 {@code WAIT_DRAFT}：一旦提交过图稿就进 WAIT_REVIEW，被驳回是 REJECTED，
+     * 这两种都属于「用户已经传过」，不参与 3 天超时取消。
+     * {@code pay_status = 'PAID'} 是硬条件：未支付单由 OrderTimeoutJob 取消，
+     * 全额退款的单也不该再走这条链路。</p>
+     *
+     * <p>{@code paidFrom} 是<b>存量豁免线</b>：规则上线前支付的历史单不追溯取消，
+     * 否则第一次跑任务就会把演示库里几十张历史定制单一次性退掉。</p>
+     */
+    @Select("SELECT co.custom_no AS customNo, o.order_no AS orderNo, o.customer_id AS customerId, "
+            + "o.paid_at AS paidAt, co.draft_remind_count AS remindCount, "
+            + "co.last_draft_remind_at AS lastRemindAt "
+            + "FROM custom_order co "
+            + "JOIN order_item oi ON oi.id = co.order_item_id "
+            + "JOIN orders o ON o.id = oi.order_id "
+            + "WHERE co.status = 'WAIT_DRAFT' AND o.pay_status = 'PAID' AND o.paid_at IS NOT NULL "
+            + "AND o.paid_at >= #{paidFrom} "
+            + "ORDER BY o.paid_at, co.id LIMIT #{limit}")
+    List<DraftWaitingRow> selectDraftWaiting(@Param("paidFrom") LocalDateTime paidFrom,
+                                             @Param("limit") int limit);
+
+    /**
+     * 图稿上传提醒落痕：条件更新把「是否该提醒」交给数据库判定，
+     * 并发重入时只有第一个请求能更新成功（返回 0 即本轮不再重复发信）。
+     */
+    @Update("UPDATE custom_order SET draft_remind_count = draft_remind_count + 1, "
+            + "last_draft_remind_at = #{at} "
+            + "WHERE custom_no = #{customNo} AND status = 'WAIT_DRAFT' "
+            + "AND (last_draft_remind_at IS NULL OR last_draft_remind_at <= #{threshold})")
+    int markDraftReminded(@Param("customNo") String customNo,
+                          @Param("at") LocalDateTime at,
+                          @Param("threshold") LocalDateTime threshold);
 
     /** 发货 / 退款门禁的轻量视图：按订单号 + SKU 联查该订单行对应定制单状态。 */
     @Select("SELECT co.status FROM custom_order co "
@@ -360,14 +399,44 @@ public interface CustomOrderMapper extends BaseMapper<CustomOrderPO> {
         public void setReviewDeadline(LocalDateTime reviewDeadline) { this.reviewDeadline = reviewDeadline; }
     }
 
-    /** 定制单所属订单的轻量引用（订单号 + 订单状态）。 */
-    class OrderRefRow {        private String orderNo;
+    /** 定制单所属订单的轻量引用（订单号 + 订单状态 + 支付状态 + 支付时间）。 */
+    class OrderRefRow {
+        private String orderNo;
         private String orderStatus;
+        private String payStatus;
+        private LocalDateTime paidAt;
 
         public String getOrderNo() { return orderNo; }
         public void setOrderNo(String orderNo) { this.orderNo = orderNo; }
         public String getOrderStatus() { return orderStatus; }
         public void setOrderStatus(String orderStatus) { this.orderStatus = orderStatus; }
+        public String getPayStatus() { return payStatus; }
+        public void setPayStatus(String payStatus) { this.payStatus = payStatus; }
+        public LocalDateTime getPaidAt() { return paidAt; }
+        public void setPaidAt(LocalDateTime paidAt) { this.paidAt = paidAt; }
+    }
+
+    /** 待上传图稿的定制单快照（超时任务只读投影）。 */
+    class DraftWaitingRow {
+        private String customNo;
+        private String orderNo;
+        private Long customerId;
+        private LocalDateTime paidAt;
+        private Integer remindCount;
+        private LocalDateTime lastRemindAt;
+
+        public String getCustomNo() { return customNo; }
+        public void setCustomNo(String customNo) { this.customNo = customNo; }
+        public String getOrderNo() { return orderNo; }
+        public void setOrderNo(String orderNo) { this.orderNo = orderNo; }
+        public Long getCustomerId() { return customerId; }
+        public void setCustomerId(Long customerId) { this.customerId = customerId; }
+        public LocalDateTime getPaidAt() { return paidAt; }
+        public void setPaidAt(LocalDateTime paidAt) { this.paidAt = paidAt; }
+        public Integer getRemindCount() { return remindCount; }
+        public void setRemindCount(Integer remindCount) { this.remindCount = remindCount; }
+        public LocalDateTime getLastRemindAt() { return lastRemindAt; }
+        public void setLastRemindAt(LocalDateTime lastRemindAt) { this.lastRemindAt = lastRemindAt; }
     }
 
     /** 发货落账时联查得到的定制行快照（非表映射对象，只承载写入参数）。 */

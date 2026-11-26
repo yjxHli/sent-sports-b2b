@@ -59,8 +59,23 @@ public class ChatQueryServiceImpl implements ChatQueryService {
         return chatSessionRepository.findByCustomerId(customerId).stream()
                 .filter(s -> s.getStatus() != com.sent.sports.chat.domain.ChatSessionStatus.CLOSED)
                 .findFirst()
-                .map(s -> new ChatDtos.SessionVO(s.getId(), s.getStatus().name(), s.getStaffId(), true))
+                .map(s -> new ChatDtos.SessionVO(s.getId(), s.getStatus().name(), s.getStaffId(), true,
+                        s.getSessionType().name()))
                 .orElse(null);
+    }
+
+    @Override
+    public List<ChatDtos.SessionSummaryVO> listSessions(long customerId, int limit) {
+        if (customerId <= 0) {
+            return List.of();
+        }
+        int size = Math.max(1, Math.min(limit, 50));
+        return chatSessionRepository.findByCustomerId(customerId).stream()
+                .limit(size)
+                .map(s -> new ChatDtos.SessionSummaryVO(
+                        s.getId(), s.getStatus().name(), s.getStaffId(),
+                        s.getCreatedAtMillis(), s.getLastActiveAtMillis()))
+                .toList();
     }
 
     @Override

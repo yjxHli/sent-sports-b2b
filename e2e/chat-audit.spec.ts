@@ -7,7 +7,7 @@ import { test, expect, type Page } from '@playwright/test';
 import {
   ADMIN_URL, join, apiCall, loginApi, clearOpenSessions,
   setStaffPresence, startConsultation, ADMIN_NAME, ADMIN_PASSWORD,
-  CHAT_MANAGER_NAME, CHAT_MANAGER_PASSWORD, CUSTOMER_ID,
+  CHAT_MANAGER_NAME, CHAT_MANAGER_PASSWORD, CUSTOMER_ID, closeSessionWithTicket,
 } from './chat-helpers';
 
 const NOTE = {
@@ -25,6 +25,10 @@ async function loginUi(page: Page, username: string, password: string): Promise<
   await page.getByRole('button', { name: '登录' }).click();
   await expect(page).toHaveURL(/\/admin\/dashboard/, { timeout: 20_000 });
 }
+
+// 数据强依赖：本文件内的用例共享演示库状态（购物车/库存/券/发票/会话/配置），
+// 必须按书写顺序在同一个 worker 里跑完，禁止拆到多 worker 并行。
+test.describe.configure({ mode: 'serial' });
 
 test('客服经理审查：列表字段完整、详情可看聊天记录与小结；业务角色越权被拒', async ({ browser, request }) => {
   test.setTimeout(180_000);
@@ -60,8 +64,7 @@ test('客服经理审查：列表字段完整、详情可看聊天记录与小�
     { score: 'SATISFIED' }, userToken);
   expect(rated?.code, `打分失败：${JSON.stringify(rated)}`).toBe(0);
 
-  const closed = await apiCall(request, 'POST', `/admin/chat/sessions/${sessionId}/close`,
-    { reason: 'DONE' }, adminToken);
+  const closed = await closeSessionWithTicket(request, Number(sessionId), adminToken);
   expect(closed?.code).toBe(0);
 
   // 权限隔离：销售（角色带 '*'）不能访问 chat:audit
@@ -80,7 +83,7 @@ test('客服经理审查：列表字段完整、详情可看聊天记录与小�
   expect(Number(row.staffId)).toBe(9001);
   expect(row.summary).toBe(NOTE.summary);
   expect(row.result).toBe('DONE');
-  expect(row.noteStatus).toBe('已填写');
+  expect(row.noteStatus).toBe('已提交');
 
   const ctx = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
   const page = await ctx.newPage();
@@ -116,7 +119,7 @@ test('历史服务记录服务端硬上限 10，前端传 999 也不放行', asy
       { customerId: CUSTOMER_ID, vip: false }, userToken);
     const id = Number(created?.data?.sessionId);
     expect(id).toBeGreaterThan(0);
-    await apiCall(request, 'POST', `/admin/chat/sessions/${id}/close`, { reason: 'DONE' }, adminToken);
+    await closeSessionWithTicket(request, Number(id), adminToken);
   }
   const history = await apiCall(request, 'GET',
     `/admin/chat/customers/${CUSTOMER_ID}/sessions?limit=999`, undefined, adminToken);

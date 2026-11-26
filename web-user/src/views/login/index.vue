@@ -6,7 +6,7 @@
       </router-link>
 
       <div class="login-brand">
-        <span class="login-brand__mark">S</span>
+        <img class="login-brand__mark" src="/sent-icon-192.png" alt="" />
         <div class="login-brand__text">
           <b>森特体育 · 商城</b>
           <i>运动装备一站式采购</i>
@@ -450,15 +450,8 @@ async function onRegister(): Promise<void> {
 .login-brand__mark {
   width: 46px;
   height: 46px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, var(--sent-primary), #1a8c6a);
-  color: #fff;
-  font-size: 26px;
-  font-weight: 800;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 12px rgba(18, 102, 79, 0.28);
+  display: block;
+  object-fit: contain;
 }
 .login-brand__text {
   display: flex;

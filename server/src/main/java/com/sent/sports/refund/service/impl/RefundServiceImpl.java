@@ -3,6 +3,7 @@ package com.sent.sports.refund.service.impl;
 import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
 import com.sent.sports.common.util.IdGen;
+import com.sent.sports.coupon.service.CouponDeduction;
 import com.sent.sports.member.service.MemberRefundGateway;
 import com.sent.sports.order.service.OrderRefundViewService;
 import com.sent.sports.order.service.dto.OrderRefundView;
@@ -31,6 +32,7 @@ public class RefundServiceImpl implements RefundService {
     private final PaymentRefundGateway paymentRefundGateway;
     private final OrderRefundViewService orderRefundViewService;
     private final MemberRefundGateway memberRefundGateway;
+    private final CouponDeduction couponDeduction;
     private final IdGen idGen;
     private final Clock clock;
 
@@ -38,7 +40,8 @@ public class RefundServiceImpl implements RefundService {
                              RefundOrderMapper refundOrderMapper,
                              PaymentRefundGateway paymentRefundGateway,
                              OrderRefundViewService orderRefundViewService,
-                             MemberRefundGateway memberRefundGateway) {
+                             MemberRefundGateway memberRefundGateway,
+                             CouponDeduction couponDeduction) {
         this.refundRepository = refundRepository;
         this.idGen = idGen;
         this.clock = clock;
@@ -46,6 +49,7 @@ public class RefundServiceImpl implements RefundService {
         this.paymentRefundGateway = paymentRefundGateway;
         this.orderRefundViewService = orderRefundViewService;
         this.memberRefundGateway = memberRefundGateway;
+        this.couponDeduction = couponDeduction;
     }
 
     @Override
@@ -69,6 +73,9 @@ public class RefundServiceImpl implements RefundService {
         // 否则关一次单就吃掉用户的积分。口径与退款回调共用 RefundCalculator，
         // 退回流水落 type=REFUND_RETURN、source_id=退款单号，重放不会二次退回。
         long pointRefund = returnDeductedPoints(orderNo, refundNo, amountCent);
+        // 全额关单：用户下单时核销的券必须退回账户，否则「单取消了、券没了」。
+        // 只有整单退才退券——部分退款不退券，否则半退之后还能拿同一张券再抵一次。
+        couponDeduction.returnCoupon(orderNo);
         refundOrderMapper.insertCloseRefund(refundNo, orderId, amountCent, reason, pointRefund);
         return refundNo;
     }

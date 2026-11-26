@@ -3,6 +3,8 @@ package com.sent.sports.customize.service.impl;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.sent.sports.common.web.PageQuery;
 import com.sent.sports.common.web.PageResult;
+import com.sent.sports.customize.domain.CustomDraftTimeoutPolicy;
+import com.sent.sports.customize.domain.CustomStatus;
 import com.sent.sports.customize.dto.CustomDtos;
 import com.sent.sports.customize.mapper.CustomOrderMapper;
 import com.sent.sports.customize.mapper.po.CustomOrderListItemPO;
@@ -55,6 +57,7 @@ public class CustomQueryServiceImpl implements CustomQueryService {
                 po.getRejectCount() == null ? 0 : po.getRejectCount(),
                 rejectReason,
                 deadlineMillis,
+                draftDeadlineMillis(po, orderRef),
                 orderRef == null ? null : orderRef.getOrderNo(),
                 orderRef == null ? null : orderRef.getOrderStatus(),
                 po.getServiceType(),
@@ -82,6 +85,20 @@ public class CustomQueryServiceImpl implements CustomQueryService {
     /** DATETIME → 毫秒；null 一律按「未设置」返回 0（前端据此显示占位，不显示 1970）。 */
     private static long toMillis(LocalDateTime time) {
         return time == null ? 0L : time.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
+    }
+
+    /**
+     * 图稿上传截止时刻：只有「待提交图稿 + 一稿未传 + 订单已支付」才回真实时间。
+     * <p>已传过图稿（version > 0 或已进 WAIT_REVIEW/REJECTED）不存在倒计时；
+     * 未支付的单由 OrderTimeoutJob 另行取消，也不该在详情页显示这条倒计时。</p>
+     */
+    private static long draftDeadlineMillis(CustomOrderPO po, CustomOrderMapper.OrderRefRow orderRef) {
+        boolean waitingDraft = CustomStatus.WAIT_DRAFT.name().equals(po.getStatus())
+                && (po.getCurrentVersion() == null || po.getCurrentVersion() == 0);
+        if (!waitingDraft || orderRef == null || orderRef.getPaidAt() == null) {
+            return 0L;
+        }
+        return toMillis(CustomDraftTimeoutPolicy.deadlineOf(orderRef.getPaidAt()));
     }
 
     @Override

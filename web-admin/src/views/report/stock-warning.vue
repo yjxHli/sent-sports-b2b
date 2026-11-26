@@ -20,6 +20,7 @@
     <div class="sent-panel">
       <h3 class="section-title">预警清单</h3>
       <SentTable
+        :select-all-rows="exportAll"
         :columns="columns"
         :rows="rows"
         :total="total"

@@ -16,6 +16,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 /**
@@ -61,12 +62,55 @@ class WsChatNotifierTest {
     void assignedNotificationGoesToCustomer() {
         notifier.sessionAssigned(9002L, 7L, 9001L);
 
+        // 两帧：ASSIGNED 管状态（前端解锁输入、隐藏排队条），SYSTEM 管「谁在服务」的提示语
+        ArgumentCaptor<WsEnvelope> captor = ArgumentCaptor.forClass(WsEnvelope.class);
+        verify(broadcaster, times(2)).broadcastToCustomer(eq(9002L), captor.capture());
+
+        WsEnvelope assigned = captor.getAllValues().get(0);
+        assertEquals(WsEnvelope.ASSIGNED, assigned.type());
+        assertEquals(7L, assigned.sessionId());
+        assertTrue(assigned.payload().contains("ASSIGNED"));
+        assertTrue(assigned.payload().contains("9001"));
+
+        WsEnvelope system = captor.getAllValues().get(1);
+        assertEquals(WsEnvelope.SYSTEM, system.type());
+        assertTrue(system.payload().contains("人工客服 9001 为您服务"),
+                "客户要看到具体是谁接入的，光有 ASSIGNED 说不出接待人");
+        assertTrue(system.payload().contains("客服已接入"), "老用例按这句断言，措辞不能丢");
+        assertTrue(system.payload().contains("\"senderType\":\"SYSTEM\""),
+                "接入通知是旁白，必须标 SYSTEM：客户端据此渲染居中灰字，不能长成机器人气泡");
+    }
+
+    /** 机器人回复 / 转人工提示走 SYSTEM 帧，且只推给客户（不给坐席，避免坐席以为是自己发的） */
+    @Test
+    void systemMessageGoesToCustomerOnly() {
+        notifier.systemMessage(9002L, 7L, 9, "亲，我们默认发顺丰，48小时内发货哦~", SenderType.BOT);
+
         ArgumentCaptor<WsEnvelope> captor = ArgumentCaptor.forClass(WsEnvelope.class);
         verify(broadcaster).broadcastToCustomer(eq(9002L), captor.capture());
-        assertEquals(WsEnvelope.ASSIGNED, captor.getValue().type());
+        verify(broadcaster, never()).broadcast(anyLong(), any());
+        verify(broadcaster, never()).broadcastAll(any());
+        assertEquals(WsEnvelope.SYSTEM, captor.getValue().type());
         assertEquals(7L, captor.getValue().sessionId());
-        assertTrue(captor.getValue().payload().contains("ASSIGNED"));
-        assertTrue(captor.getValue().payload().contains("9001"));
+        assertTrue(captor.getValue().payload().contains("顺丰"));
+        assertTrue(captor.getValue().payload().contains("\"seq\":9"),
+                "已落库的提示必须带消息序号，客户端才能和 history 去重");
+        assertTrue(captor.getValue().payload().contains("\"senderType\":\"BOT\""),
+                "机器人回复必须标 BOT：客户端据此渲染成机器人头像气泡，而不是居中灰字");
+    }
+
+    /** 转人工提示必须带 event=TRANSFER：前端靠它切回排队口径，不能靠文案猜 */
+    @Test
+    void transferTipCarriesTransferEvent() {
+        notifier.transferStarted(9002L, 7L, 4, "正在为您转接人工客服，请稍候...", SenderType.BOT);
+
+        ArgumentCaptor<WsEnvelope> captor = ArgumentCaptor.forClass(WsEnvelope.class);
+        verify(broadcaster).broadcastToCustomer(eq(9002L), captor.capture());
+        assertEquals(WsEnvelope.SYSTEM, captor.getValue().type());
+        assertTrue(captor.getValue().payload().contains("TRANSFER"));
+        assertTrue(captor.getValue().payload().contains("正在为您转接人工客服"));
+        assertTrue(captor.getValue().payload().contains("\"senderType\":\"BOT\""),
+                "转接提示是机器人说出来的，客户侧按机器人气泡渲染");
     }
 
     /**

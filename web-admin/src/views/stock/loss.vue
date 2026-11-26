@@ -38,6 +38,7 @@
 
     <div class="sent-panel">
       <SentTable
+        :select-all-rows="exportAllFlows"
         :columns="flowColumns"
         :rows="flows"
         :total="flowTotal"

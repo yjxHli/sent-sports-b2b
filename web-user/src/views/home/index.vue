@@ -11,7 +11,7 @@
       <div class="promo-bar__right">
         <span class="promo-bar__label">距结束</span>
         <span class="promo-bar__clock">{{ countdown }}</span>
-        <button class="promo-bar__btn" @click="goProducts">立即抢购</button>
+        <button class="promo-bar__btn" @click="goProductsNewTab">立即抢购</button>
       </div>
     </div>
 
@@ -115,13 +115,13 @@
           <router-link to="/custom" class="side-link">🎨 我的定制</router-link>
           <router-link to="/favorites" class="side-link">⭐ 我的收藏</router-link>
           <router-link to="/footprints" class="side-link">👣 我的足迹</router-link>
-          <router-link to="/chat" class="side-link side-link--chat">💬 在线客服</router-link>
+          <router-link to="/chat" target="_blank" rel="noopener" class="side-link side-link--chat">💬 在线客服</router-link>
         </div>
 
         <div class="side-tip">
           <b>企业采购</b>
           <p>专票·账期·阶梯价</p>
-          <router-link :to="GROUP_BUY" class="side-tip__btn">查看团购专区</router-link>
+          <router-link :to="GROUP_BUY" target="_blank" rel="noopener" class="side-tip__btn">查看团购专区</router-link>
         </div>
       </aside>
     </div>
@@ -140,7 +140,8 @@
           v-for="p in products"
           :key="p.productId"
           :product="p"
-          @click="goDetail(p.productId)"
+          new-tab
+          testid="home-good-card"
         />
       </div>
       <!-- 无限滚动哨兵：进入视口即加载下一页（放在条件分支之外，避免重渲染时被销毁） -->
@@ -160,6 +161,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { statusLabel, isMemberDay as checkMemberDay, nextMemberDayAt, type UserMeVO } from '@sent/shared';
 import { unwrap } from '@/utils/http';
+import { openInNewTab } from '@/utils/link';
 import { productApi, type CategoryVO, type CatalogProductVO } from '@/api/product';
 import { profileApi } from '@/api/profile';
 import { useAuthStore } from '@/store/modules/useAuthStore';
@@ -395,32 +397,35 @@ function tick(): void {
   countdown.value = `${pad(h)}:${pad(m)}:${pad(s)}`;
 }
 
+/** 「查看全部商品」/「查看全部」：同页进商品列表（属于浏览导航，不在新开清单内） */
 function goProducts(): void {
   router.push('/products');
 }
-/** 领券中心 → 会员中心（券包与权益都在这里查看） */
-/** 领券中心：进专门的领券页（上可领券 + 下商品），不再跳会员中心 */
-function goCouponCenter(): void {
-  router.push('/coupon/center');
+/** 会员日「立即抢购」：另开一页看全部商品，首页不被导航走（用户 2026-11-25 口径） */
+function goProductsNewTab(): void {
+  openInNewTab(router, '/products');
 }
-/** 按入口配置跳转：有 path 直跳，否则带筛选条件进商品结果页 */
+/** 领券中心：进专门的领券页（上可领券 + 下商品），新标签页打开 */
+function goCouponCenter(): void {
+  openInNewTab(router, '/coupon/center');
+}
+/**
+ * 大屏（banner「立即选购」）与底部四个入口瓦片：一律新开一页（2026-11-26 用户要求，
+ * 与点商品详情、点分类一致）——首页是浏览的起点，点完不该被导航走。
+ */
 function goEntry(e: EntryLink): void {
   if (e.path) {
-    router.push(e.path);
+    openInNewTab(router, e.path);
     return;
   }
-  router.push({ path: '/products', query: e.query ?? {} });
+  openInNewTab(router, { path: '/products', query: e.query ?? {} });
 }
 /**
  * 点分类：在**新标签页**打开独立的分类结果页（对齐淘宝：首页不被导航走，另开一页看分类）。
- * 用 `router.resolve` 生成带 base 的完整 href，base 不是 `/` 时也不会拼错路径。
+ * href 统一由 utils/link 用 `router.resolve` 生成，base 不是 `/` 时也不会拼错路径。
  */
 function goCategory(id: string | number): void {
-  const { href } = router.resolve({ path: '/products', query: { categoryId: String(id) } });
-  window.open(href, '_blank');
-}
-function goDetail(id: string): void {
-  router.push(`/product/${id}`);
+  openInNewTab(router, { path: '/products', query: { categoryId: String(id) } });
 }
 
 /** 猜你喜欢一页条数（无限滚动每页追加量） */

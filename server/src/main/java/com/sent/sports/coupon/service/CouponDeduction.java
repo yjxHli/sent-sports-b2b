@@ -20,4 +20,14 @@ public interface CouponDeduction {
 
     /** 下单成功后核销，重复调用幂等。 */
     void markUsed(long couponId, String orderNo);
+
+    /**
+     * 整单退款 / 关单后返还该订单用掉的券（status USED → UNUSED，并清 used_at / order_no）。
+     *
+     * <p>只在「整单退」时调用：部分退款不退券，否则用户会拿着一张已用过一半的券再抵一次。
+     * 重复调用影响 0 行，按幂等成功处理。</p>
+     *
+     * @return 实际退回的券数（0 = 该单没用券 / 已退过）
+     */
+    int returnCoupon(String orderNo);
 }

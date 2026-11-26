@@ -11,6 +11,7 @@
         class="list-alert"
       />
       <SentTable
+        :select-all-rows="fetchAll"
         :columns="columns"
         :rows="rows"
         :total="total"
@@ -187,7 +188,7 @@ const submitting = ref(false);
 /** 发票 ID / 发票号 / 客户 ID 三选一模糊搜索，条件由后端 SQL 收敛（前端只负责传参） */
 const keyword = ref('');
 /** 换关键字必须回到第 1 页，否则会停在一个不存在的页码上看到空表（onSearch 已内置） */
-const { rows, total, loading, page, size, load, onPage, onSize, onSearch } = useTable<any>({
+const { rows, total, loading, page, size, load, onPage, onSize, onSearch, fetchAll } = useTable<any>({
   fetch: (params) => unwrap(financeApi.invoices({
     ...params,
     keyword: keyword.value.trim() || undefined,

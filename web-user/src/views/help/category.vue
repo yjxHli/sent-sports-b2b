@@ -29,7 +29,7 @@
 
       <div class="help-category__foot">
         <router-link to="/home" class="help-category__back">← 返回商城首页</router-link>
-        <router-link to="/chat" class="help-category__service">仍有疑问？联系在线客服 →</router-link>
+        <router-link to="/chat" target="_blank" rel="noopener" class="help-category__service">仍有疑问？联系在线客服 →</router-link>
       </div>
     </template>
 

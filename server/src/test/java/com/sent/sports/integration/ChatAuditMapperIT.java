@@ -42,9 +42,11 @@ class ChatAuditMapperIT extends BaseIntegrationTest {
         session(102L, 9002L, 9008L, T2);
         session(103L, 9003L, 9001L, T2);
         session(104L, 9004L, 9001L, null); // ACTIVE：不进审查与历史
+        session(105L, 9005L, 9001L, T2);   // 只有草稿工单：不进审查
 
-        note(101L, 9002L, 9001L, "咨询定制足球印字", "INQUIRY", "CLEAR", "DONE");
-        note(103L, 9003L, 9001L, "反馈质量", "QUALITY", "CLEAR", "UNRESOLVED");
+        note(101L, 9002L, 9001L, "咨询定制足球印字", "INQUIRY", "CLEAR", "DONE", "SUBMITTED");
+        note(103L, 9003L, 9001L, "反馈质量", "QUALITY", "CLEAR", "UNRESOLVED", "SUBMITTED");
+        note(105L, 9005L, 9001L, "还在填", "INQUIRY", "CLEAR", "DONE", "DRAFT");
 
         message(101L, 1);
         message(101L, 2);
@@ -59,11 +61,13 @@ class ChatAuditMapperIT extends BaseIntegrationTest {
     }
 
     private void note(long sessionId, long customerId, long staffId,
-                      String summary, String category, String info, String result) {
+                      String summary, String category, String info, String result, String submitStatus) {
         jdbc.update("INSERT INTO chat_session_note "
-                        + "(session_id, customer_id, staff_id, summary, category, issue_info, result, solution) "
-                        + "VALUES (?, ?, ?, ?, ?, ?, ?, '已按口径回复')",
-                sessionId, customerId, staffId, summary, category, info, result);
+                        + "(session_id, customer_id, staff_id, summary, category, issue_info, result, solution, "
+                        + "submit_status, submitted_at) "
+                        + "VALUES (?, ?, ?, ?, ?, ?, ?, '已按口径回复', ?, ?)",
+                sessionId, customerId, staffId, summary, category, info, result, submitStatus,
+                "SUBMITTED".equals(submitStatus) ? T2 : null);
     }
 
     private void message(long sessionId, int seq) {
@@ -86,19 +90,31 @@ class ChatAuditMapperIT extends BaseIntegrationTest {
     @DisplayName("审查分页：列表与 count 在处理结果 / 客服 / 关键字 / 时间过滤下始终一致")
     void auditPageAndCountShareSameFilters() {
         assertAudit(null, null, null, "DONE", null, 1);              // 仅已解决的一条
-        assertAudit(9008L, null, null, null, null, 1);               // 客服下拉过滤
+        assertAudit(9008L, null, null, null, null, 0);               // 102 会话没填工单，不进审查
         assertAudit(null, null, null, null, "质量", 1);              // 关键字命中问题概述
-        assertAudit(null, LocalDateTime.of(2026, 11, 11, 0, 0), null, null, null, 2); // 时间下界
-        assertAudit(null, null, null, null, null, 3);                // 只算 CLOSED，ACTIVE 不进审查
+        assertAudit(null, LocalDateTime.of(2026, 11, 11, 0, 0), null, null, null, 1); // 时间下界
+        assertAudit(null, null, null, null, null, 2);                // 只算「已提交工单」的 CLOSED
+    }
+
+    /** 2026-11-26 用户口径：提交了工单，这次记录才进客服审查；草稿先不出现。 */
+    @Test
+    @DisplayName("审查只收已提交工单：草稿与无工单会话都不出现")
+    void auditOnlyIncludesSubmittedTickets() {
+        assertAudit(null, null, null, null, null, 2);
+
+        jdbc.update("UPDATE chat_session_note SET submit_status = 'SUBMITTED', submitted_at = ? "
+                + "WHERE session_id = 105", T2);
+
+        assertAudit(null, null, null, null, null, 3);
     }
 
     @Test
     @DisplayName("审查软删：只从审查列表/count 隐藏，历史服务回放仍可读")
     void auditSoftDeleteOnlyHidesReviewList() {
-        assertAudit(null, null, null, null, null, 3);
+        assertAudit(null, null, null, null, null, 2);
 
         assertThat(mapper.batchMarkAuditDeleted(List.of(101L))).isEqualTo(1);
-        assertAudit(null, null, null, null, null, 2);
+        assertAudit(null, null, null, null, null, 1);
 
         List<ChatHistoryRowPO> history = mapper.selectHistory(9002L, 0L, 10);
         assertThat(history).extracting(ChatHistoryRowPO::getSessionId).contains(101L, 102L);

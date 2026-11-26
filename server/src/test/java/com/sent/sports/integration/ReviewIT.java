@@ -182,4 +182,43 @@ class ReviewIT extends FullStackIntegrationTest {
         assertThat(page.list()).noneSatisfy(item ->
                 assertThat(item.nickname()).isEqualTo("张伟"));
     }
+
+    @Test
+    @DisplayName("摘要真实聚合：好评按 rating>=4、差评按 rating<=2，3 星中评两边都不计")
+    void summaryCountsPositiveAndNegativeFromDb() {
+        long thirdCustomer = 9603L;
+        jdbc.update("INSERT INTO customer (id, customer_no, phone, nickname, type) "
+                + "VALUES (?, 'C9602', '13900009602', '李小明', 'PERSON')", OTHER_CUSTOMER_ID);
+        jdbc.update("INSERT INTO customer (id, customer_no, phone, nickname, type) "
+                + "VALUES (?, 'C9603', '13900009603', '王小二', 'PERSON')", thirdCustomer);
+        seedOrder(ORDER_NO, CUSTOMER_ID, "COMPLETED");
+        seedOrder(ORDER_NO + "B", OTHER_CUSTOMER_ID, "COMPLETED");
+        seedOrder(ORDER_NO + "C", thirdCustomer, "COMPLETED");
+
+        reviewService.submit(CUSTOMER_ID, cmd(5, "很好", List.of(), false));
+        reviewService.submit(OTHER_CUSTOMER_ID, cmd(3, "一般", List.of(), false));
+        reviewService.submit(thirdCustomer, cmd(1, "很差", List.of(), false));
+
+        ReviewDtos.ReviewSummaryVO summary = reviewService.list(PRODUCT_ID, new PageQuery()).summary();
+
+        assertThat(summary.total()).isEqualTo(3);
+        assertThat(summary.positiveCount()).isEqualTo(1);
+        assertThat(summary.negativeCount())
+                .as("只有 1 星那条算差评；3 星是中评，不能错算成差评")
+                .isEqualTo(1);
+        assertThat(summary.positiveRate()).isEqualTo(33);
+        assertThat(summary.avgRating()).isEqualTo("3.0");
+    }
+
+    @Test
+    @DisplayName("无评价时摘要为空集全 0：好评/差评都不能是 null")
+    void summaryZeroWhenNoReview() {
+        ReviewDtos.ReviewSummaryVO summary = reviewService.list(PRODUCT_ID, new PageQuery()).summary();
+
+        assertThat(summary.total()).isZero();
+        assertThat(summary.positiveCount()).isZero();
+        assertThat(summary.negativeCount()).isZero();
+        assertThat(summary.positiveRate()).isZero();
+        assertThat(summary.avgRating()).isEqualTo("0.0");
+    }
 }

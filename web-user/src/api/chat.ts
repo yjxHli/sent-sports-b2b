@@ -9,6 +9,8 @@ export interface SessionVO {
   status: string;
   staffId?: number | null;
   reused: boolean;
+  /** BOT 机器人接待 / HUMAN 人工（BOT 时 status 虽为 WAITING，但输入框不该按排队禁用） */
+  sessionType?: string;
 }
 
 /** 排队状态：status=WAITING 时 position 为排队位置（1 开始），已接入为 0。 */
@@ -17,6 +19,19 @@ export interface QueueVO {
   status: string;
   position: number;
   staffId?: number | null;
+}
+
+/**
+ * 历史咨询 / 服务进度用的会话摘要（不含正文）。
+ * 正文按需再调 history(sessionId)，避免一次把 2700+ 条历史会话的消息全拉回来。
+ */
+export interface SessionSummaryVO {
+  sessionId: number;
+  /** WAITING / ACTIVE / CLOSED */
+  status: string;
+  staffId?: number | null;
+  createdAtMillis: number;
+  lastActiveAtMillis: number;
 }
 
 export interface MessageVO {
@@ -35,8 +50,11 @@ export const chatApi = {
   /** 进入聊天页只查当前未结束会话；没有就返回 null，绝不建空会话给客服看 */
   currentOpen: (customerId: number) =>
     http.get<SessionVO | null>('/chat/sessions/current', { customerId }),
-  createSession: (customerId: number, vip: boolean) =>
-    http.post<SessionVO>('/chat/sessions', { customerId, vip }),
+  /** 历史咨询记录 / 服务进度：只出会话摘要，按 id DESC（最新在前） */
+  sessions: (customerId: number, limit = 20) =>
+    http.get<SessionSummaryVO[]>('/chat/sessions', { customerId, limit }),
+  createSession: (customerId: number, vip: boolean, sessionType = 'HUMAN') =>
+    http.post<SessionVO>('/chat/sessions', { customerId, vip, sessionType }),
   sendMessage: (
     sessionId: number,
     cmd: { senderType: string; content: string; clientMsgId: string; msgType?: string },

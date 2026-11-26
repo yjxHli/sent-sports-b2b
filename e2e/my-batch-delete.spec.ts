@@ -57,6 +57,10 @@ function orderNoOf(text: string): string {
   return (text.match(/SO[0-9A-Za-z_-]+/) ?? [''])[0];
 }
 
+// 数据强依赖：本文件内的用例共享演示库状态（购物车/库存/券/发票/会话/配置），
+// 必须按书写顺序在同一个 worker 里跑完，禁止拆到多 worker 并行。
+test.describe.configure({ mode: 'serial' });
+
 test('商品订单：批量管理可勾选终态单并删除，在途单不可勾选也不能被接口删掉', async ({ page, request }) => {
   await loginUser(page);
 

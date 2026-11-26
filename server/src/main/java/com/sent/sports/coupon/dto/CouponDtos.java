@@ -1,5 +1,7 @@
 package com.sent.sports.coupon.dto;
 
+import jakarta.validation.constraints.NotNull;
+
 /** 优惠券对外契约；金额单位分，时间毫秒（与全站 JacksonConfig 口径一致）。 */
 public final class CouponDtos {
 
@@ -63,5 +65,28 @@ public final class CouponDtos {
 
     /** 新建券模板结果：运营拿到券号就能立刻在发放下拉里找到它。 */
     public record CreateTemplateResult(long templateId, String templateNo) {
+    }
+
+    /**
+     * 客服发券记录行（V64）：客服在「优惠券发放」tab 里看到的，是「这个客户手上有哪些券、
+     * 哪张是同事发的、为什么发」。带 source/reason 才能区分「平台活动发的」与「客服补偿发的」。
+     */
+    public record GiftRecordVO(long couponId, String couponNo, String name, long amountCent,
+                               long thresholdCent, String status, String source, String reason,
+                               long expireAtMillis, long createdAtMillis) {
+    }
+
+    /**
+     * 客服发券结果。
+     * <p>只回「发了几张 + 是什么券」，不回券号——券号对客服没有意义，
+     * 客户要看的是自己的「我的优惠券」，而券号在发放记录里随时能查。</p>
+     */
+    public record GiftResultVO(int issued, String name, long amountCent) {
+    }
+
+    /** 客服发券入参：券档位必填，原因可留空（留空按「客服发放」兜底）。 */
+    public record GiftCmd(@NotNull(message = "请选择要发放的券")
+                          Long templateId,
+                          String reason) {
     }
 }

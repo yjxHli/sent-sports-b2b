@@ -31,4 +31,13 @@ public interface ChatQueryService {
      * @return 没有进行中会话时返回 null
      */
     ChatDtos.SessionVO currentOpen(long customerId);
+
+    /**
+     * 某客户的历史咨询会话（按仓储返回顺序，最新在前）。
+     * <p>用于顶部「历史咨询记录」与右上角「服务进度 / 历史服务进度」；
+     * 只给摘要，点进某个会话后再用 {@link #history(long, int)} 拉消息，避免一次拉全量正文。</p>
+     *
+     * @param limit 最多返回条数，服务端会收敛到 1~50
+     */
+    List<ChatDtos.SessionSummaryVO> listSessions(long customerId, int limit);
 }

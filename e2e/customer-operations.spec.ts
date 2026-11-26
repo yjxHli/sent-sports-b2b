@@ -10,8 +10,15 @@ import { test, expect, type Page } from '@playwright/test';
  * 这里逐动作断言：请求 HTTP 200 + 业务 code=0，且全程无 4xx/5xx、无 console error。
  */
 const ADMIN_URL = process.env.E2E_ADMIN_URL ?? 'http://127.0.0.1:5174/admin/';
-/** 取列表里稳定的种子客户（真库 customer 表）。 */
-const DETAIL = ADMIN_URL + 'customer/detail/91203';
+/**
+ * 详情页客户从列表首行现取，不写死主键。
+ *
+ * 旧版写死 91203 —— 那是全量演示数据（几百个客户自增出来的）里的一个 id。
+ * 演示库改成 tiny 档后只有几十个客户，91203 未必存在，写死的主键会让本用例假红。
+ * 断言口径不变：详情页显示的客户 ID 必须等于列表里点进去的那个 ID。
+ */
+let detailId = '';
+const detailUrl = (): string => `${ADMIN_URL}customer/detail/${detailId}`;
 
 interface Call {
   status: number;
@@ -66,16 +73,22 @@ test('客户详情四个运营动作与列表改派全部成功，且无 404 / �
   await page.locator('.el-dialog:visible').getByRole('button', { name: '确认改派' }).click();
   await page.waitForTimeout(1200);
 
+  // 1.5) 从列表首行点「详情」进详情页，顺手把客户 ID 取下来（后续四个动作都打这一个人）
+  await page.getByRole('button', { name: '详情', exact: true }).first().click();
+  await page.waitForURL(/\/customer\/detail\/\d+/, { timeout: 20_000 });
+  detailId = ((new URL(page.url()).pathname.match(/\/customer\/detail\/(\d+)/) ?? [])[1] ?? '').trim();
+  expect(detailId, '列表首行应能进到客户详情').not.toBe('');
+
   // 2) 详情「刷新」
-  await page.goto(DETAIL);
+  await page.goto(detailUrl());
   await page.waitForTimeout(900);
-  await expect(page.locator('.customer-id')).toHaveText('91203');
+  await expect(page.locator('.customer-id')).toHaveText(detailId);
   await page.getByRole('button', { name: '刷新' }).click();
   await page.waitForTimeout(900);
-  await expect(page.locator('.customer-id')).toHaveText('91203');
+  await expect(page.locator('.customer-id')).toHaveText(detailId);
 
   // 3) 详情「积分调整」
-  await page.goto(DETAIL);
+  await page.goto(detailUrl());
   await page.waitForTimeout(900);
   await page.getByRole('button', { name: '积分调整' }).click();
   await page.waitForTimeout(300);
@@ -85,7 +98,7 @@ test('客户详情四个运营动作与列表改派全部成功，且无 404 / �
   await page.waitForTimeout(1200);
 
   // 4) 详情「改派归属」
-  await page.goto(DETAIL);
+  await page.goto(detailUrl());
   await page.waitForTimeout(900);
   await page.getByRole('button', { name: '改派归属' }).click();
   await page.waitForTimeout(300);
@@ -94,7 +107,7 @@ test('客户详情四个运营动作与列表改派全部成功，且无 404 / �
   await page.waitForTimeout(1200);
 
   // 5) 详情「授予等级」（用弹窗默认等级，避免与等级码值域耦合）
-  await page.goto(DETAIL);
+  await page.goto(detailUrl());
   await page.waitForTimeout(900);
   await page.getByRole('button', { name: '授予等级' }).click();
   await page.waitForTimeout(300);

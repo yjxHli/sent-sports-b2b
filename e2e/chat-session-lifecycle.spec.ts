@@ -9,6 +9,7 @@ import {
   CS_URL, USER_URL, join, apiCall, loginApi, clearOpenSessions,
   setStaffPresence, startConsultation, currentOpenSession,
   ADMIN_NAME, ADMIN_PASSWORD, CUSTOMER_ID, CUSTOMER_PHONE, CUSTOMER_PASSWORD,
+  closeSessionWithTicket,
 } from './chat-helpers';
 
 async function loginUserUi(page: Page): Promise<void> {
@@ -53,7 +54,7 @@ test('首条消息才建会话；结束后双端感知；Tab 手动关闭；小�
     staffId: 9001, summary: '历史服务小结', category: 'INQUIRY', info: 'CLEAR',
     result: 'DONE', solution: '已按历史口径回复',
   }, adminToken);
-  await apiCall(request, 'POST', `/admin/chat/sessions/${priorId}/close`, { reason: 'DONE' }, adminToken);
+  await closeSessionWithTicket(request, Number(priorId), adminToken);
 
   // 1) 只查不建：进入聊天页前没有任何未结束会话
   expect(await currentOpenSession(request, CUSTOMER_ID, userToken)).toBeNull();
@@ -83,30 +84,40 @@ test('首条消息才建会话；结束后双端感知；Tab 手动关闭；小�
 
     await loginAdminUi(adminPage);
     await adminPage.goto(join(CS_URL, '/workbench'));
-    const tab = adminPage.locator('.el-tabs__item', { hasText: `#${sessionId}` }).first();
+    const tab = adminPage.locator(`.chat-panel[data-session-id="${sessionId}"]`);
     await expect(tab).toBeVisible({ timeout: 25_000 });
     await expect(adminPage.locator('.chat-head__name')).toContainText('进行中');
 
-    // 2) 客服结束：客户看到结束提示，客服 Tab 置灰但仍在
+    // 2) 工单与结束会话（2026-11-26）：结束会话本身不再强制工单，
+    //    但这里仍先提交一份，让审查列表有数据可查
+    const notePanel = adminPage.getByTestId('session-note-panel');
+    await notePanel.getByTestId('note-inline-summary').fill('客户咨询定制球衣');
+    await notePanel.getByTestId('note-inline-solution').fill('已报价并发送起订说明');
+    await notePanel.getByTestId('note-inline-submit').click();
+    await expect(adminPage.locator('.el-message', { hasText: '工单已提交' }).first())
+      .toBeVisible({ timeout: 15_000 });
+
     await adminPage.getByRole('button', { name: '结束会话' }).first().click();
     await adminPage.locator('.el-message-box').getByRole('button', { name: '确认结束' }).click();
     await expect(userPage.getByTestId('chat-closed-banner'), '客户应看到本次会话已结束')
       .toContainText('本次会话已结束', { timeout: 20_000 });
     await expect(userPage.getByPlaceholder('本次会话已结束，请点击重新咨询')).toBeDisabled();
-    await expect(tab, '结束后 Tab 不应自动消失').toContainText('已结束', { timeout: 20_000 });
+    await expect(adminPage.locator('[data-testid="chat-ended-banner"]'),
+      '客服聊天区应显示本次会话已结束').toBeVisible({ timeout: 20_000 });
+    await expect(tab, '结束后不应自动消失').toContainText('已结束', { timeout: 20_000 });
 
-    // 3) 小结必填：空的问题概述 / 解决办法被拒
+    // 3) 工单必填：空的问题描述 / 解决办法被拒（40005，不再是普通参数错误）
     const invalid = await apiCall(request, 'PUT', `/admin/chat/sessions/${sessionId}/note`, {
       staffId: 9001, summary: '', category: 'INQUIRY', info: 'CLEAR', result: 'DONE', solution: '',
     }, adminToken);
-    expect(invalid?.code).toBe(40001);
+    expect(invalid?.code).toBe(40005);
 
-    await adminPage.getByTestId('note-summary').fill('客户咨询定制球衣');
-    await adminPage.getByTestId('note-solution').fill('已报价并发送起订说明');
-    await adminPage.getByTestId('note-save').click();
-    await expect(adminPage.locator('.el-message', { hasText: '本次情况已保存' })).toBeVisible({ timeout: 10_000 });
+    // 结束会话后工单仍在右栏可回看（抽屉已取消）
+    await expect(notePanel.getByTestId('note-inline-solution'))
+      .toHaveValue('已报价并发送起订说明');
 
-    // 3b) 历史服务详情：大弹窗 + 与客服聊天同款气泡回放
+    // 3b) 历史服务详情：先切到「历史服务」Tab（2026-11-25 右侧三个平级 Tab）
+    await adminPage.getByTestId('record-tab-history').click();
     const historyRow = adminPage.locator('[data-testid="history-row"]',
       { hasText: `会话 #${priorId}` }).first();
     await expect(historyRow, '右侧历史服务应包含上一条已结束会话').toBeVisible({ timeout: 20_000 });
@@ -123,8 +134,11 @@ test('首条消息才建会话；结束后双端感知；Tab 手动关闭；小�
     await historyDialog.locator('.el-dialog__headerbtn').click();
     await expect(historyDialog).toHaveCount(0);
 
-    // 4) 客服主动关闭 Tab 才消失
-    await tab.locator('.is-icon-close').click();
+    // 4) 客服在左侧「已结束」栏点 × 主动关闭，聊天区才消失（顶部 Tab 条已按需求删除）
+    const closedRow = adminPage.locator('[data-testid="closed-panel"] .session-item',
+      { hasText: `会话 #${sessionId}` }).first();
+    await expect(closedRow, '已结束的会话应留在左侧列表里').toBeVisible({ timeout: 10_000 });
+    await closedRow.locator('[data-testid="close-ended"]').click();
     await expect(tab).toHaveCount(0, { timeout: 10_000 });
 
     // 5) 客户主动重新咨询 → 生成新会话，结束提示消失

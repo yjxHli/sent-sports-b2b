@@ -13,6 +13,13 @@ export interface StaffForm {
   roleCode?: string;
 }
 
+/** 员工列表查询条件：关键词一次覆盖员工号 / 登录名 / 姓名 / 手机号。 */
+export interface StaffQuery extends PageQuery {
+  keyword?: string;
+  /** true=只看启用中、false=只看已停用、不传=不限 */
+  enabled?: boolean;
+}
+
 export interface RolePermForm {
   roleCode: string;
   permCodes: string[];
@@ -26,6 +33,31 @@ export interface ParamVO {
 export interface ParamForm {
   paramKey: string;
   paramValue: string;
+}
+
+/**
+ * 系统配置中心行（2026-11-25，对应后端 ConfigVO）。
+ *
+ * 中文名 / 说明 / 单位 / 类型全部由后端字典（SystemConfigCatalog）下发：
+ * 前端不许再维护一份映射，否则后端改了说明、页面还是老文案，运营会照着错的说明填值。
+ */
+export interface ConfigVO {
+  /** 原始键名，列里降级为小字灰底展示 */
+  configKey: string;
+  /** 中文名（字典没登记的键回落为键名） */
+  configName: string;
+  /** 一句话说明「改这个值会发生什么」，编辑弹窗必须展示 */
+  description: string;
+  /** 业务分组：订单与交易 / 库存与商品 / 财务与开票 / 会员与积分 / 其它 */
+  groupName: string;
+  /** 原始值，弹窗回填与提交都用它 */
+  configValue: string;
+  /** 展示值：30 分钟 / ¥50,000.00 / 开启 */
+  displayValue: string;
+  unit: string;
+  /** NUMBER / MONEY_CENT / PERCENT / BOOLEAN / TEXT，决定弹窗给什么控件 */
+  valueType: string;
+  remark: string;
 }
 
 /* ---------------- 违禁词库（V46，系统管理 → 违禁词库） ---------------- */
@@ -151,6 +183,83 @@ export interface TopCustomerVO {
   items: TopCustomerItemVO[];
 }
 
+/* ---------------- 拓展报表（2026-11-23） ---------------- */
+
+/** 客户采购结构：企业 / 个人 / 未分类三类固定齐全，空区间给 0 值。 */
+export interface CustomerMixItemVO {
+  type: 'ENTERPRISE' | 'PERSON' | 'UNKNOWN';
+  label: string;
+  customerCount: number;
+  orderCount: number;
+  amountCent: number | string;
+  amountYuan: string;
+  sharePct: string;
+}
+export interface CustomerMixVO {
+  fromDate: string;
+  toDate: string;
+  days: number;
+  totalAmountCent: number | string;
+  totalAmountYuan: string;
+  items: CustomerMixItemVO[];
+}
+
+/** 商品销售明细：汇总口径恒为全量，items 为 limit 截断后的列表。 */
+export interface ProductDetailItemVO {
+  rank: number;
+  skuId: number | string;
+  skuName: string;
+  spec: string;
+  qty: number | string;
+  amountCent: number | string;
+  amountYuan: string;
+  profitCent: number | string;
+  profitYuan: string;
+  grossMarginPct: string;
+  priceSources: string;
+  stockQty: number;
+  orderCount: number;
+}
+export interface ProductDetailVO {
+  fromDate: string;
+  toDate: string;
+  days: number;
+  limit: number;
+  totalAmountCent: number | string;
+  totalAmountYuan: string;
+  totalQty: number | string;
+  totalProfitCent: number | string;
+  grossMarginPct: string;
+  itemCount: number;
+  items: ProductDetailItemVO[];
+}
+
+/** 复购频次档位：复购客按历史总订单数分 2 单 / 3–5 单 / 6 单以上。 */
+export interface FrequencyBucketVO {
+  label: string;
+  customerCount: number | string;
+  amountCent: number | string;
+  amountYuan: string;
+  sharePct: string;
+}
+
+/** 复购 / 新老客结构：以区间前是否已有成交区分。 */
+export interface RepeatCustomerVO {
+  fromDate: string;
+  toDate: string;
+  days: number;
+  totalCustomerCount: number | string;
+  newCustomerCount: number | string;
+  repeatCustomerCount: number | string;
+  repeatRatePct: string;
+  newAmountCent: number | string;
+  newAmountYuan: string;
+  repeatAmountCent: number | string;
+  repeatAmountYuan: string;
+  avgOrderCount: string;
+  frequencyBuckets: FrequencyBucketVO[];
+}
+
 /** 工作台六卡 + 角色化待办数量（GET /admin/reports/dashboard，全部真库聚合）。 */
 export interface DashboardSummaryVO {
   date: string;
@@ -194,7 +303,7 @@ export interface StockWarningVO {
 }
 
 export const systemApi = {
-  staffList: (query: PageQuery) => http.get<PageResult<StaffVO>>('/admin/staff', query),
+  staffList: (query: StaffQuery) => http.get<PageResult<StaffVO>>('/admin/staff', query),
   createStaff: (form: StaffForm) => http.post<StaffVO>('/admin/staff', form),
   updateStaff: (id: number, form: StaffForm) => http.put<StaffVO>(`/admin/staff/${id}`, form),
   deleteStaff: (id: number) => http.delete<void>(`/admin/staff/${id}`),
@@ -210,6 +319,12 @@ export const systemApi = {
 
   params: () => http.get<ParamVO[]>('/admin/params'),
   upsertParam: (form: ParamForm) => http.put<ParamVO>('/admin/params', form),
+
+  /* 系统配置中心（2026-11-25）：在键值对之上补中文名 / 说明 / 单位 / 展示值 */
+  configs: () => http.get<ConfigVO[]>('/admin/configs'),
+  /** 单项更新：键名走路径，值是纯字符串，类型校验由后端字典负责 */
+  updateConfigValue: (configKey: string, configValue: string) =>
+    http.put<ConfigVO>(`/admin/configs/${encodeURIComponent(configKey)}`, { configValue }),
 
   /* 违禁词库（V46）：保存即热生效，作用于聊天消息 + 昵称/登录名 */
   sensitiveWords: (query: SensitiveWordQuery) =>
@@ -243,6 +358,14 @@ export const systemApi = {
    */
   topCustomers: (days = 30, limit = 5) =>
     http.get<TopCustomerVO>('/admin/reports/top-customers', { days, limit }),
+  /** 客户采购结构（企业 / 个人 / 未分类），数据范围由后端 @DataScope 下推。 */
+  customerMix: (days = 30) => http.get<CustomerMixVO>('/admin/reports/customer-mix', { days }),
+  /** 商品销售明细：销量 / 金额 / 价格来源 / 毛利 / 可用库存。 */
+  productDetails: (days = 30, limit = 10) =>
+    http.get<ProductDetailVO>('/admin/reports/product-details', { days, limit }),
+  /** 复购 / 新老客结构。 */
+  repeatCustomers: (days = 30) =>
+    http.get<RepeatCustomerVO>('/admin/reports/repeat-customers', { days }),
   /** 工作台六卡与待办数量，一次请求取齐。 */
   dashboard: () => http.get<DashboardSummaryVO>('/admin/reports/dashboard'),
   stockWarningReport: () => http.get<StockWarningVO>('/admin/reports/stock-warning'),

@@ -13,6 +13,12 @@ export interface CustomVO {
   rejectCount: number;
   rejectReason?: string | null;
   reviewDeadlineMillis: number;
+  /**
+   * 图稿上传截止时刻（毫秒，0 = 不适用）。
+   * 仅「待提交图稿 + 一稿未传 + 订单已支付」时非 0：支付后 72 小时未上传，
+   * 系统会自动取消订单并全额退款，详情页据此渲染倒计时。
+   */
+  draftDeadlineMillis?: number | string | null;
   /** 关联订单号（可跳订单详情）；查不到订单时为 null */
   orderNo?: string | null;
   orderStatus?: string | null;

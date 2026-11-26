@@ -87,6 +87,10 @@ function targetIdOf(ids: string[]): string {
   return [...new Set(ids.map((s) => s.trim()).filter(Boolean))].sort().join(',');
 }
 
+// 数据强依赖：本文件内的用例共享演示库状态（购物车/库存/券/发票/会话/配置），
+// 必须按书写顺序在同一个 worker 里跑完，禁止拆到多 worker 并行。
+test.describe.configure({ mode: 'serial' });
+
 test('退款审核：默认无勾选框，点「删除」才出现，输对「删除」后软删隐藏且金额不变', async ({ page, request }) => {
   test.setTimeout(180_000);
 

@@ -48,8 +48,13 @@ public final class ReviewDtos {
             long createdAt) {
     }
 
-    /** 头部摘要：好评率按 rating≥4 计算（与电商口径一致）。 */
-    public record ReviewSummaryVO(long total, long positiveCount, int positiveRate, String avgRating) {
+    /**
+     * 头部摘要：好评率按 rating≥4 计算（与电商口径一致）。
+     * <p>{@code negativeCount} 是 rating≤2 的条数；3 星中评两边都不计，
+     * 所以 {@code positiveCount + negativeCount} 允许小于 {@code total}。</p>
+     */
+    public record ReviewSummaryVO(long total, long positiveCount, long negativeCount,
+                                  int positiveRate, String avgRating) {
     }
 
     /** 列表 + 摘要一趟返回：详情页打开即完整渲染，不必二次请求。 */

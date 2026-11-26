@@ -3,6 +3,7 @@ package com.sent.sports.chat.service;
 import com.sent.sports.chat.domain.ChatSession;
 import com.sent.sports.chat.domain.ChatSessionStatus;
 import com.sent.sports.chat.domain.PresenceStatus;
+import com.sent.sports.chat.domain.SessionType;
 import com.sent.sports.chat.domain.StaffAssignmentPolicy;
 import com.sent.sports.chat.repository.AgentPresenceRepository;
 import com.sent.sports.chat.repository.ChatSessionRepository;
@@ -29,8 +30,11 @@ public class CreateSessionUseCase {
      * 单坐席（2026-11-16）：系统只用 9001 接待，客户会话统一分配给他。
      * 其他客服（9003 等）即使在线也不参与自动分配——保留 presence 表是为了
      * 历史报表/手动分配，但进线分配只认 9001。
+     *
+     * <p>真实口径已上移到 {@link StaffAssignmentPolicy#SINGLE_AGENT_STAFF_ID}：
+     * 机器人转人工的自动接入（{@link SessionAssignmentUseCase}）用的是同一个工号。</p>
      */
-    public static final long SINGLE_AGENT_STAFF_ID = 9001L;
+    public static final long SINGLE_AGENT_STAFF_ID = StaffAssignmentPolicy.SINGLE_AGENT_STAFF_ID;
 
     private final ChatSessionRepository sessionRepository;
     private final AgentPresenceRepository presenceRepository;
@@ -70,6 +74,14 @@ public class CreateSessionUseCase {
 
         long sessionId = sessionRepository.nextId();
         ChatSession session;
+        // 机器人接待（2026-11-24）：不进自动分配、不占坐席名额，直接以 BOT + WAITING 建会话。
+        // 客户由小森接着，直到客户要人工或机器人答不上来才切 HUMAN 进队列。
+        if (cmd.sessionType() == SessionType.BOT) {
+            session = new ChatSession(sessionId, cmd.customerId(), cmd.vip(), ChatSessionStatus.WAITING,
+                    null, now, now, 0, SessionType.BOT);
+            sessionRepository.save(session);
+            return new CreateSessionResult(sessionId, session.getStatus(), null, false, SessionType.BOT);
+        }
         if (picked.isPresent() && underCap) {
             session = new ChatSession(sessionId, cmd.customerId(), cmd.vip(), ChatSessionStatus.ACTIVE,
                     picked.get().staffId(), now, now, 0);
@@ -83,7 +95,8 @@ public class CreateSessionUseCase {
                     null, now, now, 0);
         }
         sessionRepository.save(session);
-        return new CreateSessionResult(sessionId, session.getStatus(), session.getStaffId(), false);
+        return new CreateSessionResult(sessionId, session.getStatus(), session.getStaffId(), false,
+                session.getSessionType());
     }
 
     /**
@@ -102,7 +115,8 @@ public class CreateSessionUseCase {
                 && owner != null
                 && owner != SINGLE_AGENT_STAFF_ID;
         if (!heldByOthers || !isSingleSeatOnline()) {
-            return new CreateSessionResult(session.getId(), session.getStatus(), owner, true);
+            return new CreateSessionResult(session.getId(), session.getStatus(), owner, true,
+                    session.getSessionType());
         }
         session.reassign(SINGLE_AGENT_STAFF_ID);
         sessionRepository.save(session);
@@ -114,7 +128,8 @@ public class CreateSessionUseCase {
             presence.increaseActive();
             presenceRepository.save(presence);
         });
-        return new CreateSessionResult(session.getId(), session.getStatus(), SINGLE_AGENT_STAFF_ID, true);
+        return new CreateSessionResult(session.getId(), session.getStatus(), SINGLE_AGENT_STAFF_ID, true,
+                session.getSessionType());
     }
 
     private boolean isSingleSeatOnline() {

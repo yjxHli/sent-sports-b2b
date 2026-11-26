@@ -2,9 +2,20 @@
 app:
   env: dev
   # 账号全部来自数据库（sys_staff.username / customer.phone），不再向进程内仓储灌种子
-  # 演示数据生成器：仅非生产 + 该开关为 true 时，在应用启动时灌入半年量级演示数据
+  # 演示数据生成器：非生产 profile + 该开关为 true 时，才在启动时灌入半年量级演示数据
+  # （200 客户 / ~2000 订单 / 会话 / 退款…）。
+  # 默认关闭：清了测试数据后，重启不应该再把演示数据灌回来。
+  #   需要重新造一批演示数据时（演示、截图、压测），单次启动带上开关即可：
+  #     java -jar sent-server.jar --app.demo-data.enabled=true
+  #   或设置环境变量 APP_DEMO_DATA_ENABLED=true。
   demo-data:
-    enabled: true
+    enabled: ${APP_DEMO_DATA_ENABLED:false}
+    # 规模档位：
+    #   full（默认）= 收口阶段那套演示数据（150 个人 + 50 企业客户、2000 单），用于演示 / 截图；
+    #   tiny        = E2E 专用最小集（10 个人 + 3 企业客户、50 单、6 个会话），
+    #                 客户过一页、热销榜 5 个 SKU、复购三档、1 个低库存 SKU、1 份过期合同。
+    # 跑 E2E 前：--app.demo-data.enabled=true --app.demo-data.scale=tiny
+    scale: ${APP_DEMO_DATA_SCALE:full}
   sms:
     # 演示开关：true 时把验证码回显到 /auth/sms-code 响应，供前端在浏览器控制台打印。
     # 仅 dev 开启；prod 不设此值（默认 false），验证码绝不回显，避免泄露。

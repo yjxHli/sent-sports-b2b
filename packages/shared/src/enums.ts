@@ -78,7 +78,12 @@ export type ChatSessionStatus = (typeof ChatSessionStatus)[keyof typeof ChatSess
 export const PresenceStatus = { ONLINE: 'ONLINE', BUSY: 'BUSY', OFFLINE: 'OFFLINE' } as const;
 export type PresenceStatus = (typeof PresenceStatus)[keyof typeof PresenceStatus];
 
-export const SenderType = { CUSTOMER: 'CUSTOMER', STAFF: 'STAFF', SYSTEM: 'SYSTEM' } as const;
+/**
+ * 消息发送方：CUSTOMER 客户 / STAFF 客服 / BOT 智能助手 / SYSTEM 系统旁白。
+ * <p>BOT 与 SYSTEM 必须分开：BOT 是「有人格的话」，客户端渲染成带头像的普通气泡；
+ * SYSTEM 是「会话已结束」「客服已接入」这类旁白，渲染成居中浅灰提示。</p>
+ */
+export const SenderType = { CUSTOMER: 'CUSTOMER', STAFF: 'STAFF', BOT: 'BOT', SYSTEM: 'SYSTEM' } as const;
 export type SenderType = (typeof SenderType)[keyof typeof SenderType];
 
 export const CustomerType = { PERSON: 'PERSON', ENTERPRISE: 'ENTERPRISE' } as const;

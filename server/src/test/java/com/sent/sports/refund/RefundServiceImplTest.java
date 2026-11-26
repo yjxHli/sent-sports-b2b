@@ -44,6 +44,8 @@ class RefundServiceImplTest {
     private OrderRefundViewService orderRefundViewService;
     @Mock
     private com.sent.sports.member.service.MemberRefundGateway memberRefundGateway;
+    @Mock
+    private com.sent.sports.coupon.service.CouponDeduction couponDeduction;
 
     private IdGen idGen;
     private RefundServiceImpl service;
@@ -53,7 +55,8 @@ class RefundServiceImplTest {
         idGen = new IdGen(); // 无 JdbcTemplate，退化为进程内自增，单测无需数据库
         service = new RefundServiceImpl(refundRepository, idGen,
                 Clock.fixed(Instant.parse("2026-11-08T06:00:00Z"), ZoneOffset.UTC),
-                refundOrderMapper, paymentRefundGateway, orderRefundViewService, memberRefundGateway);
+                refundOrderMapper, paymentRefundGateway, orderRefundViewService, memberRefundGateway,
+                couponDeduction);
     }
 
     @Test
@@ -97,5 +100,16 @@ class RefundServiceImplTest {
         // 关单是按实付退的（7000 < 商品额 10000），仍属整单，抵扣的 3000 必须全额退回
         verify(memberRefundGateway).returnDeductedPoints(7L, refundNo, 3000L);
         verify(refundOrderMapper).insertCloseRefund(refundNo, 11L, 7000L, "客户取消", 3000L);
+    }
+
+    @Test
+    @DisplayName("关单全额退款：下单时核销的优惠券一并退回账户")
+    void createCloseRefundReturnsCoupon() {
+        when(orderRefundViewService.getView("SO-4"))
+                .thenReturn(Optional.of(new OrderRefundView("SO-4", 7L, 11L, List.of(), 0L, false, 5000L)));
+
+        service.createCloseRefund("SO-4", 11L, 5000L, "定制图稿超时");
+
+        verify(couponDeduction).returnCoupon("SO-4");
     }
 }

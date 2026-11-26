@@ -56,20 +56,26 @@ export function useChatSession(customerId: number, vip = false, handlers: ChatSe
   const realtime = ref(false);
   /** 会话状态：IDLE 尚未咨询 / WAITING 排队中 / ACTIVE 已接入 / CLOSED 已结束 */
   const status = ref<string>('IDLE');
+  /**
+   * 接待模式：BOT 机器人 / HUMAN 人工。
+   * 初值取 BOT——商城端客服窗口默认先由「智能助手小森」接待，进去就该看到欢迎语；
+   * 复用已有会话时由 currentOpen / create 的返回值覆盖成真实模式。
+   */
+  const sessionType = ref<string>('BOT');
   /** 会话是否已结束：客户需看到「本次会话已结束」，并可主动重新咨询 */
   const closed = ref(false);
   /** 前方排队人数（position 从 1 开始，展示给用户时要减 1） */
   const queueAhead = ref(0);
   /** 客服正在输入（收到 TYPING 帧后亮 3s，期间没有新帧就自动熄灭） */
   const peerTyping = ref(false);
-  const queued = computed(() => status.value === 'WAITING');
+  /** 机器人接待中：可以随便发消息（虽然 status 仍是 WAITING，但不在等坐席） */
+  const botMode = computed(() => sessionType.value === 'BOT');
+  const queued = computed(() => status.value === 'WAITING' && !botMode.value);
   let timer: ReturnType<typeof setInterval> | undefined;
   let queueTimer: ReturnType<typeof setInterval> | undefined;
   let typingOffTimer: ReturnType<typeof setTimeout> | undefined;
   let lastTypingSentAt = 0;
   let seq = 0;
-  /** 「客服已接入」系统提示只补一次：排队轮询与 ASSIGNED 推送都可能先到 */
-  let assignedNotified = false;
   /** clientMsgId -> 待确认消息（内容 + 类型），用于 ACK 校准与 WS 失败时的 REST 补发 */
   const pending = new Map<string, { content: string; msgType: string }>();
 
@@ -81,7 +87,52 @@ export function useChatSession(customerId: number, vip = false, handlers: ChatSe
     onAssigned: (assignedSessionId: number) => onAssigned(assignedSessionId),
     onTyping: (typingSessionId: number) => onPeerTyping(typingSessionId),
     onClosed: (closedSessionId: number, reason: string) => onClosed(closedSessionId, reason),
+    onSystem: (sysSessionId: number, content: string, seq: number, event: string, senderType: string) =>
+      onSystem(sysSessionId, content, seq, event, senderType),
   });
+
+  /**
+   * 系统提示帧（2026-11-24）：机器人回复 / 转人工 / 人工接入。
+   * <p>落库过的提示（机器人回复、转接提示）会带 seq，history 刷新时也会出现——
+   * 用 seq 去重，避免「刷新 + 帧」两条路径在同一句话上叠成两条。</p>
+   * <p>event=TRANSFER 时把会话切回人工排队口径：排队条亮起、输入框按排队禁用。</p>
+   * <p>senderType=BOT 的提示落成机器人消息（页面渲染成机器人头像气泡），
+   * SYSTEM 才是居中旁白——两条路径的渲染口径必须和历史记录一致，
+   * 否则同一条回复「实时是气泡、刷新后变灰字」。</p>
+   */
+  function onSystem(
+    sysSessionId: number,
+    content: string,
+    serverSeq: number,
+    event: string,
+    senderType = 'SYSTEM',
+  ): void {
+    if (sysSessionId && sessionId.value !== null && Number(sysSessionId) !== sessionId.value) return;
+    if (event === 'TRANSFER') {
+      sessionType.value = 'HUMAN';
+      status.value = 'WAITING';
+      queueAhead.value = 0;
+      startQueuePoll();
+    }
+    if (!content) return;
+    if (serverSeq > 0 && messages.value.some((m) => m.seq === serverSeq)) return;
+    let localKey = serverSeq;
+    if (localKey <= 0) {
+      // 没落库的提示（人工接入通知）没有服务端序号，借用本地计数器取负数占位。
+      // 不能就地 `serverSeq += 1` 取 -1：那会和乐观消息的 -1 撞 v-for key，
+      // 两条提示一起到达时也会重复。
+      seq += 1;
+      localKey = -seq;
+    }
+    messages.value.push({
+      seq: localKey,
+      senderType: senderType || 'SYSTEM',
+      msgType: 'TEXT',
+      content,
+      createdAtMillis: Date.now(),
+      self: false,
+    });
+  }
 
   /** 服务端已结束会话：客户侧立刻冻结输入并显示结束提示；重新咨询由客户主动触发。 */
   function onClosed(closedSessionId: number, reason: string): void {
@@ -192,14 +243,16 @@ export function useChatSession(customerId: number, vip = false, handlers: ChatSe
   }
 
   async function ensureSession(): Promise<void> {
-    const res = await chatApi.createSession(customerId, vip);
+    // 商城端客服窗口一律先由智能助手接待：显式传 BOT，不能靠服务端默认值——
+    // 默认值是 HUMAN（保住 API 直接建会话的既有口径），不传就等于绕过机器人。
+    const res = await chatApi.createSession(customerId, vip, 'BOT');
     // Long → String：统一转 number，后续与 WS 帧里的数字 sessionId 才能严格相等
     sessionId.value = Number(res.data.sessionId);
+    sessionType.value = String(res.data.sessionType ?? 'BOT');
     closed.value = false;
     status.value = String(res.data.status ?? 'WAITING');
-    assignedNotified = status.value !== 'WAITING';
     online.value = true;
-    if (status.value === 'WAITING') {
+    if (status.value === 'WAITING' && !botMode.value) {
       startQueuePoll();
     } else {
       stopQueuePoll();
@@ -239,23 +292,17 @@ export function useChatSession(customerId: number, vip = false, handlers: ChatSe
     }
   }
 
-  /** 服务端推送「已接入客服」：隐藏排队提示、解锁输入、补一条系统提示（只补一次） */
+  /**
+   * 服务端推送「已接入客服」：隐藏排队提示、解锁输入。
+   * <p>2026-11-24 起「客服已接入，人工客服 X 为您服务」这条提示由服务端 SYSTEM 帧下发
+   * （见 WsChatNotifier#sessionAssigned），这里不再本地造一条，否则同一件事会出现两句提示。</p>
+   */
   function onAssigned(assignedSessionId: number): void {
     if (sessionId.value !== null && assignedSessionId && assignedSessionId !== sessionId.value) return;
     status.value = 'ACTIVE';
+    sessionType.value = 'HUMAN';
     queueAhead.value = 0;
     stopQueuePoll();
-    if (assignedNotified) return;
-    assignedNotified = true;
-    seq += 1;
-    messages.value.push({
-      seq: -seq,
-      senderType: 'SYSTEM',
-      msgType: 'TEXT',
-      content: '客服已接入，请开始沟通',
-      createdAtMillis: Date.now(),
-      self: false,
-    });
   }
 
   async function refresh(): Promise<void> {
@@ -265,7 +312,11 @@ export function useChatSession(customerId: number, vip = false, handlers: ChatSe
       const latest = (list.data ?? []).map(toMessage);
       // 保留仍在途的乐观消息，避免刷新时闪烁
       const optimistic = messages.value.filter((m) => m.pending && pending.has(m.clientMsgId ?? ''));
-      messages.value = [...latest, ...optimistic];
+      // 保留只存在于前端的系统提示（人工接入通知没有落库，刷新一次就没了会显得「提示突然消失」）
+      const localSystem = messages.value.filter((m) => m.senderType === 'SYSTEM'
+        && m.seq < 0
+        && !latest.some((x) => x.seq === m.seq));
+      messages.value = [...latest, ...localSystem, ...optimistic];
     } catch {
       /* 历史同步失败静默，不断开 */
     }
@@ -337,10 +388,10 @@ export function useChatSession(customerId: number, vip = false, handlers: ChatSe
         const vo = res.data;
         if (vo) {
           sessionId.value = Number(vo.sessionId);
+          sessionType.value = String(vo.sessionType ?? 'HUMAN');
           status.value = String(vo.status ?? 'WAITING');
           online.value = true;
-          assignedNotified = status.value !== 'WAITING';
-          if (status.value === 'WAITING') startQueuePoll();
+                if (status.value === 'WAITING' && !botMode.value) startQueuePoll();
           else stopQueuePoll();
         } else {
           sessionId.value = null;
@@ -373,6 +424,7 @@ export function useChatSession(customerId: number, vip = false, handlers: ChatSe
 
   return {
     messages, sessionId, online, realtime, status, closed, queueAhead, queued, peerTyping,
+    sessionType, botMode,
     start, stop, send, refresh, notifyTyping, reopen,
   };
 }

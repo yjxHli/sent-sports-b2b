@@ -166,6 +166,50 @@ class CustomQueryServiceImplTest {
     }
 
     // ------------------------------------------------------------------
+    // 图稿上传倒计时（2026-11-23）：支付后 72 小时未上传将自动取消退款
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("待提交图稿且订单已支付：详情带出上传截止时刻（支付 + 72 小时）")
+    void detailExposesDraftDeadlineForUnpaidDraftOrder() {
+        when(mapper.selectByCustomNo(NO)).thenReturn(po("WAIT_DRAFT", 0, 0));
+        CustomOrderMapper.OrderRefRow ref = new CustomOrderMapper.OrderRefRow();
+        ref.setOrderNo("SO20261120000001");
+        ref.setOrderStatus("WAIT_SHIP");
+        ref.setPaidAt(LocalDateTime.of(2026, 11, 20, 10, 0));
+        when(mapper.selectOrderRef(NO)).thenReturn(ref);
+        when(mapper.selectDrafts(PK)).thenReturn(List.of());
+        when(mapper.selectReviewLogs(PK)).thenReturn(List.of());
+
+        CustomDtos.CustomVO vo = service.detail(NO);
+
+        assertEquals(millis(LocalDateTime.of(2026, 11, 23, 10, 0)), vo.draftDeadlineMillis(),
+                "截止时刻必须是支付时间 + 72 小时");
+    }
+
+    @Test
+    @DisplayName("已传过图稿 / 未支付：不倒计时（0 = 前端不展示该模块）")
+    void detailOmitsDraftDeadlineWhenDraftAlreadySubmittedOrUnpaid() {
+        // 已提交过一稿（版本 > 0）
+        when(mapper.selectByCustomNo(NO)).thenReturn(po("WAIT_REVIEW", 1, 0));
+        CustomOrderMapper.OrderRefRow paid = new CustomOrderMapper.OrderRefRow();
+        paid.setPaidAt(LocalDateTime.of(2026, 11, 20, 10, 0));
+        when(mapper.selectOrderRef(NO)).thenReturn(paid);
+        when(mapper.selectDrafts(PK)).thenReturn(List.of());
+        when(mapper.selectReviewLogs(PK)).thenReturn(List.of());
+
+        assertEquals(0L, service.detail(NO).draftDeadlineMillis());
+
+        // 待提交但订单还没支付（未支付单由 OrderTimeoutJob 处理，不显示倒计时）
+        when(mapper.selectByCustomNo(NO)).thenReturn(po("WAIT_DRAFT", 0, 0));
+        CustomOrderMapper.OrderRefRow unpaid = new CustomOrderMapper.OrderRefRow();
+        unpaid.setPaidAt(null);
+        when(mapper.selectOrderRef(NO)).thenReturn(unpaid);
+
+        assertEquals(0L, service.detail(NO).draftDeadlineMillis());
+    }
+
+    // ------------------------------------------------------------------
     // 订单详情页的定制卡片（2026-11-21 用户反馈）
     // ------------------------------------------------------------------
 

@@ -105,17 +105,135 @@ class MapperIT extends BaseIntegrationTest {
     private CouponMapper couponMapper;
 
     @Test
-    @DisplayName("V1~V55：五十五次迁移全部应用，66 张表就位（V55 商品评价）")
+    @DisplayName("V1~V65：六十四次迁移全部应用（V64 为纯代码发券无迁移），69 张表就位（V56/V57/V60/V61/V62/V65 只加列、V58 只加词、V59 加知识库表与接待模式列、V63 加标签两表）")
     void migrationsApplyAllThirteenVersions() {
         Integer versions = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1", Integer.class);
-        assertThat(versions).isEqualTo(55);
+        assertThat(versions).isEqualTo(64);
 
         Integer tables = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM information_schema.tables "
                         + "WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE' "
                         + "AND table_name <> 'flyway_schema_history'", Integer.class);
-        assertThat(tables).isEqualTo(66);
+        assertThat(tables).isEqualTo(69);
+
+        // V59：机器人知识库表 + 会话接待模式列。
+        // 老会话必须默认 HUMAN——默认值写错（比如 BOT）会让历史会话突然被机器人接管。
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() "
+                        + "AND table_name = 'chat_session' AND column_name = 'session_type' "
+                        + "AND column_default = 'HUMAN' AND is_nullable = 'NO'",
+                Integer.class)).as("chat_session.session_type 必须 NOT NULL 且默认 HUMAN（V59）").isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() "
+                        + "AND table_name = 'faq_knowledge' "
+                        + "AND column_name IN ('keywords', 'reply_content', 'hit_count')",
+                Integer.class)).as("faq_knowledge 必须有 keywords/reply_content/hit_count 三列（V59）").isEqualTo(3);
+        // 种子 FAQ 会被 IT 基类 TRUNCATE，只断言迁移本身成功落地（口径同 V58）
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '59' AND success = 1",
+                Integer.class)).as("V59 机器人知识库迁移必须成功").isEqualTo(1);
+
+        // V60：话术启停列。默认必须 ENABLED——默认写成 DISABLED 会让全部种子话术一夜之间不回复。
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() "
+                        + "AND table_name = 'faq_knowledge' AND column_name = 'status' "
+                        + "AND column_default = 'ENABLED' AND is_nullable = 'NO'",
+                Integer.class)).as("faq_knowledge.status 必须 NOT NULL 且默认 ENABLED（V60）").isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '60' AND success = 1",
+                Integer.class)).as("V60 话术配置迁移必须成功").isEqualTo(1);
+
+        // V61：服务工单扩展列。category 已在 V37 存在，只断言真正新增的 6 列；
+        // need_followup 必须 NOT NULL 默认 0，否则老工单读到 null 会被 Boolean.TRUE.equals 吞成 false。
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() "
+                        + "AND table_name = 'chat_session_note' "
+                        + "AND column_name IN ('sub_category', 'customer_demand', 'verified_info', "
+                        + "'need_followup', 'followup_time', 'attachments_json')",
+                Integer.class)).as("chat_session_note 必须有 V61 的六个工单列").isEqualTo(6);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() "
+                        + "AND table_name = 'chat_session_note' AND column_name = 'need_followup' "
+                        + "AND column_default = '0' AND is_nullable = 'NO'",
+                Integer.class)).as("chat_session_note.need_followup 必须 NOT NULL 且默认 0（V61）").isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '61' AND success = 1",
+                Integer.class)).as("V61 服务工单迁移必须成功").isEqualTo(1);
+
+        // V62：话术软删列。默认 0 且 NOT NULL——默认值写反（1）会让全部种子话术一夜之间消失，
+        // 而机器人那边只会表现为「突然什么都答不上来」，排查成本极高。
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() "
+                        + "AND table_name = 'faq_knowledge' AND column_name = 'deleted' "
+                        + "AND column_default = '0' AND is_nullable = 'NO'",
+                Integer.class)).as("faq_knowledge.deleted 必须 NOT NULL 且默认 0（V62）").isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '62' AND success = 1",
+                Integer.class)).as("V62 话术软删迁移必须成功").isEqualTo(1);
+
+        // V63：客户标签两张表。
+        // 关联表的 uk_customer_tag 是「重复打标不报错」的唯一依赖——少了它，客服连点两次保存就会插两条。
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.statistics WHERE table_schema = DATABASE() "
+                        + "AND table_name = 'customer_tag_link' AND index_name = 'uk_customer_tag' "
+                        + "AND non_unique = 0",
+                Integer.class)).as("customer_tag_link 必须有唯一键 uk_customer_tag（V63）").isEqualTo(2);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() "
+                        + "AND table_name = 'customer_tag' AND column_name = 'status' "
+                        + "AND column_default = 'ACTIVE' AND is_nullable = 'NO'",
+                Integer.class)).as("customer_tag.status 必须 NOT NULL 且默认 ACTIVE（V63）").isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '63' AND success = 1",
+                Integer.class)).as("V63 客户标签迁移必须成功").isEqualTo(1);
+
+        // V65：工单暂存/提交 + 回访联系方式；客服补偿券 5 档无门槛。
+        // submit_status 默认必须是 DRAFT——默认 SUBMITTED 会让「刚存一半的草稿」直接进主管审查。
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() "
+                        + "AND table_name = 'chat_session_note' AND column_name = 'submit_status' "
+                        + "AND column_default = 'DRAFT' AND is_nullable = 'NO'",
+                Integer.class)).as("chat_session_note.submit_status 必须 NOT NULL 且默认 DRAFT（V65）").isEqualTo(1);
+        // 必填列放宽为 NULL：草稿允许只填一半，NOT NULL 会让「暂时保存」直接 500。
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() "
+                        + "AND table_name = 'chat_session_note' "
+                        + "AND column_name IN ('summary', 'solution') AND is_nullable = 'YES'",
+                Integer.class)).as("summary/solution 必须允许 NULL 才能存草稿（V65）").isEqualTo(2);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() "
+                        + "AND table_name = 'chat_session_note' AND column_name = 'followup_contact'",
+                Integer.class)).as("chat_session_note 必须有 followup_contact（V65）").isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '65' AND success = 1",
+                Integer.class)).as("V65 工单提交与客服补偿券迁移必须成功").isEqualTo(1);
+
+        // V57：定制图稿上传超时需要「提醒痕迹」，否则每轮定时任务都会重复发同一条站内信
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() "
+                        + "AND table_name = 'custom_order' AND column_name = 'draft_remind_count' "
+                        + "AND column_default = '0' AND is_nullable = 'NO'",
+                Integer.class)).as("custom_order.draft_remind_count 必须 NOT NULL 且默认 0（V57）").isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() "
+                        + "AND table_name = 'custom_order' AND column_name = 'last_draft_remind_at' "
+                        + "AND is_nullable = 'YES'",
+                Integer.class)).as("custom_order.last_draft_remind_at 必须可空（V57）").isEqualTo(1);
+
+        // V58：种子行会被 IT 基类 TRUNCATE，只断言迁移本身成功落地（版本号口径同 V46 权限行）
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '58' AND success = 1",
+                Integer.class)).as("V58 搜索合规词迁移必须成功").isEqualTo(1);
+
+        // V56：评价状态列（默认 NORMAL）。权限点种子不在这里断言——
+        // 本测试基类会 TRUNCATE 业务表，sys_permission 的种子行不参与 schema 断言，
+        // 「超管/运营持有该权限点」由 E2E 的菜单可见性与接口准入验证。
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() "
+                        + "AND table_name = 'product_review' AND column_name = 'status' "
+                        + "AND column_default = 'NORMAL' AND is_nullable = 'NO'",
+                Integer.class)).as("product_review.status 必须 NOT NULL 且默认 NORMAL（V56）").isEqualTo(1);
 
         // V55：商品评价表 + 「同一订单同一商品只能评一次」的联合唯一索引
         assertThat(jdbc.queryForObject(

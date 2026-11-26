@@ -7,6 +7,8 @@ declare module 'vue-router' {
     title?: string;
     /** 访问该路由所需权限码；缺省表示登录即可访问 */
     perm?: string;
+    /** 精确匹配权限码（不认通配 '*'），与后端 @RequirePerm(exact = true) 对齐 */
+    permExact?: boolean;
     /** 菜单分组名；为空表示一级菜单 */
     group?: string;
     /** 菜单图标位（单汉字，避免引入整套图标库） */

@@ -4,6 +4,22 @@
     <el-empty v-else-if="!product" description="商品不存在或已下架" />
 
     <template v-else>
+      <!-- 页面内品牌 + 迷你搜索（2026-11-25）：详情页已去掉整站搜索区，商城名挪到这里并回首页；
+           右侧补一个轻量搜索（只要输入框 + 按钮），宽度约为购买栏的一半，和淘宝详情头同读法。 -->
+      <header class="detail-brand" data-testid="detail-brand">
+        <router-link to="/home" class="detail-brand__home" data-testid="detail-brand-home">
+          <span class="detail-brand__mark" aria-hidden="true"></span>
+          <span class="detail-brand__text">
+            <span class="detail-brand__cn">森特</span>
+            <span class="detail-brand__en">SENT SPORTS</span>
+          </span>
+        </router-link>
+        <form class="detail-mini-search" data-testid="detail-mini-search" @submit.prevent="onMiniSearch">
+          <input v-model="miniKeyword" type="search" placeholder="搜索商品 / 品牌" aria-label="搜索商品" />
+          <button type="submit">搜索</button>
+        </form>
+      </header>
+
       <!-- 面包屑 -->
       <el-breadcrumb separator="/" class="detail-crumb">
         <el-breadcrumb-item :to="{ path: '/home' }">首页</el-breadcrumb-item>
@@ -13,63 +29,139 @@
         <el-breadcrumb-item>{{ product.name }}</el-breadcrumb-item>
       </el-breadcrumb>
 
-      <!-- 三列：竖排缩略图 | 主图 | 购买决策栏
-           注意：`.gallery-rail` 是 v-if，图集 ≤1 张时该节点不渲染。三列栅格若仍按
-           56px | 1fr | 420px 排，Grid 会把剩下的 [gallery, buy] 顺序塞进前两列，
-           主图被压成 56px 小方块、购买区吃掉 1fr、右侧空一列（2026-11-22 缺陷）。
-           因此无 rail 时加修饰类收掉第一列轨道。 -->
-      <div class="detail-main" :class="{ 'detail-main--no-rail': galleryImages.length <= 1 }">
-        <div v-if="galleryImages.length > 1" class="gallery-rail">
-          <button
-            v-for="(img, i) in galleryImages"
-            :key="'rail-' + i"
-            type="button"
-            class="gallery-rail__item"
-            :class="{ active: activeThumb === i }"
-            @mouseenter="activeThumb = i"
-            @focus="activeThumb = i"
-            @click="activeThumb = i"
-          >
-            <ProductThumb
-              :src="img"
-              :category="product.categoryName"
-              :name="product.name"
-              :seed="product.productId + '-rail-' + i"
-            />
-          </button>
-        </div>
+      <!-- 两栏栅格：左 60%（主图 + 详情/评价）| 右 40%（购买决策栏，sticky）
+           注意：`.gallery-rail` 是 v-if，图集 ≤1 张时该节点不渲染。`.gallery-block` 若仍按
+           56px | 1fr 排，Grid 会把剩下的 [gallery] 塞进第一列，
+           主图被压成 56px 小方块（2026-11-22 缺陷）。因此无 rail 时加修饰类收掉第一列轨道。 -->
+      <div class="detail-main">
+        <!-- 左列（2026-11-25）：「商品详情 / 用户评价」与主图同列摆放；
+             右列购买栏 sticky，往下滑时一直跟着（淘宝式两栏） -->
+        <div class="detail-left">
+          <div class="gallery-block" :class="{ 'gallery-block--no-rail': galleryImages.length <= 1 }">
+            <div v-if="galleryImages.length > 1" class="gallery-rail">
+              <button
+                v-for="(img, i) in galleryImages"
+                :key="'rail-' + i"
+                type="button"
+                class="gallery-rail__item"
+                :class="{ active: activeThumb === i }"
+                @mouseenter="activeThumb = i"
+                @focus="activeThumb = i"
+                @click="activeThumb = i"
+              >
+                <ProductThumb
+                  :src="img"
+                  :category="product.categoryName"
+                  :name="product.name"
+                  :seed="product.productId + '-rail-' + i"
+                />
+              </button>
+            </div>
 
-        <div class="gallery">
-          <div class="gallery__main">
-            <ProductThumb
-              :src="activeImage"
-              :category="product.categoryName"
-              :name="product.name"
-              :seed="product.productId + '-' + activeThumb"
-            />
-          </div>
-          <!-- 窄屏才出现的横排缩略图（宽屏用左侧竖排 rail） -->
-          <div v-if="galleryImages.length > 1" class="gallery__thumbs">
-            <div
-              v-for="(img, i) in galleryImages"
-              :key="'thumb-' + i"
-              class="gallery__thumb"
-              :class="{ active: activeThumb === i }"
-              @mouseenter="activeThumb = i"
-              @click="activeThumb = i"
-            >
-              <ProductThumb
-                :src="img"
-                :category="product.categoryName"
-                :name="product.name"
-                :seed="product.productId + '-' + i"
-              />
+            <div class="gallery">
+              <div class="gallery__main">
+                <ProductThumb
+                  :src="activeImage"
+                  :category="product.categoryName"
+                  :name="product.name"
+                  :seed="product.productId + '-' + activeThumb"
+                />
+              </div>
+              <!-- 窄屏才出现的横排缩略图（宽屏用左侧竖排 rail） -->
+              <div v-if="galleryImages.length > 1" class="gallery__thumbs">
+                <div
+                  v-for="(img, i) in galleryImages"
+                  :key="'thumb-' + i"
+                  class="gallery__thumb"
+                  :class="{ active: activeThumb === i }"
+                  @mouseenter="activeThumb = i"
+                  @click="activeThumb = i"
+                >
+                  <ProductThumb
+                    :src="img"
+                    :category="product.categoryName"
+                    :name="product.name"
+                    :seed="product.productId + '-' + i"
+                  />
+                </div>
+              </div>
             </div>
           </div>
+
+        <!-- 内容切换：商品详情 / 用户评价 互斥（2026-11-22）
+             改造前这里是锚点导航，四块内容始终全部渲染，滚到哪算哪——
+             用户看到的「商品详情」和「用户评价」是缝在一起的。
+             现在改成真切换：一次只显示一个面板，参数/服务承诺归入商品详情。 -->
+        <nav class="detail-tabs">
+          <button
+            v-for="tab in DETAIL_TABS"
+            :key="tab.id"
+            type="button"
+            class="detail-tabs__item"
+            :class="{ active: activeTab === tab.id }"
+            :data-testid="'detail-tab-' + tab.id"
+            @click="switchTab(tab.id)"
+          >
+            {{ tab.label }}
+          </button>
+        </nav>
+
+        <!-- 商品详情面板：描述 + 详情图 + 规格参数 + 服务承诺 -->
+        <div v-show="activeTab === 'desc'" class="detail-panel" data-testid="detail-panel-desc">
+          <section id="section-desc" class="detail-desc">
+            <div class="detail-desc__head">商品详情</div>
+            <div class="detail-desc__body">
+              <p v-if="product.description" class="detail-desc__text">{{ product.description }}</p>
+              <div v-if="detailImages.length" class="detail-desc__images">
+                <img
+                  v-for="(img, i) in detailImages"
+                  :key="'detail-' + i"
+                  class="detail-desc__img"
+                  :src="resolveImageUrl(img)"
+                  :alt="product.name + ' 详情图 ' + (i + 1)"
+                  loading="lazy"
+                />
+              </div>
+              <p v-if="!product.description && !detailImages.length" class="detail-desc__empty">暂无详情</p>
+            </div>
+          </section>
+
+          <section v-if="params.length" id="section-params" class="detail-params">
+            <div class="detail-params__head">规格参数</div>
+            <div class="detail-params__grid">
+              <div v-for="(p, i) in paramsTop" :key="'p-top-' + i" class="detail-params__card">
+                <span class="detail-params__label">{{ p.label }}</span>
+                <span class="detail-params__value">{{ p.value }}</span>
+              </div>
+            </div>
+            <table v-if="paramsRest.length" class="detail-params__table">
+              <tbody>
+                <tr v-for="(p, i) in paramsRest" :key="'p-rest-' + i">
+                  <th>{{ p.label }}</th>
+                  <td>{{ p.value }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+
+          <section v-if="serviceTags.length" id="section-service" class="detail-service">
+            <div class="detail-service__head">服务承诺</div>
+            <div class="detail-service__tags">
+              <span v-for="(tag, i) in serviceTags" :key="'tag-' + i" class="detail-service__tag">
+                {{ tag }}
+              </span>
+            </div>
+          </section>
         </div>
 
-        <!-- 购买区 -->
-        <div class="buy">
+        <!-- 用户评价面板（V55）：写入/读取都在组件内部，不影响上方购买逻辑 -->
+        <div v-show="activeTab === 'review'" class="detail-panel" data-testid="detail-panel-review">
+          <ProductReview :product-id="String(route.params.productId || '')" :sku-id="selectedSkuId || null" />
+        </div>
+        </div>
+
+        <!-- 购买区（sticky） -->
+        <aside class="buy">
           <h1 class="buy__title">{{ product.name }}</h1>
           <div class="buy__subtitle">
             {{ product.subtitle || (product.categoryName || '运动装备') + ' · 森特体育官方自营 · 支持企业采购与账期结算' }}
@@ -214,70 +306,8 @@
               <span>{{ favorited ? '已收藏' : '收藏' }}</span>
             </button>
           </div>
-        </div>
+        </aside>
       </div>
-
-      <!-- 锚点导航：只在有对应内容时出现（不造假区块） -->
-      <nav class="detail-tabs">
-        <button
-          v-for="tab in visibleTabs"
-          :key="tab.id"
-          type="button"
-          class="detail-tabs__item"
-          :class="{ active: activeTab === tab.id }"
-          @click="goSection(tab.id)"
-        >
-          {{ tab.label }}
-        </button>
-      </nav>
-
-      <section id="section-desc" class="detail-desc">
-        <div class="detail-desc__head">商品详情</div>
-        <div class="detail-desc__body">
-          <p v-if="product.description" class="detail-desc__text">{{ product.description }}</p>
-          <div v-if="detailImages.length" class="detail-desc__images">
-            <img
-              v-for="(img, i) in detailImages"
-              :key="'detail-' + i"
-              class="detail-desc__img"
-              :src="resolveImageUrl(img)"
-              :alt="product.name + ' 详情图 ' + (i + 1)"
-              loading="lazy"
-            />
-          </div>
-          <p v-if="!product.description && !detailImages.length" class="detail-desc__empty">暂无详情</p>
-        </div>
-      </section>
-
-      <section v-if="params.length" id="section-params" class="detail-params">
-        <div class="detail-params__head">规格参数</div>
-        <div class="detail-params__grid">
-          <div v-for="(p, i) in paramsTop" :key="'p-top-' + i" class="detail-params__card">
-            <span class="detail-params__label">{{ p.label }}</span>
-            <span class="detail-params__value">{{ p.value }}</span>
-          </div>
-        </div>
-        <table v-if="paramsRest.length" class="detail-params__table">
-          <tbody>
-            <tr v-for="(p, i) in paramsRest" :key="'p-rest-' + i">
-              <th>{{ p.label }}</th>
-              <td>{{ p.value }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </section>
-
-      <section v-if="serviceTags.length" id="section-service" class="detail-service">
-        <div class="detail-service__head">服务承诺</div>
-        <div class="detail-service__tags">
-          <span v-for="(tag, i) in serviceTags" :key="'tag-' + i" class="detail-service__tag">
-            {{ tag }}
-          </span>
-        </div>
-      </section>
-
-      <!-- 用户评价（V55）：独立区块，写入/读取都在组件内部，不影响上方购买逻辑 -->
-      <ProductReview :product-id="String(route.params.productId || '')" :sku-id="selectedSkuId || null" />
     </template>
   </div>
 </template>
@@ -307,6 +337,8 @@ const product = ref<CatalogProductVO | null>(null);
 const loading = ref(false);
 const selectedSkuId = ref<string>('');
 const qty = ref(1);
+/** 详情页品牌行右侧迷你搜索：只在本地持有输入，提交后复用整站搜索的 /products?keyword= 口径 */
+const miniKeyword = ref('');
 const activeThumb = ref(0);
 const uvCustom = ref(false);
 const fileName = ref('');
@@ -446,23 +478,31 @@ function stopCountdown(): void {
   }
 }
 
-/* ---------------- 锚点导航 ---------------- */
+/* ---------------- 内容切换（商品详情 / 用户评价） ---------------- */
 
-type SectionId = 'section-desc' | 'section-params' | 'section-service' | 'section-review';
-const activeTab = ref<SectionId>('section-desc');
+type DetailTab = 'desc' | 'review';
 
-const visibleTabs = computed(() => {
-  const tabs: Array<{ id: SectionId; label: string }> = [{ id: 'section-desc', label: '商品详情' }];
-  if (params.value.length) tabs.push({ id: 'section-params', label: '规格参数' });
-  if (serviceTags.value.length) tabs.push({ id: 'section-service', label: '服务说明' });
-  // 评价区块恒在（空态也给入口），与「不造假区块」不冲突：这里展示的是真实空态
-  tabs.push({ id: 'section-review', label: '用户评价' });
-  return tabs;
-});
+/** 只有两块内容分属两个面板；参数与服务承诺是商品详情的一部分，不单独占 tab */
+const DETAIL_TABS: Array<{ id: DetailTab; label: string }> = [
+  { id: 'desc', label: '商品详情' },
+  { id: 'review', label: '用户评价' },
+];
 
-function goSection(id: SectionId): void {
+const activeTab = ref<DetailTab>('desc');
+
+function switchTab(id: DetailTab): void {
+  if (activeTab.value === id) return;
   activeTab.value = id;
-  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  // 两个面板高度差很大：沿用旧的滚动位置会落在空白处。
+  // 把 tab 条顶到视口顶部即可（它是 sticky，面板内容正好接在下面），
+  // 不能滚到 top:0——那样用户点「用户评价」后看到的是上方的商品主图。
+  document.querySelector('.detail-tabs')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/** 迷你搜索：与整站搜索同一跳转口径（空词回全部商品，不写死商品 id） */
+function onMiniSearch(): void {
+  const kw = miniKeyword.value.trim();
+  void router.push({ path: '/products', query: kw ? { keyword: kw } : {} });
 }
 
 watch(uvCustom, (on) => {
@@ -639,31 +679,129 @@ onMounted(async () => {
 });
 
 onUnmounted(stopCountdown);
+
+/**
+ * 浏览器标签标题跟随商品名（2026-11-26 用户要求）：
+ * 打开多个商品页时，标签上要能直接看出是哪一件商品，而不是一律「商品详情」。
+ * 路由 afterEach 只负责写「商品详情」，这里拿到数据后覆盖。
+ */
+watch(() => product.value?.name, (name) => {
+  if (name) document.title = `森特体育 · ${name}`;
+}, { immediate: true });
 </script>
 
 <style scoped>
 .detail {
   padding-top: 4px;
-  /* 详情页版心比列表页（1440）窄：主图列是 1fr，若仍按 1408 排，
-     主图会被放大到 890px 的巨型方块。收窄后主图 ≈520、购买栏 420，比例接近淘宝。 */
-  max-width: 1060px;
+  /* 2026-11-25 再放大：版心与顶栏同宽（1408 @1440），右缘正好落在「帮助中心」那一列。
+     1280 时右缘只到 1360，在它左边空出一截，看着像两块没拼起来的版式。 */
+  max-width: calc(100% - 32px);
 }
+
+/* 页面内品牌行：左「森特 / SENT SPORTS」可点回首页，右迷你搜索（约为购买栏一半宽） */
+.detail-brand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 2px 0 12px;
+}
+.detail-brand__home {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.detail-brand__home:hover .detail-brand__cn {
+  color: var(--sent-accent);
+}
+.detail-brand__mark {
+  width: 4px;
+  height: 32px;
+  border-radius: 2px;
+  background: var(--sent-primary);
+}
+.detail-brand__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.1;
+}
+.detail-brand__cn {
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: 6px;
+  color: var(--sent-primary);
+}
+.detail-brand__en {
+  font-size: 11px;
+  letter-spacing: 3.2px;
+  color: var(--sent-muted);
+  text-transform: uppercase;
+}
+
+/* 迷你搜索：宽度 = 版心 20%（购买栏 40% 的一半），只有输入框 + 搜索按钮 */
+.detail-mini-search {
+  display: flex;
+  align-items: stretch;
+  width: 20%;
+  min-width: 200px;
+  flex: 0 0 auto;
+}
+.detail-mini-search input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--sent-border);
+  border-right: none;
+  border-radius: 6px 0 0 6px;
+  background: #fff;
+  color: var(--sent-text);
+  font-size: 13px;
+  outline: none;
+}
+.detail-mini-search input:focus {
+  border-color: var(--sent-primary);
+}
+.detail-mini-search button {
+  flex: 0 0 auto;
+  min-width: 64px;
+  border: none;
+  border-radius: 0 6px 6px 0;
+  background: var(--sent-primary);
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+}
+.detail-mini-search button:hover {
+  filter: brightness(1.08);
+}
+
 .detail-crumb {
   margin-bottom: 16px;
   font-size: 13px;
 }
 
-/* 三列：竖排缩略图 56px | 主图自适应 | 购买栏 420px */
+/* 两栏：左 60%（主图 + 详情/评价同列）| 右 40%（购买栏，sticky 跟随） */
 .detail-main {
   display: grid;
-  grid-template-columns: 56px minmax(0, 1fr) 420px;
-  gap: 20px;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 24px;
   align-items: start;
 }
-/* 图集 ≤1 张：竖排缩略图轨道不存在，收掉第一列，主图与购买栏各占一列。
-   窄屏断点（≤1240）的 .detail-main 规则在文件末尾、优先级相同会正常覆盖本行。 */
-.detail-main--no-rail {
-  grid-template-columns: minmax(0, 1fr) 420px;
+.detail-left {
+  min-width: 0;
+}
+/* 竖排缩略图 56px | 主图自适应：只作用于左列内部，不影响 60/40 的列宽比例 */
+.gallery-block {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+/* 图集 ≤1 张：rail 节点不渲染，收掉第一列，否则主图会被 Grid 塞进 56px 轨道 */
+.gallery-block--no-rail {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 /* 竖排缩略图 */
@@ -695,12 +833,12 @@ onUnmounted(stopCountdown);
   border-radius: var(--sent-radius);
   overflow: hidden;
   border: 1px solid #eee;
-  /* 主图上限：宽屏下不再随列宽继续放大（占位图/长宽比异常的图都不会撑成巨块） */
-  max-width: 520px;
+  /* 主图跟随左列宽度（约 686px），不再写死 520 上限——详情页的主图就该是首屏主角 */
+  max-width: 100%;
 }
-/* 主图自身是 1:1，给个从父容器继承的上限，避免 max-width 之外再被 aspect-ratio 撑高 */
+/* 主图自身是 1:1，宽度由父容器决定，避免 min-width 之外的二次放大 */
 .gallery__main .thumb {
-  max-width: 520px;
+  max-width: 100%;
 }
 /* 宽屏用 rail，横排缩略图只在窄屏出现 */
 .gallery__thumbs {
@@ -728,10 +866,17 @@ onUnmounted(stopCountdown);
 .buy {
   background: #f7f8f9;
   border-radius: var(--sent-radius);
-  padding: 24px 26px;
+  padding: 26px 28px;
   border: 1px solid #eef0f2;
+  /* 吸顶跟随（2026-11-25）：详情页已无整站搜索区，顶部只需让开 16px；
+     旧值 88px 是给 56px 搜索头留的，现在会把购买栏压到半屏以下。 */
   position: sticky;
-  top: 88px;
+  top: 16px;
+  /* 与主图等高（2026-11-25 用户要求）：主图 ≈ (版心-24)*60% - 68 = 60vw - 102，
+     1440 下 762px。用 flex 列把 CTA 推到底，避免卡片拉高后按钮下面留一大块空。 */
+  display: flex;
+  flex-direction: column;
+  min-height: min(760px, calc(60vw - 102px));
 }
 .buy__title {
   font-size: 22px;
@@ -1047,7 +1192,9 @@ onUnmounted(stopCountdown);
 .buy__actions {
   display: flex;
   gap: 14px;
-  margin-top: 24px;
+  /* 卡片被 min-height 拉高后，CTA 贴在卡片底部（淘宝式），不悬在半空 */
+  margin-top: auto;
+  padding-top: 24px;
 }
 .buy-btn {
   flex: 1;
@@ -1282,11 +1429,12 @@ onUnmounted(stopCountdown);
   padding: 5px 14px;
 }
 
-/* 窄屏：收起竖排缩略图（改用主图下方横排），购买栏不再 sticky */
+/* 窄屏（≤1240）：60/40 保持不变，只收起竖排缩略图（改用主图下方横排）
+   注意：这里不能改 `.detail-main` 的列定义，否则左右比例会跳变；
+   要收的是左列内部的 `.gallery-block` 轨道。 */
 @media (max-width: 1240px) {
-  .detail-main {
-    grid-template-columns: minmax(0, 1fr) 400px;
-    gap: 20px;
+  .gallery-block {
+    grid-template-columns: minmax(0, 1fr);
   }
   .gallery-rail {
     display: none;
@@ -1294,14 +1442,23 @@ onUnmounted(stopCountdown);
   .gallery__thumbs {
     display: flex;
   }
+  /* 缩略图轨道没了，主图宽度多出 68px：购买栏高度跟着重算，才能继续与主图齐平 */
+  .buy {
+    min-height: min(820px, calc(60vw - 34px));
+  }
 }
 
+/* 单栏（≤960）：购买栏落到主图下方，sticky 会让它在窄屏遮住内容，直接关掉 */
 @media (max-width: 960px) {
   .detail-main {
     grid-template-columns: minmax(0, 1fr);
   }
+  .detail-brand {
+    flex-wrap: wrap;
+  }
   .buy {
     position: static;
+    min-height: 0;
   }
   .detail-params__grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

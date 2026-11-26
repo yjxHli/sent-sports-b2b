@@ -51,6 +51,10 @@ async function openStockProduct(page: Page): Promise<{ qtyInput: any; totalStock
   return { qtyInput, totalStock };
 }
 
+// 数据强依赖：本文件内的用例共享演示库状态（购物车/库存/券/发票/会话/配置），
+// 必须按书写顺序在同一个 worker 里跑完，禁止拆到多 worker 并行。
+test.describe.configure({ mode: 'serial' });
+
 test('可售库存显示真实库存且固定，超库存输入被拦截并提示', async ({ page }) => {
   await loginUser(page);
   const { qtyInput, totalStock } = await openStockProduct(page);

@@ -75,6 +75,10 @@ async function loginUser(page: Page): Promise<void> {
   await expect(page).toHaveURL(/\/(home|products)(\?|$)/, { timeout: 20_000 });
 }
 
+// 数据强依赖：本文件内的用例共享演示库状态（购物车/库存/券/发票/会话/配置），
+// 必须按书写顺序在同一个 worker 里跑完，禁止拆到多 worker 并行。
+test.describe.configure({ mode: 'serial' });
+
 test('顶栏有首页与收藏夹，商品可收藏并在收藏夹管理中生效', async ({ page }) => {
   test.setTimeout(180_000);
   const consoleErrors: string[] = [];

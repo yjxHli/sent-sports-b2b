@@ -123,16 +123,32 @@
     </div>
 
     <div v-if="loading" class="list-hint">加载中…</div>
+
+    <!-- 搜索合规空状态：40004 不是报错，不弹红色提示、不渲染「暂无商品」 -->
+    <div v-else-if="illegalSearch" class="compliance-tip" data-testid="illegal-search-tip">
+      <div class="compliance-tip__shield" aria-hidden="true">
+        <svg viewBox="0 0 48 48" fill="none">
+          <path d="M24 4 40 10v12c0 10.2-6.8 18.7-16 22-9.2-3.3-16-11.8-16-22V10L24 4Z"
+                fill="var(--sent-primary)" />
+          <path d="m17 24 5 5 10-11" stroke="#fff" stroke-width="3.4" stroke-linecap="round"
+                stroke-linejoin="round" />
+        </svg>
+      </div>
+      <p class="compliance-tip__text">系统提示：您的搜索词违反相关法律法规，请文明上网。</p>
+      <router-link to="/home" class="compliance-tip__back" data-testid="illegal-search-back">返回首页</router-link>
+    </div>
+
     <el-empty v-else-if="displayProducts.length === 0" description="没有符合条件的商品" />
 
-    <div v-if="!loading" class="goods-grid">
+    <div v-if="!loading && !illegalSearch" class="goods-grid">
       <GoodsCard
         v-for="p in displayProducts"
         :key="p.productId"
         :product="p"
         shop="森特体育自营店"
         show-from
-        @click="goDetail(p.productId)"
+        new-tab
+        testid="list-good-card"
       />
     </div>
 
@@ -145,7 +161,7 @@
 
     <!-- 右侧悬浮工具条（对齐淘宝右侧浮条） -->
     <div class="side-tool">
-      <router-link to="/chat" class="side-tool__item">
+      <router-link to="/chat" target="_blank" rel="noopener" class="side-tool__item">
         <span class="side-tool__icon">💬</span><i>客服</i>
       </router-link>
       <router-link to="/orders" class="side-tool__item">
@@ -178,7 +194,7 @@
  */
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { unwrap } from '@/utils/http';
+import { HttpError, unwrap } from '@/utils/http';
 import {
   productApi,
   type CatalogProductVO,
@@ -191,6 +207,8 @@ const route = useRoute();
 const router = useRouter();
 
 const PAGE_SIZE = 12;
+/** 搜索命中违禁词：后端 ErrorCode.ILLEGAL_SEARCH_KEYWORD，前端改渲染合规空状态 */
+const ILLEGAL_SEARCH_KEYWORD = 40004;
 /** 排序时一次性拉全的上限（= PageQuery.MAX_SIZE） */
 const MAX_FETCH = 100;
 const PRELOAD_PX = 240;
@@ -202,6 +220,7 @@ const categoryId = ref<string | undefined>(
 const keyword = ref<string>((route.query.keyword as string) || '');
 
 const products = ref<CatalogProductVO[]>([]);
+const illegalSearch = ref(false);
 const loading = ref(false);
 const loadingMore = ref(false);
 const finished = ref(false);
@@ -376,18 +395,20 @@ async function loadMore(): Promise<void> {
 
 async function loadFirst(): Promise<void> {
   products.value = [];
+  illegalSearch.value = false;
   page.value = 1;
   total.value = 0;
   finished.value = false;
   try {
     if (sortBy.value === 'default') await fetchPage(1, false);
     else await fetchAll();
-  } catch {
-    finished.value = true;
+  } catch (e) {
+    illegalSearch.value = e instanceof HttpError && e.code === ILLEGAL_SEARCH_KEYWORD;
+    finished.value = !illegalSearch.value;
   }
   await nextTick();
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-  if (sortBy.value === 'default' && sentinelNear()) void loadMore();
+  if (!illegalSearch.value && sortBy.value === 'default' && sentinelNear()) void loadMore();
 }
 
 function setupObserver(): void {
@@ -466,10 +487,6 @@ function applyKeyword(): void {
   if (categoryId.value) query.categoryId = String(categoryId.value);
   if (keyword.value) query.keyword = keyword.value;
   router.push({ path: '/products', query });
-}
-
-function goDetail(id: string): void {
-  router.push(`/product/${id}`);
 }
 
 function toTop(): void {
@@ -864,5 +881,46 @@ onUnmounted(() => {
   font-size: 13px;
   color: var(--sent-muted);
   letter-spacing: 1px;
+}
+
+/* ---------- 搜索合规空状态（40004）：绿色盾牌 + 文明上网引导 ---------- */
+.compliance-tip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 320px;
+  padding: 40px 16px 56px;
+  text-align: center;
+}
+.compliance-tip__shield {
+  width: 76px;
+  height: 76px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--sent-primary-soft);
+}
+.compliance-tip__shield svg {
+  width: 44px;
+  height: 44px;
+}
+.compliance-tip__text {
+  margin: 18px 0 20px;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--sent-text-2);
+}
+.compliance-tip__back {
+  display: inline-block;
+  padding: 9px 24px;
+  border-radius: 6px;
+  background: var(--sent-primary);
+  color: #fff;
+  font-size: 14px;
+  text-decoration: none;
+}
+.compliance-tip__back:hover {
+  background: var(--sent-primary-dark);
 }
 </style>

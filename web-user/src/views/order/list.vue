@@ -39,11 +39,11 @@
       <el-checkbox
         :model-value="allSelected"
         :indeterminate="indeterminate"
-        :disabled="selectableOrders.length === 0"
+        :disabled="selectableOrders.length === 0 || selectingAll"
         data-testid="order-batch-all"
         @change="toggleAll"
       >
-        全选本页
+        全选全部
       </el-checkbox>
       <span class="batch-bar__hint">
         已选 <b>{{ selected.length }}</b> 笔 · 仅「已完成 / 已取消 / 已关闭」可删除，在途订单请先收货或取消
@@ -249,17 +249,21 @@ const emptyText = computed(() => {
  */
 const DELETABLE_STATUS = ['COMPLETED', 'CANCELLED', 'CLOSED'];
 const manage = ref(false);
-/** 已勾选的订单号（只存本页的、且可删的） */
+/** 已勾选的订单号（可跨页；全选时是当前筛选下的全部可删订单） */
 const selected = ref<string[]>([]);
 const removing = ref(false);
+/** 跨页全选正在拉全量，避免连点重复请求 */
+const selectingAll = ref(false);
 
 function canDelete(o: OrderListItem): boolean {
   return DELETABLE_STATUS.includes(String(o.status ?? ''));
 }
 
 const selectableOrders = computed(() => orders.value.filter(canDelete));
+/** 全选态：当前页可删的单都在选择集里；跨页时选择集更大，同样算「已全选」 */
 const allSelected = computed(
-  () => selectableOrders.value.length > 0 && selected.value.length === selectableOrders.value.length,
+  () => selectableOrders.value.length > 0
+    && selectableOrders.value.every((o) => selected.value.includes(o.orderNo)),
 );
 /** 半选态：勾了一部分，全选框显示横线而不是勾 */
 const indeterminate = computed(() => selected.value.length > 0 && !allSelected.value);
@@ -279,9 +283,37 @@ function toggle(orderNo: string): void {
     : [...selected.value, orderNo];
 }
 
-/** 全选/取消全选：只作用于本页可删的单，在途单永远进不了选择集 */
-function toggleAll(value: boolean | string | number): void {
-  selected.value = value ? selectableOrders.value.map((o) => o.orderNo) : [];
+/**
+ * 全选/取消全选（2026-11-26 用户要求）：全选 = 当前筛选下「所有可删订单」，不是本页。
+ * 列表是后端分页的，只能按同样的筛选条件循环拉全量；在途单永远进不了选择集。
+ */
+async function toggleAll(value: boolean | string | number): Promise<void> {
+  if (!value) {
+    selected.value = [];
+    return;
+  }
+  if (selectingAll.value) return;
+  selectingAll.value = true;
+  try {
+    const pageSize = 100;
+    const all: OrderListItem[] = [];
+    for (let p = 1; p <= 50; p += 1) {
+      const res = await unwrap(orderApi.list({
+        page: p,
+        size: pageSize,
+        status: activeTab.value || null,
+        keyword: keyword.value || null,
+      }));
+      const list = (res.list ?? []) as OrderListItem[];
+      all.push(...list);
+      if (list.length < pageSize || all.length >= Number(res.total ?? 0)) break;
+    }
+    selected.value = all.filter(canDelete).map((o) => o.orderNo);
+  } catch {
+    ElMessage.error('加载全部订单失败，请重试');
+  } finally {
+    selectingAll.value = false;
+  }
 }
 
 /** 批量态点卡片 = 勾选；普通态点卡片 = 进详情（保持原交互不变） */
@@ -500,8 +532,8 @@ async function load(): Promise<void> {
     }));
     orders.value = res.list ?? [];
     total.value = Number(res.total ?? 0);
-    // 翻页/删完重新取数后，勾选集必须重置：否则会把上一页的单号带到这一页的「删除所选」里
-    selected.value = selected.value.filter((no) => orders.value.some((o) => o.orderNo === no));
+    // 勾选集不随翻页裁剪：全选是「当前筛选下全部订单」，翻页只是换一屏看，
+    // 裁掉上一页会把用户刚全选的几百单悄悄减成十几单。
   } finally {
     loading.value = false;
   }

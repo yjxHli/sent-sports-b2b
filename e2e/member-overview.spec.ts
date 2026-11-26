@@ -31,6 +31,10 @@ async function login(page: Page): Promise<void> {
   }
 }
 
+// 数据强依赖：本文件内的用例共享演示库状态（购物车/库存/券/发票/会话/配置），
+// 必须按书写顺序在同一个 worker 里跑完，禁止拆到多 worker 并行。
+test.describe.configure({ mode: 'serial' });
+
 test('会员与积分首屏有真实数据，并明确显示当前查看账号', async ({ page }) => {
   const errors: string[] = [];
   const memberUrls: string[] = [];

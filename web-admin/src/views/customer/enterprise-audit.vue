@@ -3,6 +3,7 @@
     <h2 class="sent-page-title">企业审核</h2>
     <div class="sent-panel">
       <SentTable
+        :select-all-rows="fetchAll"
         :columns="columns"
         :rows="rows"
         :total="total"

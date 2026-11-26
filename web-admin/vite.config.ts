@@ -14,6 +14,8 @@ export default defineConfig(({ mode }) => {
 
   return {
     base: env.VITE_PUBLIC_PATH || '/admin/',
+    // 与管理端共用根目录 assets/images 的图片真源
+    publicDir: fileURLToPath(new URL('../assets/images', import.meta.url)),
     plugins: [vue()],
     resolve: {
       alias: {

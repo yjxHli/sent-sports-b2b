@@ -25,6 +25,16 @@ public class ChatSessionPO extends BasePO {
     private LocalDateTime endedAt;
     private LocalDateTime lastMsgAt;
     private String closeReason;
+    /** V59：BOT 机器人接待 / HUMAN 人工接待（默认 HUMAN，老会话不受影响）。 */
+    private String sessionType;
+
+    public String getSessionType() {
+        return sessionType;
+    }
+
+    public void setSessionType(String sessionType) {
+        this.sessionType = sessionType;
+    }
 
     public Long getCustomerId() {
         return customerId;

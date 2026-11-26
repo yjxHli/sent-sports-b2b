@@ -41,12 +41,26 @@ export const usePermissionStore = defineStore('sent-admin-permission', () => {
     return permissions.value.includes('*') || permissions.value.includes(code);
   }
 
+  /**
+   * 精确匹配：只认角色显式持有的权限码，不认通配 '*'。
+   * <p>与后端 `@RequirePerm(exact = true)` 对齐：评价治理这类必须严格隔离的菜单，
+   * 演示库里持 '*' 的业务角色既看不到菜单，直连接口也会被 40301 拦住。</p>
+   * <p>超管虽然也持 '*'，但 V56 给它补了显式授权行，所以 `permissions` 里同时有具体码。</p>
+   */
+  function hasExact(code?: string): boolean {
+    if (!code) return true;
+    if (degraded.value) return true;
+    return permissions.value.includes(code);
+  }
+
   /** 侧边栏菜单：无 group 的为一级项，其余按 group 聚合成二级 */
   const menus = computed<MenuItem[]>(() => {
     const roots: MenuItem[] = [];
     const groups = new Map<string, MenuItem>();
     for (const entry of MENU_ROUTES) {
-      if (entry.hidden || !has(entry.perm)) continue;
+      if (entry.hidden) continue;
+      const allowed = entry.exact ? hasExact(entry.perm) : has(entry.perm);
+      if (!allowed) continue;
       const item: MenuItem = {
         path: entry.path, title: entry.title, icon: entry.icon, perm: entry.perm,
       };
@@ -72,5 +86,5 @@ export const usePermissionStore = defineStore('sent-admin-permission', () => {
     degraded.value = false;
   }
 
-  return { permissions, me, loaded, degraded, menus, load, has, reset };
+  return { permissions, me, loaded, degraded, menus, load, has, hasExact, reset };
 });

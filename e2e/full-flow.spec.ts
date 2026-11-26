@@ -357,7 +357,9 @@ test('全链路多角色终极验收：用户下单 → 客服实时会话 → �
       // 保证 current 拿到的就是本次咨询，而不是上一次 E2E 留下的 ACTIVE/WAITING。
       await clearOpenSessions(request, adminToken);
 
-      await userPage.getByRole('link', { name: '在线客服' }).first().click();
+      // 2026-11-25 起顶栏「在线客服」是新标签页打开：本用例后续步骤都要在这张聊天页上继续，
+      // 因此直接按 URL 进入（新开 Tab 的行为由 new-tab-navigation.spec.ts 覆盖）。
+      await userPage.goto(join(USER_URL, '/chat'));
       // 进入页面只查不建：这里必须真的发一句话，客服工作台才看得到该会话
       const box = userPage.getByPlaceholder('请输入想咨询的问题');
       await expect(box).toBeEnabled({ timeout: 20_000 });
@@ -476,6 +478,24 @@ test('全链路多角色终极验收：用户下单 → 客服实时会话 → �
         customNo = fresh?.customOrderId ?? '';
         return customNo;
       }, { timeout: 25_000, message: 'UV 定制订单应生成 custom_order(WAIT_DRAFT)' }).toBeTruthy();
+    });
+
+    /**
+     * 图稿上传倒计时（2026-11-23 用户口径）：支付后 72 小时未上传 → 系统自动取消订单并全额退款。
+     * 详情页的倒计时是用户唯一能提前感知这条规则的入口，所以放在「刚支付完」这一刻验：
+     * 服务端给的是「支付时间 + 72 小时」，页面必须把它读出来并显示成「还剩 N 天」。
+     */
+    await test.step('定制：详情页显示图稿上传倒计时（支付 + 72 小时）', async () => {
+      const body = await apiGet(request, `/customize/orders/${customNo}`, userToken);
+      const remainingHours = (Number(body?.data?.draftDeadlineMillis ?? 0) - Date.now()) / 3_600_000;
+      expect(remainingHours, '刚支付完，截止时刻应还剩约 72 小时').toBeGreaterThan(70);
+      expect(remainingHours, '倒计时不能超过 72 小时上限').toBeLessThanOrEqual(72);
+
+      await userPage.goto(join(USER_URL, `/custom/${customNo}`));
+      const countdown = userPage.locator('[data-testid="draft-countdown"]');
+      await expect(countdown, '待上传图稿的定制单详情页必须有倒计时').toBeVisible({ timeout: 20_000 });
+      await expect(countdown).toContainText('距上传设计图稿截止');
+      await expect(countdown).toContainText('天');
     });
 
     /**

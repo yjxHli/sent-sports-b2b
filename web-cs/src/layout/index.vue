@@ -3,7 +3,7 @@
     <!-- 顶栏 60px：品牌 + 坐席身份 + 在线状态开关 + 退出，业务区完全让给三栏 -->
     <header class="cs-topbar">
       <div class="cs-topbar__left">
-        <span class="cs-topbar__logo">S</span>
+        <img class="cs-topbar__logo" :src="brandIcon" alt="" />
         <div class="cs-topbar__titles">
           <!-- 用 h1 而不是纯 <b>：工作台需要唯一的一级标题（可访问性 + E2E 用 heading 定位页面） -->
           <h1 class="cs-topbar__title">森特客服工作台</h1>
@@ -73,6 +73,7 @@ const router = useRouter();
 const auth = useAuthStore();
 const permission = usePermissionStore();
 const presenceStore = usePresenceStore();
+const brandIcon = `${import.meta.env.BASE_URL}sent-icon-192.png`;
 
 const PRESENCE_OPTIONS = [
   { value: PresenceStatus.ONLINE, label: '在线', tone: 'online' },
@@ -137,6 +138,7 @@ async function onLogout(): Promise<void> {
 }
 
 /* ---------- 顶栏 ---------- */
+/* 2026-11-25 用户反馈：原深绿底太重，改成浅色顶栏，只保留品牌绿的细节色 */
 .cs-topbar {
   flex: none;
   height: var(--cs-topbar-h);
@@ -145,9 +147,10 @@ async function onLogout(): Promise<void> {
   justify-content: space-between;
   gap: 16px;
   padding: 0 18px;
-  background: linear-gradient(100deg, var(--cs-shell-2), var(--cs-shell) 62%, #123029);
-  border-bottom: 1px solid var(--cs-shell-line);
-  color: var(--cs-shell-text);
+  background: linear-gradient(100deg, #ffffff, #f7fbf9 62%, #eef6f2);
+  border-bottom: 1px solid #e3ebe7;
+  box-shadow: 0 1px 2px rgba(31, 45, 40, 0.04);
+  color: #1f2d28;
   box-sizing: border-box;
 }
 
@@ -158,15 +161,10 @@ async function onLogout(): Promise<void> {
   min-width: 0;
 }
 .cs-topbar__logo {
-  display: grid;
-  place-items: center;
+  display: block;
   width: 32px;
   height: 32px;
-  border-radius: 9px;
-  background: linear-gradient(160deg, #1b8a6b, var(--sent-primary));
-  font-size: 16px;
-  font-weight: 700;
-  color: #fff;
+  object-fit: contain;
   flex: none;
 }
 .cs-topbar__titles {
@@ -185,7 +183,7 @@ async function onLogout(): Promise<void> {
 }
 .cs-topbar__sub {
   font-size: 11px;
-  color: var(--cs-shell-text-dim);
+  color: #8a9c95;
   letter-spacing: 1.2px;
   text-transform: uppercase;
 }
@@ -199,7 +197,7 @@ async function onLogout(): Promise<void> {
 .cs-topbar__divider {
   width: 1px;
   height: 22px;
-  background: var(--cs-shell-line);
+  background: #e0e9e5;
 }
 
 /* ---------- 状态开关 ---------- */
@@ -208,8 +206,8 @@ async function onLogout(): Promise<void> {
   padding: 3px;
   gap: 2px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #f2f6f4;
+  border: 1px solid #e2ebe7;
 }
 .cs-presence__btn {
   display: inline-flex;
@@ -220,15 +218,15 @@ async function onLogout(): Promise<void> {
   border: none;
   border-radius: 999px;
   background: transparent;
-  color: var(--cs-shell-text-dim);
+  color: #5c6b65;
   font-size: 12.5px;
   line-height: 1;
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
 }
 .cs-presence__btn:hover:not(:disabled) {
-  color: var(--cs-shell-text);
-  background: rgba(255, 255, 255, 0.07);
+  color: #1f2d28;
+  background: #e8f2ed;
 }
 .cs-presence__btn:disabled {
   cursor: progress;
@@ -238,29 +236,32 @@ async function onLogout(): Promise<void> {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #7b8c87;
+  background: #a8b6b1;
   transition: background 0.15s ease, box-shadow 0.15s ease;
 }
-.cs-presence__btn--online .cs-presence__dot { background: #3ddc97; }
-.cs-presence__btn--busy .cs-presence__dot { background: #ffb020; }
-.cs-presence__btn--offline .cs-presence__dot { background: #8fa3a0; }
+.cs-presence__btn--online .cs-presence__dot { background: #17a673; }
+.cs-presence__btn--busy .cs-presence__dot { background: #e39b12; }
+.cs-presence__btn--offline .cs-presence__dot { background: #a8b6b1; }
 
 .cs-presence__btn.is-active {
-  background: rgba(255, 255, 255, 0.14);
-  color: #fff;
+  background: #e8f2ed;
+  color: #1f2d28;
   font-weight: 600;
 }
 .cs-presence__btn--online.is-active {
-  background: rgba(61, 220, 151, 0.18);
-  color: #a9f3cd;
+  background: #e3f7ee;
+  color: #0f6b4f;
+  box-shadow: inset 0 0 0 1px #bfe6d5;
 }
 .cs-presence__btn--busy.is-active {
-  background: rgba(255, 176, 32, 0.18);
-  color: #ffd58a;
+  background: #fff4e0;
+  color: #8f5c00;
+  box-shadow: inset 0 0 0 1px #f5dcb4;
 }
 .cs-presence__btn--offline.is-active {
-  background: rgba(143, 163, 160, 0.2);
-  color: #d3dfdb;
+  background: #eef1f0;
+  color: #4b5b55;
+  box-shadow: inset 0 0 0 1px #dbe3e0;
 }
 
 /* ---------- 坐席身份 ---------- */
@@ -276,11 +277,11 @@ async function onLogout(): Promise<void> {
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.12);
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: #e8f4ef;
+  border: 1px solid #cfe4da;
   font-size: 13px;
   font-weight: 600;
-  color: #fff;
+  color: #12664f;
   flex: none;
 }
 .cs-user__meta {
@@ -292,7 +293,7 @@ async function onLogout(): Promise<void> {
 .cs-user__name {
   font-size: 13px;
   font-weight: 600;
-  color: var(--cs-shell-text);
+  color: #1f2d28;
   max-width: 120px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -300,7 +301,7 @@ async function onLogout(): Promise<void> {
 }
 .cs-user__role {
   font-size: 10.5px;
-  color: var(--cs-shell-text-dim);
+  color: #8a9c95;
   letter-spacing: 0.4px;
 }
 
@@ -308,17 +309,17 @@ async function onLogout(): Promise<void> {
   height: 30px;
   padding: 0 12px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: transparent;
-  color: var(--cs-shell-text);
+  border: 1px solid #d9e4df;
+  background: #fff;
+  color: #3f5149;
   font-size: 12.5px;
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 .cs-logout:hover {
-  background: rgba(255, 90, 90, 0.14);
-  border-color: rgba(255, 90, 90, 0.45);
-  color: #ffc9c9;
+  background: #fdf2f2;
+  border-color: #f0b7b7;
+  color: #c0392b;
 }
 
 /* ---------- 业务区 ---------- */

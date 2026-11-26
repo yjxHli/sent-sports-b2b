@@ -85,6 +85,15 @@ app:
     # 面数（单面/双面/全包）与数量阶梯折扣由 customize 领域的 CustomFeeCalculator 计算，
     # 当前订单行尚未携带面数字段，故一律按单面计价（接入 faceSide 后本键即单面基础价）。
     single-cent: ${CUSTOM_FEE_SINGLE_CENT:1000}
+  custom-draft:
+    # 【业务口径】定制图稿 72 小时未上传 → 整单自动取消并全额退款、积分与优惠券返还；
+    # 期间每 12 小时发一次站内信（规则在 CustomDraftTimeoutPolicy 里）。
+    #
+    # enforce-from = 规则生效时刻，**早于它支付的单不追溯**。为什么默认不是 1970：
+    # 历史库里的「已支付且从未传稿」老单从没收到过任何提醒，上线瞬间把它们一次性退款
+    # 既没有告知也没有预告，等于用一条新规则回溯处罚老单。要彻底追溯就设成 1970-01-01T00:00:00
+    # （演示库更不该追溯：种子数据里几十张定制单会被当场作废）。
+    enforce-from: ${CUSTOM_DRAFT_ENFORCE_FROM:2026-11-23T00:00:00}
   chat:
     # 【业务口径】客户超过 N 分钟没发消息，定时任务把进行中的会话自动结束（TIMEOUT）。
     # 这是聊天超时阈值的**唯一真源**（V31 已把 sys_config.chat.session.idle.minutes 下架）。
@@ -101,6 +110,9 @@ app:
     presence-reclaim-ms: ${JOB_PRESENCE_RECLAIM_MS:60000}
     sla-remind-ms: ${JOB_SLA_REMIND_MS:60000}
     ws-heartbeat-ms: ${JOB_WS_HEARTBEAT_MS:60000}
+    # 定制图稿上传超时：5 分钟一轮即可——判定精度到小时（72h 截止 / 12h 提醒），
+    # 扫太勤只会白读一遍库，扫太懒会让「逾期取消」晚十几分钟。
+    custom-draft-timeout-ms: ${JOB_CUSTOM_DRAFT_TIMEOUT_MS:300000}
     # 阈值而非间隔：坐席心跳 60s、WebSocket 空闲 5min
     presence-heartbeat-timeout-ms: ${PRESENCE_HEARTBEAT_TIMEOUT_MS:60000}
     ws-idle-timeout-ms: ${WS_IDLE_TIMEOUT_MS:300000}

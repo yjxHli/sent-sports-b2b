@@ -26,6 +26,8 @@ export interface ReviewVO {
 export interface ReviewSummaryVO {
   total: number | string;
   positiveCount: number | string;
+  /** 差评条数（rating≤2）；3 星中评不计入好评也不计入差评 */
+  negativeCount: number | string;
   /** 好评率（0~100，rating≥4 计为好评） */
   positiveRate: number | string;
   /** 平均分，已按 1 位小数格式化，如 "4.8" */

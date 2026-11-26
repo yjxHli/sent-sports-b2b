@@ -14,6 +14,7 @@ import com.sent.sports.order.service.ShipOrderUseCase;
 import com.sent.sports.order.service.dto.CloseOrderCmd;
 import com.sent.sports.order.service.dto.CloseOrderResult;
 import com.sent.sports.order.service.impl.OrderAdminServiceImpl;
+import com.sent.sports.refund.service.RefundQueryService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -24,8 +25,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -52,13 +55,15 @@ class OrderAdminServiceImplTest {
     private OrderMapper orderMapper;
     @Mock
     private CloseOrderUseCase closeOrderUseCase;
+    @Mock
+    private RefundQueryService refundQueryService;
 
     private OrderAdminServiceImpl service;
 
     @BeforeEach
     void setUp() {
         service = new OrderAdminServiceImpl(shipOrderUseCase, orderQueryService, orderMapper,
-                closeOrderUseCase);
+                closeOrderUseCase, refundQueryService);
     }
 
     @Test
@@ -103,6 +108,33 @@ class OrderAdminServiceImplTest {
         service.list(new PageQuery(), null, "   ");
 
         verify(orderMapper).selectAllPage(any(Page.class), isNull(), isNull());
+    }
+
+    @Test
+    @DisplayName("列表：有在途退款的订单提示「退款申请中」，同页其它订单不提示")
+    void listMarksInFlightRefundOrders() {
+        Page<OrderPO> page = new Page<>(1, 10);
+        page.setRecords(List.of(order("SO-REFUND", "WAIT_SHIP"), order("SO-NORMAL", "WAIT_SHIP")));
+        when(orderMapper.selectAllPage(any(Page.class), isNull(), isNull())).thenReturn(page);
+        when(refundQueryService.inFlightOrderNos(List.of("SO-REFUND", "SO-NORMAL")))
+                .thenReturn(Set.of("SO-REFUND"));
+
+        var result = service.list(new PageQuery(), null, null);
+
+        assertEquals("退款申请中", result.getList().get(0).refundHint());
+        assertNull(result.getList().get(1).refundHint(),
+                "没有在途退款的订单不能被误标，否则列表一片「退款申请中」");
+    }
+
+    @Test
+    @DisplayName("列表：空页给退款门面传空列表（门面内部拦住 SQL），结果仍为空列表")
+    void listSkipsRefundQueryOnEmptyPage() {
+        when(orderMapper.selectAllPage(any(Page.class), isNull(), isNull()))
+                .thenReturn(new Page<>(1, 10));
+        when(refundQueryService.inFlightOrderNos(List.of())).thenReturn(Set.of());
+
+        assertTrue(service.list(new PageQuery(), null, null).getList().isEmpty());
+        verify(refundQueryService).inFlightOrderNos(List.of());
     }
 
     @Test

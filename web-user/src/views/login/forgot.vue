@@ -4,7 +4,7 @@
       <router-link to="/login" class="forgot-back" data-testid="forgot-back-login">返回登录 ›</router-link>
 
       <div class="forgot-brand">
-        <span class="forgot-brand__mark">S</span>
+        <img class="forgot-brand__mark" src="/sent-icon-192.png" alt="" />
         <div class="forgot-brand__text">
           <b>森特体育 · 商城</b>
           <i>找回密码</i>
@@ -275,15 +275,8 @@ onUnmounted(() => {
 .forgot-brand__mark {
   width: 46px;
   height: 46px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, var(--sent-primary), #1a8c6a);
-  color: #fff;
-  font-size: 26px;
-  font-weight: 800;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 12px rgba(18, 102, 79, 0.28);
+  display: block;
+  object-fit: contain;
 }
 .forgot-brand__text { display: flex; flex-direction: column; line-height: 1.25; }
 .forgot-brand__text b { font-size: 18px; color: var(--sent-primary); letter-spacing: 0.5px; }

@@ -8,6 +8,8 @@ export default defineConfig(({ mode }) => {
 
   return {
     base: env.VITE_PUBLIC_PATH || '/',
+    // 项目图片统一放根目录 assets/images，由 Vite 原样拷贝到 dist
+    publicDir: fileURLToPath(new URL('../assets/images', import.meta.url)),
     plugins: [vue()],
     resolve: {
       alias: {

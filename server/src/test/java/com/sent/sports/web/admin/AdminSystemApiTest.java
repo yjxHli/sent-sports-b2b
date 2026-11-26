@@ -20,6 +20,8 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -107,6 +109,44 @@ class AdminSystemApiTest extends BaseApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data").isArray());
+    }
+
+    @Test
+    @DisplayName("配置中心列表：返回中文名 / 说明 / 单位 / 展示值（不再只有英文键名）")
+    void listConfigsReturnsReadableNames() throws Exception {
+        when(systemService.listConfigs()).thenReturn(List.of(new AdminSystemDtos.ConfigVO(
+                "order.pay.timeout.minutes", "订单支付超时时间",
+                "用户下单后未支付，系统自动取消订单的期限（分钟）", "订单与交易",
+                "30", "30 分钟", "分钟", "NUMBER", null)));
+
+        mvc.perform(get("/api/admin/configs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data[0].configKey").value("order.pay.timeout.minutes"))
+                .andExpect(jsonPath("$.data[0].configName").value("订单支付超时时间"))
+                .andExpect(jsonPath("$.data[0].unit").value("分钟"))
+                .andExpect(jsonPath("$.data[0].displayValue").value("30 分钟"));
+    }
+
+    @Test
+    @DisplayName("更新配置值：路径键名与请求体值透传到服务层，空白值被 Bean Validation 拦下")
+    void updateConfigValuePassesThrough() throws Exception {
+        when(systemService.updateConfigValue(eq("order.pay.timeout.minutes"), any(), isNull()))
+                .thenReturn(new AdminSystemDtos.ConfigVO(
+                        "order.pay.timeout.minutes", "订单支付超时时间", "说明", "订单与交易",
+                        "60", "60 分钟", "分钟", "NUMBER", null));
+
+        mvc.perform(put("/api/admin/configs/order.pay.timeout.minutes")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(toJson(Map.of("configValue", "60"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.configValue").value("60"));
+
+        mvc.perform(put("/api/admin/configs/order.pay.timeout.minutes")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(toJson(Map.of("configValue", "   "))))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

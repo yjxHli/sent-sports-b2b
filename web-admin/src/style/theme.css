@@ -42,6 +42,24 @@
   --sent-ok: #186b4e;
   --sent-ok-soft: #e8f2ee;
 
+  /* ---------- 客户标签四档（V63） ----------
+     标签是客服之间的内部判断：「忠实老客」和「羊毛党」必须在扫一眼时就能分开，
+     所以给四组固定配色（前/背/边）。色值只在这里定义一次，
+     页面里用 var(--sent-tag-risk-fg) 之类的引用，不再各页写死十六进制。
+     注：客服端是独立工程（web-cs），它自己那份 CSS 里有同值的一组，改色记得两边一起改。 */
+  --sent-tag-excellent-fg: #12664f;
+  --sent-tag-excellent-bg: #e7f1ec;
+  --sent-tag-excellent-bd: #c8e2d8;
+  --sent-tag-neutral-fg: #5b6b64;
+  --sent-tag-neutral-bg: #f1f4f2;
+  --sent-tag-neutral-bd: #e0e7e3;
+  --sent-tag-risk-fg: #9a5b0c;
+  --sent-tag-risk-bg: #fdf3e1;
+  --sent-tag-risk-bd: #f2dab0;
+  --sent-tag-malicious-fg: #ad3628;
+  --sent-tag-malicious-bg: #fdeeeb;
+  --sent-tag-malicious-bd: #f5cdc5;
+
   /* ---------- 图表色阶（只用于数据可视化：KPI 顶条 / 环形扇区 / 图例点） ----------
      不进正文文字；与暖绿灰基调同明度层，第 1 档就是品牌墨绿。 */
   --sent-chart-1: #12664f;

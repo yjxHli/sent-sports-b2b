@@ -76,4 +76,58 @@ class ChatSessionTest {
         assertFalse(ChatSession.hasActiveSession(List.of(a, b), 100L));
         assertTrue(ChatSession.canStartNew(List.of(a, b), 100L));
     }
+
+    /* ---------------- 接待模式（2026-11-24 机器人辅助接待） ---------------- */
+
+    @Test
+    void defaultSessionTypeIsHuman() {
+        // 既有调用方（API 直接建会话、历史数据回填）一律人工，绝不能被机器人悄悄接管
+        assertEquals(SessionType.HUMAN, new ChatSession(1L, 100L).getSessionType());
+        assertFalse(new ChatSession(1L, 100L).isBot());
+    }
+
+    @Test
+    void botSessionStaysWaitingAndTakesNoStaff() {
+        ChatSession s = new ChatSession(1L, 100L, false, ChatSessionStatus.WAITING, null, 0L, 0L, 0,
+                SessionType.BOT);
+        assertTrue(s.isBot());
+        assertEquals(ChatSessionStatus.WAITING, s.getStatus());
+        assertEquals(null, s.getStaffId());
+    }
+
+    @Test
+    void transferToHumanKeepsWaitingForQueue() {
+        ChatSession s = new ChatSession(1L, 100L, false, ChatSessionStatus.WAITING, null, 0L, 0L, 0,
+                SessionType.BOT);
+        s.transferToHuman();
+        assertEquals(SessionType.HUMAN, s.getSessionType());
+        assertEquals(ChatSessionStatus.WAITING, s.getStatus());
+    }
+
+    @Test
+    void transferToHumanOnActiveSessionKeepsActive() {
+        // 人工已接管的会话不需要再排一次队；重复「转人工」也不该把它退回 WAITING
+        ChatSession s = new ChatSession(1L, 100L, ChatSessionStatus.ACTIVE, 9001L);
+        s.transferToHuman();
+        assertEquals(SessionType.HUMAN, s.getSessionType());
+        assertEquals(ChatSessionStatus.ACTIVE, s.getStatus());
+    }
+
+    @Test
+    void transferToHumanOnClosedSessionThrows() {
+        ChatSession s = new ChatSession(1L, 100L);
+        s.close("done");
+        BizException ex = assertThrows(BizException.class, s::transferToHuman);
+        assertEquals(ErrorCode.STATE_CONFLICT, ex.getErrorCode());
+    }
+
+    @Test
+    void assignSwitchesBotSessionToHuman() {
+        // 人工接线后必须切 HUMAN：否则坐席接过来的会话仍按机器人规则拦截客户消息
+        ChatSession s = new ChatSession(1L, 100L, false, ChatSessionStatus.WAITING, null, 0L, 0L, 0,
+                SessionType.BOT);
+        s.assign(9001L);
+        assertEquals(SessionType.HUMAN, s.getSessionType());
+        assertEquals(ChatSessionStatus.ACTIVE, s.getStatus());
+    }
 }

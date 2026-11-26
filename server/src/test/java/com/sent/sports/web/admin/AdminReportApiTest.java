@@ -3,10 +3,12 @@ package com.sent.sports.web.admin;
 import com.sent.sports.report.controller.admin.AdminReportController;
 import com.sent.sports.report.dto.DashboardReportDtos;
 import com.sent.sports.report.dto.HotProductDtos;
+import com.sent.sports.report.dto.ReportExtensionDtos;
 import com.sent.sports.report.dto.SalesTrendDtos;
 import com.sent.sports.report.dto.TopCustomerDtos;
 import com.sent.sports.report.service.DashboardReportService;
 import com.sent.sports.report.service.HotProductService;
+import com.sent.sports.report.service.ReportExtensionService;
 import com.sent.sports.report.service.SalesTrendService;
 import com.sent.sports.report.service.TopCustomerService;
 import com.sent.sports.support.BaseApiTest;
@@ -41,6 +43,39 @@ class AdminReportApiTest extends BaseApiTest {
     private HotProductService hotProductService;
     @MockBean
     private TopCustomerService topCustomerService;
+    @MockBean
+    private ReportExtensionService reportExtensionService;
+
+    @Test
+    @DisplayName("拓展三端点：客户结构 / 商品明细 / 复购结构均 200 且 days 下推")
+    void extensionEndpointsReturnVo() throws Exception {
+        when(reportExtensionService.customerMix(anyInt())).thenReturn(
+                new ReportExtensionDtos.CustomerMixVO("2026-10-25", "2026-11-23", 30,
+                        10000L, "100.00", List.of()));
+        when(reportExtensionService.productDetails(anyInt(), anyInt())).thenReturn(
+                new ReportExtensionDtos.ProductDetailVO("2026-10-25", "2026-11-23", 30, 10,
+                        10000L, "100.00", 10L, 4000L, "40.0", 1, List.of()));
+        when(reportExtensionService.repeatCustomers(anyInt())).thenReturn(
+                new ReportExtensionDtos.RepeatCustomerVO("2026-10-25", "2026-11-23", 30,
+                        5L, 2L, 3L, "60.0", 3000L, "30.00", 7000L, "70.00", "2.0", List.of()));
+
+        mvc.perform(get("/api/admin/reports/customer-mix").param("days", "7"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.days").value(30));
+        mvc.perform(get("/api/admin/reports/product-details").param("days", "7").param("limit", "3"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.days").value(30));
+        mvc.perform(get("/api/admin/reports/repeat-customers").param("days", "7"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.repeatRatePct").value("60.0"));
+
+        verify(reportExtensionService).customerMix(7);
+        verify(reportExtensionService).productDetails(7, 3);
+        verify(reportExtensionService).repeatCustomers(7);
+    }
 
     @Test
     @DisplayName("销售趋势返回按日序列 + 汇总字段 200")

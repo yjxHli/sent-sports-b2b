@@ -8,7 +8,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
-import { startConsultation } from './chat-helpers';
+import { startConsultation , closeSessionWithTicket} from './chat-helpers';
 
 const CS_URL = process.env.E2E_CS_URL ?? 'http://127.0.0.1:5175';
 // 客服工作台已剥离到独立工程 web-cs：登录后直落 /workbench，Token 前缀 cs-token_*
@@ -77,7 +77,7 @@ test('客服发评价卡 → 客户打分 → 今日满意率实时显示，重�
     ...(listed?.data?.list ?? [])];
   for (const row of openRows) {
     if (row.status !== 'CLOSED') {
-      await api(request, 'POST', `/admin/chat/sessions/${row.sessionId}/close`, { reason: 'DONE' }, adminToken);
+      await closeSessionWithTicket(request, Number(row.sessionId), adminToken);
     }
   }
   await api(request, 'POST', '/admin/chat/presence', { staffId: 9001, presence: 'ONLINE' }, adminToken);

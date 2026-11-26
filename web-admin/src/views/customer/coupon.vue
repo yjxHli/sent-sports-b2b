@@ -109,6 +109,7 @@
 
     <div class="sent-panel">
       <SentTable
+        :select-all-rows="fetchAllIssues"
         :columns="issueColumns"
         :rows="issues"
         :total="issueTotal"

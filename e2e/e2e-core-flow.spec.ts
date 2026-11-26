@@ -127,6 +127,10 @@ function dbScalar(sql: string): string | null {
 // ---------------------------------------------------------------------------
 // 00 · 前置自检：一次跑完把所有「环境级阻断」列在报告里，避免主链路超时后才看到模糊错误
 // ---------------------------------------------------------------------------
+// 数据强依赖：本文件内的用例共享演示库状态（购物车/库存/券/发票/会话/配置），
+// 必须按书写顺序在同一个 worker 里跑完，禁止拆到多 worker 并行。
+test.describe.configure({ mode: 'serial' });
+
 test('00 前置自检：后端可达 / 登录返回 JWT / 目录有商品', async ({ request }) => {
   const userLogin = await apiLogin(request, CFG.user.username, CFG.user.password, 'user');
   const adminLogin = await apiLogin(request, CFG.admin.username, CFG.admin.password, 'admin');

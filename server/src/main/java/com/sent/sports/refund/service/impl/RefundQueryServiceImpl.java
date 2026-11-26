@@ -20,7 +20,9 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 退款查询实现：管理端审核列表 / 审核详情与用户端「我的售后 / 详情」均接真实 MyBatis-Plus 查询。
@@ -166,6 +168,16 @@ public class RefundQueryServiceImpl implements RefundQueryService {
 
     private static long nonNull(Long value) {
         return value == null ? 0L : value;
+    }
+
+    @Override
+    public Set<String> inFlightOrderNos(List<String> orderNos) {
+        // 空页直接返回，既省一次往返，也避免 foreach 拼出 IN () 让整张订单列表 50001
+        if (orderNos == null || orderNos.isEmpty()) {
+            return Set.of();
+        }
+        List<String> hit = refundOrderMapper.selectInFlightOrderNos(orderNos);
+        return hit == null || hit.isEmpty() ? Set.of() : new HashSet<>(hit);
     }
 
     private RefundDtos.RefundVO toListVo(RefundListPO po) {

@@ -18,7 +18,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
-import { startConsultation } from './chat-helpers';
+import { startConsultation , closeSessionWithTicket} from './chat-helpers';
 
 const USER_URL = process.env.E2E_USER_URL ?? 'http://127.0.0.1:5173';
 const CS_URL = process.env.E2E_CS_URL ?? 'http://127.0.0.1:5175';
@@ -90,7 +90,7 @@ async function openSessionTab(page: Page, sessionId: number, timeout = 30_000): 
   await expect(item, `工作台左侧未出现会话 ${sessionId}`).toBeVisible({ timeout });
   await item.click();
   await expect(
-    page.locator('.el-tabs__item', { hasText: `#${sessionId}` }).first(),
+    page.locator(`.chat-panel[data-session-id="${sessionId}"]`),
     `会话 ${sessionId} 应打开对应 Tab`,
   ).toBeVisible({ timeout: 10_000 });
 }
@@ -122,7 +122,7 @@ test('工作台历史时间不再是 1970，客服发评价卡后客户不刷新
     ...(listed?.data?.list ?? [])];
   for (const row of openRows) {
     if (row.status !== 'CLOSED') {
-      await api(request, 'POST', `/admin/chat/sessions/${row.sessionId}/close`, { reason: 'DONE' }, adminToken);
+      await closeSessionWithTicket(request, Number(row.sessionId), adminToken);
     }
   }
   await api(request, 'POST', '/admin/chat/presence', { staffId: 9001, presence: 'ONLINE' }, adminToken);

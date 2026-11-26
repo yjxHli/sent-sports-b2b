@@ -2,6 +2,7 @@ package com.sent.sports.chat.repository;
 
 import com.sent.sports.chat.domain.ChatSession;
 import com.sent.sports.chat.domain.ChatSessionStatus;
+import com.sent.sports.chat.domain.SessionType;
 import com.sent.sports.chat.mapper.ChatSessionMapper;
 import com.sent.sports.chat.mapper.po.ChatSessionPO;
 import com.sent.sports.common.error.BizException;
@@ -121,7 +122,8 @@ public class ChatSessionRepositoryImpl implements ChatSessionRepository {
                 po.getVip() != null && po.getVip() == 1,
                 ChatSessionStatus.valueOf(po.getStatus()), po.getStaffId(), po.getCloseReason(),
                 toMillis(po.getCreatedAt()), toMillis(po.getLastMsgAt()),
-                po.getSeq() == null ? 0 : po.getSeq().intValue());
+                po.getSeq() == null ? 0 : po.getSeq().intValue(),
+                SessionType.of(po.getSessionType()));
     }
 
     private ChatSessionPO toPO(ChatSession session) {
@@ -133,6 +135,8 @@ public class ChatSessionRepositoryImpl implements ChatSessionRepository {
         po.setSeq((long) session.getSeq());
         po.setCloseReason(session.getCloseReason());
         po.setLastMsgAt(fromMillis(session.getLastActiveAtMillis()));
+        // V59：接待模式必须回写，否则 BOT 会话落库后仍是默认 HUMAN，机器人下一轮就不接了
+        po.setSessionType(session.getSessionType().name());
         return po;
     }
 

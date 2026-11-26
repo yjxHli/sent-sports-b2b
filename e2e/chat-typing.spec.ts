@@ -11,7 +11,7 @@
  *   3) 双方都没有把 TYPING 当成消息渲染（气泡数量不变）
  */
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
-import { startConsultation } from './chat-helpers';
+import { startConsultation , closeSessionWithTicket} from './chat-helpers';
 
 const USER_URL = process.env.E2E_USER_URL ?? 'http://127.0.0.1:5173';
 const CS_URL = process.env.E2E_CS_URL ?? 'http://127.0.0.1:5175';
@@ -104,7 +104,7 @@ test('双向「正在输入」：客户打字客服可见，客服打字客户�
   const openRows: any[] = [...(queue?.data?.waiting ?? []), ...(queue?.data?.active ?? []), ...(listed?.data?.list ?? [])];
   for (const row of openRows) {
     if (row.status !== 'CLOSED') {
-      await apiPost(request, `/admin/chat/sessions/${row.sessionId}/close`, { reason: 'DONE' }, adminToken);
+      await closeSessionWithTicket(request, Number(row.sessionId), adminToken);
     }
   }
   const created = await apiPost(request, '/chat/sessions', { customerId: CUSTOMER_ID, vip: false }, userToken);
@@ -132,7 +132,7 @@ test('双向「正在输入」：客户打字客服可见，客服打字客户�
     await expect(item, `工作台左侧未出现会话 ${sessionId}`).toBeVisible({ timeout: 20_000 });
     await item.click();
     await expect(
-      adminPage.locator('.el-tabs__item', { hasText: `#${sessionId}` }).first(),
+      adminPage.locator(`.chat-panel[data-session-id="${sessionId}"]`),
     ).toBeVisible({ timeout: 10_000 });
 
     // 3) 客服先回一条，把会话接管为 ACTIVE（排队中用户端输入是禁用的）

@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIf;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -136,5 +137,55 @@ class RefundAuditDetailIT extends BaseIntegrationTest {
     @DisplayName("审核详情 SQL：退款单不存在返回 null（业务层据此抛 NOT_FOUND）")
     void auditDetailMissingReturnsNull() {
         assertThat(refundOrderMapper.selectAuditDetail("RF-NOT-EXIST-9999")).isNull();
+    }
+
+    @Test
+    @DisplayName("订单列表提示 SQL：只回在途（PENDING/REFUNDING）且未软删的退款单号，已退款/已关闭不提示")
+    void inFlightOrderNosFilterByStatusAndDeleted() {
+        String suffix = String.valueOf(System.currentTimeMillis());
+        CustomerPO customer = new CustomerPO();
+        customer.setCustomerNo("ITH-" + suffix);
+        customer.setPhone("18" + suffix.substring(Math.max(0, suffix.length() - 9)));
+        customer.setNickname("IT提示客户");
+        customer.setType("PERSON");
+        customer.setLevelCode("NORMAL");
+        customer.setStatus("ACTIVE");
+        customer.setDeleted(0);
+        customer.setGrowthValue(0L);
+        customer.setPointsBalance(0L);
+        customer.setTokenVersion(0L);
+        customerMapper.insert(customer);
+
+        List<String> orderNos = List.of(
+                "IT-HINT-PENDING-" + suffix, "IT-HINT-REFUNDING-" + suffix,
+                "IT-HINT-REFUNDED-" + suffix, "IT-HINT-CLOSED-" + suffix,
+                "IT-HINT-DELETED-" + suffix);
+        List<Long> orderIds = new ArrayList<>();
+        for (String orderNo : orderNos) {
+            OrderPO order = new OrderPO();
+            order.setOrderNo(orderNo);
+            order.setCustomerId(customer.getId());
+            order.setIdemKey("idem-" + orderNo);
+            order.setStatus("WAIT_SHIP");
+            order.setPayStatus("PAID");
+            order.setPayableCent(9900L);
+            orderMapper.insert(order);
+            orderIds.add(order.getId());
+        }
+
+        refundRepository.save(refund("RF-ITH-P-" + suffix, orderNos.get(0), orderIds.get(0), RefundStatus.PENDING));
+        refundRepository.save(refund("RF-ITH-R-" + suffix, orderNos.get(1), orderIds.get(1), RefundStatus.REFUNDING));
+        refundRepository.save(refund("RF-ITH-D-" + suffix, orderNos.get(2), orderIds.get(2), RefundStatus.REFUNDED));
+        refundRepository.save(refund("RF-ITH-C-" + suffix, orderNos.get(3), orderIds.get(3), RefundStatus.CLOSED));
+        refundRepository.save(refund("RF-ITH-X-" + suffix, orderNos.get(4), orderIds.get(4), RefundStatus.PENDING));
+        refundOrderMapper.batchMarkDeleted(List.of("RF-ITH-X-" + suffix));
+
+        assertThat(refundOrderMapper.selectInFlightOrderNos(orderNos))
+                .containsExactlyInAnyOrder(orderNos.get(0), orderNos.get(1));
+    }
+
+    private static RefundOrder refund(String refundNo, String orderNo, long orderId, RefundStatus status) {
+        return new RefundOrder(refundNo, orderNo, orderId, 2000L, "REFUND",
+                "尺码不符", status, System.currentTimeMillis());
     }
 }

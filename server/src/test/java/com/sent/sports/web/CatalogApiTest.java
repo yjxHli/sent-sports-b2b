@@ -1,9 +1,12 @@
 package com.sent.sports.web;
 
+import com.sent.sports.common.error.BizException;
+import com.sent.sports.common.error.ErrorCode;
 import com.sent.sports.common.web.PageResult;
 import com.sent.sports.product.controller.CatalogController;
 import com.sent.sports.product.dto.CatalogDtos;
 import com.sent.sports.product.service.ProductQueryService;
+import com.sent.sports.product.service.ProductSearchUseCase;
 import com.sent.sports.support.BaseApiTest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -32,11 +35,14 @@ class CatalogApiTest extends BaseApiTest {
     @MockBean
     private ProductQueryService productQueryService;
 
+    @MockBean
+    private ProductSearchUseCase productSearchUseCase;
+
     @Test
     @DisplayName("商品列表按筛选分页返回 200")
     void listProductsReturnsPage() throws Exception {
         CatalogDtos.ProductVO vo = new CatalogDtos.ProductVO("p1", "篮球", 1L, "球类", null, 0L, true, List.of());
-        when(productQueryService.search(any(), any()))
+        when(productSearchUseCase.search(any(), any()))
                 .thenReturn(PageResult.of(List.of(vo), 1, 1, 10));
         mvc.perform(get("/api/products").param("categoryId", "1").param("page", "1").param("size", "10"))
                 .andExpect(status().isOk())
@@ -44,6 +50,17 @@ class CatalogApiTest extends BaseApiTest {
                 .andExpect(jsonPath("$.data.list[0].productId").value("p1"))
                 .andExpect(jsonPath("$.data.total").value(1))
                 .andExpect(jsonPath("$.data.size").value(10));
+    }
+
+    @Test
+    @DisplayName("搜索违禁词：HTTP 400 + 业务码 40004，前端据此渲染合规提示")
+    void illegalSearchKeywordReturns40004() throws Exception {
+        when(productSearchUseCase.search(any(), any()))
+                .thenThrow(new BizException(ErrorCode.ILLEGAL_SEARCH_KEYWORD));
+
+        mvc.perform(get("/api/products").param("keyword", "毒品"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(40004));
     }
 
     @Test

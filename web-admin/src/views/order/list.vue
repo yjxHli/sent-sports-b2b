@@ -3,6 +3,7 @@
     <h2 class="sent-page-title">订单列表</h2>
     <div class="sent-panel">
       <SentTable
+        :select-all-rows="fetchAll"
         :columns="columns"
         :rows="rows"
         :total="total"
@@ -49,6 +50,13 @@
         </template>
 
         <template #col-status="{ row }"><StatusTag :status="row.status" /></template>
+        <!-- 退款申请中：口径由后端按 refund_order 在途状态给出，前端只渲染，不自己判状态 -->
+        <template #col-refundHint="{ row }">
+          <span v-if="row.refundHint" data-testid="admin-order-refund-hint" class="refund-hint">
+            <el-tag type="warning" size="small">{{ row.refundHint }}</el-tag>
+          </span>
+          <span v-else class="refund-hint__empty">—</span>
+        </template>
         <template #col-payStatus="{ row }"><StatusTag :status="row.payStatus" /></template>
 
         <template #operations="{ row }">
@@ -94,6 +102,7 @@ const orderStatuses = Object.values(OrderStatus);
 const columns: TableColumn[] = [
   { prop: 'orderNo', label: '订单号', minWidth: 190 },
   { prop: 'status', label: '订单状态', width: 120, align: 'center' },
+  { prop: 'refundHint', label: '售后提示', width: 120, align: 'center' },
   { prop: 'payStatus', label: '支付状态', width: 120, align: 'center' },
   { prop: 'payableCent', label: '应付金额', width: 140, align: 'right',
     formatter: (_row, value) => fmtMoney(value) },
@@ -104,7 +113,7 @@ const columns: TableColumn[] = [
 ];
 
 const query = reactive<{ keyword: string; status?: string }>({ keyword: '' });
-const { rows, total, loading, page, size, load, onPage, onSize, onSearch } = useTable<any>({
+const { rows, total, loading, page, size, load, onPage, onSize, onSearch, fetchAll } = useTable<any>({
   fetch: (params) => unwrap(orderApi.list(params)),
   query: () => ({ keyword: query.keyword || undefined, status: query.status || undefined }),
   errorMessage: '订单列表加载失败',

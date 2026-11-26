@@ -13,6 +13,7 @@
  *   3) 自动打开的 Tab 为当前激活，输入框就绪。
  */
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
+import { clearOpenSessions, fillMinimalTicket } from './chat-helpers';
 
 const USER_URL = process.env.E2E_USER_URL ?? 'http://127.0.0.1:5173';
 const CS_URL = process.env.E2E_CS_URL ?? 'http://127.0.0.1:5175';
@@ -115,25 +116,16 @@ test('工作台常驻时，每位新客户进线都要自动弹出聊天框', as
   const adminToken = adminLogin?.data?.accessToken as string;
   expect(adminToken).toBeTruthy();
 
-  // 清场：全员离线 → 结束该客户所有未结束会话 → 仅 9001 在线（单坐席）
+  // 清场：全员离线 → 结束所有未结束会话（分页扫全量）→ 仅 9001 在线（单坐席）
   for (const staffId of STAFF_IDS) {
     await api(request, 'POST', '/admin/chat/presence', { staffId, presence: 'OFFLINE' }, adminToken);
   }
   // 先把 9001 切在线再清场：离线坐席的 /sessions/open 不下发排队栏，且 close 只对 ACTIVE 生效，
   // 直接按离线队列去关，那两条 2026-06 的 WAITING 演示会话永远清不掉，
-  // 9001 一上线就被补位成 ACTIVE，工作台开场就多出一个 Tab（`.el-tabs__item` 计数断言必挂）。
+  // 9001 一上线就被补位成 ACTIVE，工作台开场就不空（自动弹窗断言必挂）。
   await api(request, 'POST', '/admin/chat/presence', { staffId: 9001, presence: 'ONLINE' }, adminToken);
-  // 清「所有」未结束会话：排队栏（/sessions/open）不受分页影响，能捞到 id 最小、落在列表最后一页的
-  // 两条 2026-06 演示会话——服务端启动时 DemoDataGenerator 会把它们重置成 WAITING「待接入」，
-  // 工作台一开始就不空，`.el-tabs__item` 计数断言必挂
-  const queue = await api(request, 'GET', '/admin/chat/sessions/open?staffId=9001', undefined, adminToken);
-  const listed = await api(request, 'GET', '/admin/chat/sessions?page=1&size=100', undefined, adminToken);
-  const openRows: any[] = [...(queue?.data?.waiting ?? []), ...(queue?.data?.active ?? []), ...(listed?.data?.list ?? [])];
-  for (const row of openRows) {
-    if (row.status !== 'CLOSED') {
-      await api(request, 'POST', `/admin/chat/sessions/${row.sessionId}/close`, { reason: 'DONE' }, adminToken);
-    }
-  }
+  // clearOpenSessions 分页扫全量：演示库已 100+ 行，最早的僵尸会话（id=1）落在第 2 页之外
+  await clearOpenSessions(request, adminToken);
   await api(request, 'POST', '/admin/chat/presence', { staffId: 9001, presence: 'ONLINE' }, adminToken);
 
   const adminCtx = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
@@ -146,34 +138,52 @@ test('工作台常驻时，每位新客户进线都要自动弹出聊天框', as
     await loginAdmin(adminPage);
     await adminPage.goto(join(CS_URL, '/workbench'));
     await expect(adminPage.locator('.el-tag', { hasText: 'WebSocket 已连接' })).toBeVisible({ timeout: 20_000 });
-    await expect(adminPage.locator('.el-tabs__item')).toHaveCount(0);
+    await expect(adminPage.locator('.chat-panel'), '没有会话时聊天区应为空态').toHaveCount(0);
 
-    // 2) 第一位客户进线 → Tab 自动打开
+    // 前置校验：后端必须真的认为 9001 在线且有空位，否则客户进线只会排队、永远不会自动弹出
+    const wl = await api(request, 'GET', '/admin/chat/workload', undefined, adminToken);
+    const mine = (wl?.data ?? []).find((w: any) => Number(w.staffId) === 9001);
+    expect(mine?.presence, '客户进线前 9001 在后端必须是在线').toBe('ONLINE');
+    expect(Number(mine?.activeSessions), '客户进线前 9001 的名额应已清空').toBe(0);
+
+    // 2) 第一位客户进线 → 聊天区自动打开
     await loginCustomer(userPage);
     await openCustomerChat(userPage);
     const firstSession = await sendCustomerMessage(userPage, '你好');
-    const firstTab = adminPage.locator('.el-tabs__item', { hasText: `#${firstSession}` }).first();
-    await expect(firstTab, '第一位客户进线应自动弹出聊天框').toBeVisible({ timeout: 25_000 });
-    await expect(firstTab).toHaveClass(/is-active/);
+    // 后端口径：坐席在线且名额有空 → 机器人转人工的会话必须当场被接入。
+    // 少了这一步，会话会停在 WAITING 占着队列，客户看着「前方还有 0 人」干等，工作台也没有可弹的会话。
+    await expect.poll(async () => {
+      const rows = await api(request, 'GET', '/admin/chat/sessions?page=1&size=5', undefined, adminToken);
+      const row = (rows?.data?.list ?? []).find((r: any) => Number(r.sessionId) === Number(firstSession));
+      return `${row?.status ?? ''}|${row?.staffId ?? ''}`;
+    }, { timeout: 15_000, message: '客户进线后会话应被自动接入 9001' }).toBe('ACTIVE|9001');
+    const firstPanel = adminPage.locator(`.chat-panel[data-session-id="${firstSession}"]`);
+    await expect(firstPanel, '第一位客户进线应自动弹出聊天框').toBeVisible({ timeout: 25_000 });
+    await expect(adminPage.locator('.chat-head__sub')).toContainText(`会话 #${firstSession}`);
 
-    // 3) 客服结束该会话：Tab 保留为灰色「已结束」，由客服主动点 × 关闭
+    // 3) 客服结束该会话：先补最小工单过 V61 门禁，再结束
+    await fillMinimalTicket(adminPage);
     await adminPage.getByRole('button', { name: '结束会话' }).click();
     const confirm = adminPage.locator('.el-message-box');
     await expect(confirm).toBeVisible({ timeout: 10_000 });
     await confirm.getByRole('button', { name: '确认结束' }).click();
-    const endedTab = adminPage.locator('.el-tabs__item', { hasText: `#${firstSession}` }).first();
-    await expect(endedTab, '结束后 Tab 应保留并显示已结束').toContainText('已结束', { timeout: 20_000 });
-    await endedTab.locator('.is-icon-close').click();
-    await expect(adminPage.locator('.el-tabs__item'), '客服主动关闭后 Tab 才消失').toHaveCount(0, { timeout: 20_000 });
+    await expect(
+      adminPage.locator('[data-testid="chat-ended-banner"]'),
+      '结束后聊天区应显示本次会话已结束',
+    ).toBeVisible({ timeout: 20_000 });
+    const closedPanel = adminPage.locator('[data-testid="closed-panel"]');
+    await expect(closedPanel, '左侧应保留一条已结束会话').toContainText(`会话 #${firstSession}`);
+    await closedPanel.locator('[data-testid="close-ended"]').first().click();
+    await expect(adminPage.locator('.chat-panel'), '客服主动关闭后聊天区才回到空态').toHaveCount(0, { timeout: 20_000 });
 
     // 4) 第二位客户（同一测试账号重新发首条消息 = 新会话）→ 仍要自动弹出
     await openCustomerChat(userPage);
     const secondSession = await sendCustomerMessage(userPage, '在吗');
     expect(secondSession, '重新进线应是一个新会话').not.toBe(firstSession);
 
-    const secondTab = adminPage.locator('.el-tabs__item', { hasText: `#${secondSession}` }).first();
-    await expect(secondTab, '接待完一轮后，下一位客户进线仍应自动弹出聊天框').toBeVisible({ timeout: 25_000 });
-    await expect(secondTab).toHaveClass(/is-active/);
+    const secondPanel = adminPage.locator(`.chat-panel[data-session-id="${secondSession}"]`);
+    await expect(secondPanel, '接待完一轮后，下一位客户进线仍应自动弹出聊天框').toBeVisible({ timeout: 25_000 });
+    await expect(adminPage.locator('.chat-head__sub')).toContainText(`会话 #${secondSession}`);
     await expect(adminPage.getByPlaceholder('输入消息后回车发送'), '聊天输入框应自动就绪').toBeVisible({
       timeout: 15_000,
     });

@@ -1,9 +1,9 @@
 package com.sent.sports.system.service;
 
-import com.sent.sports.common.web.PageQuery;
 import com.sent.sports.common.web.PageResult;
 import com.sent.sports.system.dto.admin.AdminSystemDtos;
 import com.sent.sports.system.dto.admin.LogQuery;
+import com.sent.sports.system.dto.admin.StaffQuery;
 
 import java.util.List;
 
@@ -24,8 +24,8 @@ public interface SystemService {
     /** 删除员工。 */
     void deleteStaff(Long id);
 
-    /** 员工分页列表。 */
-    PageResult<AdminSystemDtos.StaffVO> listStaff(PageQuery page);
+    /** 员工分页列表（关键字与状态筛选在 SQL 生效）。 */
+    PageResult<AdminSystemDtos.StaffVO> listStaff(StaffQuery query);
 
     /** 更新角色权限矩阵。 */
     AdminSystemDtos.RoleVO updateRolePerms(AdminSystemDtos.RolePermForm form);
@@ -38,6 +38,21 @@ public interface SystemService {
 
     /** 参数列表。 */
     List<AdminSystemDtos.ParamVO> listParams();
+
+    /**
+     * 系统配置中心列表（2026-11-25）：在键值对之上补中文名 / 说明 / 单位 / 展示值。
+     * <p>只读侧做翻译，{@code sys_config} 结构不变——老的 {@link #listParams()} 与读取方完全不受影响。</p>
+     */
+    List<AdminSystemDtos.ConfigVO> listConfigs();
+
+    /**
+     * 修改一个配置的值：按键查字典校验取值类型，落库后写审计日志。
+     *
+     * @param configKey 必须已在 {@code sys_config} 中存在（不允许凭空建键）
+     * @param staffId   操作人，用于 {@code sys_operation_log} 追溯
+     */
+    AdminSystemDtos.ConfigVO updateConfigValue(String configKey, AdminSystemDtos.ConfigValueForm form,
+                                               Long staffId);
 
     /** 操作日志分页（真查 sys_operation_log，条件由 LogQuery 归一后下推到 SQL）。 */
     PageResult<AdminSystemDtos.LogVO> listLogs(LogQuery query);

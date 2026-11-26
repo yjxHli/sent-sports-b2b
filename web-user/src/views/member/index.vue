@@ -93,7 +93,14 @@
 
       <!-- 快捷入口 -->
       <section class="member-links">
-        <router-link v-for="l in LINKS" :key="l.to" :to="l.to" class="member-link">
+        <router-link
+          v-for="l in LINKS"
+          :key="l.to"
+          :to="l.to"
+          :target="l.newTab ? '_blank' : undefined"
+          :rel="l.newTab ? 'noopener' : undefined"
+          class="member-link"
+        >
           <span class="member-link__icon">{{ l.icon }}</span>
           <span class="member-link__text">{{ l.label }}</span>
         </router-link>
@@ -136,7 +143,8 @@ const LINKS = [
   { to: '/custom', label: '我的定制', icon: '🎨' },
   { to: '/refunds', label: '我的售后', icon: '↩️' },
   { to: '/coupons', label: '我的优惠券', icon: '🎫' },
-  { to: '/chat', label: '在线客服', icon: '💬' },
+  // 在线客服要新开标签页（不打断当前浏览），其余入口仍同页跳转
+  { to: '/chat', label: '在线客服', icon: '💬', newTab: true },
 ];
 
 const nickname = computed(() => profile.value?.nickname || '森特会员');

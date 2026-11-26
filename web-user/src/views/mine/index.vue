@@ -147,7 +147,7 @@
     </section>
 
     <div class="mine-tools">
-      <router-link to="/chat" class="mine-tool">💬 在线客服</router-link>
+      <router-link to="/chat" target="_blank" rel="noopener" class="mine-tool">💬 在线客服</router-link>
       <router-link to="/custom" class="mine-tool">🎨 我的定制</router-link>
       <router-link to="/refunds" class="mine-tool">↩️ 退款售后</router-link>
       <button class="mine-tool mine-tool--danger" @click="logout">退出登录</button>

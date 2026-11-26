@@ -34,4 +34,13 @@ public interface OrderQueryService {
      * @return 命中的订单号；无资格返回 {@link java.util.Optional#empty()}
      */
     java.util.Optional<String> findCompletedOrderNoForReview(long customerId, long productId, Long skuId);
+
+    /**
+     * 关单结果核对（编排层用）：订单是否已处于「已关闭 + 已全额退款」终态。
+     *
+     * <p>自动关单被拒绝时不能把任何冲突都当成「已经关过了」：订单若已完成、售后中或已支付状态
+     * 不允许全退，状态机会抛同一个 {@code STATE_CONFLICT}，此时若照旧往下取消定制单，
+     * 结果就是「单没了、钱没退」。所以调用方必须回来核对真实终态。</p>
+     */
+    boolean isClosedWithFullRefund(String orderNo);
 }

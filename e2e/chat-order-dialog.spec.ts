@@ -5,7 +5,7 @@
  * 而是在当前页面弹出该订单的详细弹窗。
  */
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
-import { startConsultation } from './chat-helpers';
+import { startConsultation , closeSessionWithTicket} from './chat-helpers';
 
 const USER_URL = process.env.E2E_USER_URL ?? 'http://127.0.0.1:5173';
 const CS_URL = process.env.E2E_CS_URL ?? 'http://127.0.0.1:5175';
@@ -77,7 +77,7 @@ test('客服点顾客历史订单弹出订单详情弹窗且不跳页', async ({
   const openRows: any[] = [...(queue?.data?.waiting ?? []), ...(queue?.data?.active ?? []), ...(listed?.data?.list ?? [])];
   for (const row of openRows) {
     if (row.status !== 'CLOSED') {
-      await apiPost(request, `/admin/chat/sessions/${row.sessionId}/close`, { reason: 'DONE' }, adminToken);
+      await closeSessionWithTicket(request, Number(row.sessionId), adminToken);
     }
   }
   const created = await apiPost(request, '/chat/sessions', { customerId: CUSTOMER_ID, vip: false }, userToken);
@@ -100,10 +100,10 @@ test('客服点顾客历史订单弹出订单详情弹窗且不跳页', async ({
     const sessionItem = adminPage.locator('.session-item', { hasText: `会话 #${sessionId}` }).first();
     await expect(sessionItem).toBeVisible({ timeout: 20_000 });
     await sessionItem.click();
-    await expect(adminPage.locator('.el-tabs__item', { hasText: `#${sessionId}` }).first()).toBeVisible({ timeout: 10_000 });
+    await expect(adminPage.locator(`.chat-panel[data-session-id="${sessionId}"]`)).toBeVisible({ timeout: 10_000 });
 
-    // 用户要求：历史订单默认收起，先点开再断言
-    await adminPage.getByTestId('orders-toggle').click();
+    // 用户要求（2026-11-25）：右侧改成三个平级 Tab，先切到「顾客订单」
+    await adminPage.getByTestId('record-tab-orders').click();
     const firstOrder = adminPage.locator('.cust-orders .cust-order').first();
     await expect(firstOrder, '顾客历史订单侧栏应有数据').toBeVisible({ timeout: 20_000 });
     const orderNo = (await firstOrder.locator('.cust-order__no').innerText()).trim();

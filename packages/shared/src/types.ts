@@ -174,6 +174,8 @@ export interface AdminOrderVO {
   status: string;
   payableCent: number;
   payableYuan?: string;
+  /** 有在途退款单（待审核 / 退款中）时后端给「退款申请中」，其余为 null */
+  refundHint?: string;
 }
 
 export interface OrderLineVO {

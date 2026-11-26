@@ -3,11 +3,13 @@ package com.sent.sports.web;
 import com.sent.sports.chat.controller.ChatController;
 import com.sent.sports.chat.domain.ChatSessionStatus;
 import com.sent.sports.chat.domain.SenderType;
+import com.sent.sports.chat.domain.SessionType;
 import com.sent.sports.chat.dto.ChatDtos;
 import com.sent.sports.chat.service.ChatQueryService;
 import com.sent.sports.chat.service.CreateSessionUseCase;
 import com.sent.sports.chat.service.RateSatisfactionUseCase;
 import com.sent.sports.chat.service.SendMessageUseCase;
+import com.sent.sports.chat.service.dto.CreateSessionCmd;
 import com.sent.sports.chat.service.dto.CreateSessionResult;
 import com.sent.sports.chat.service.dto.SendMessageCmd;
 import com.sent.sports.chat.service.dto.SendMessageResult;
@@ -72,7 +74,47 @@ class ChatApiTest extends BaseApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.sessionId").value(100))
-                .andExpect(jsonPath("$.data.status").value("ACTIVE"));
+                .andExpect(jsonPath("$.data.status").value("ACTIVE"))
+                .andExpect(jsonPath("$.data.sessionType").value("HUMAN"));
+    }
+
+    @Test
+    @DisplayName("不传 sessionType 按人工建会话（既有接口口径不能被机器人改掉）")
+    void createSessionDefaultsToHuman() throws Exception {
+        when(createSessionUseCase.create(any()))
+                .thenReturn(new CreateSessionResult(101L, ChatSessionStatus.WAITING, null, false));
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("customerId", 1L);
+
+        mvc.perform(post("/api/chat/sessions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(toJson(body)))
+                .andExpect(jsonPath("$.data.sessionType").value("HUMAN"));
+
+        ArgumentCaptor<CreateSessionCmd> captor = ArgumentCaptor.forClass(CreateSessionCmd.class);
+        verify(createSessionUseCase).create(captor.capture());
+        assertEquals(SessionType.HUMAN, captor.getValue().sessionType());
+    }
+
+    @Test
+    @DisplayName("显式传 BOT：透传到用例，响应回 BOT 供前端判断输入框是否可用")
+    void createSessionWithBotType() throws Exception {
+        when(createSessionUseCase.create(any()))
+                .thenReturn(new CreateSessionResult(102L, ChatSessionStatus.WAITING, null, false,
+                        SessionType.BOT));
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("customerId", 1L);
+        body.put("sessionType", "BOT");
+
+        mvc.perform(post("/api/chat/sessions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(toJson(body)))
+                .andExpect(jsonPath("$.data.sessionType").value("BOT"))
+                .andExpect(jsonPath("$.data.status").value("WAITING"));
+
+        ArgumentCaptor<CreateSessionCmd> captor = ArgumentCaptor.forClass(CreateSessionCmd.class);
+        verify(createSessionUseCase).create(captor.capture());
+        assertEquals(SessionType.BOT, captor.getValue().sessionType());
     }
 
     @Test
@@ -125,6 +167,20 @@ class ChatApiTest extends BaseApiTest {
         verify(sendMessageUseCase).send(captor.capture());
         assertEquals("IMAGE", captor.getValue().msgType());
         assertEquals("2026/11/ab/shot.png", captor.getValue().content());
+    }
+
+    @Test
+    @DisplayName("历史咨询会话列表：按客户返回会话摘要 200")
+    void listSessionsReturns200() throws Exception {
+        when(chatQueryService.listSessions(9002L, 20)).thenReturn(List.of(
+                new ChatDtos.SessionSummaryVO(9L, "CLOSED", 9003L, 1_700_000_000_000L, 1_700_000_100_000L)));
+
+        mvc.perform(get("/api/chat/sessions").param("customerId", "9002"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data[0].sessionId").value(9))
+                .andExpect(jsonPath("$.data[0].status").value("CLOSED"))
+                .andExpect(jsonPath("$.data[0].staffId").value(9003));
     }
 
     @Test

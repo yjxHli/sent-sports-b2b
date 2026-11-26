@@ -51,7 +51,7 @@ async function backHome(page: Page): Promise<void> {
   await expect(page.locator('.cat-nav__item').first()).toBeVisible({ timeout: 20_000 });
 }
 
-test('会员中心与在线客服收纳在右上角，主导航行已移除', async ({ page }) => {
+test('会员中心与在线客服收纳在右上角，主导航行已移除', async ({ page, context }) => {
   const errors: string[] = [];
   page.on('console', (m) => {
     if (m.type() === 'error' && !NOISE.test(m.text())) errors.push(m.text());
@@ -73,13 +73,18 @@ test('会员中心与在线客服收纳在右上角，主导航行已移除', as
   await expect(page.locator('.mainnav'), '绿色主导航行应已删除').toHaveCount(0);
   await expect(page.locator('.mainnav__item'), '主导航项应已全部移除').toHaveCount(0);
 
-  // 顶栏入口真的能到达对应页面
+  // 顶栏入口真的能到达对应页面（在线客服自 2026-11-25 起改为新标签页打开）
   await memberLink.click();
   await expect.poll(() => pathOf(page), { timeout: 20_000 }).toBe('/member');
 
   await backHome(page);
-  await page.locator('.topbar__link', { hasText: '在线客服' }).first().click();
-  await expect.poll(() => pathOf(page), { timeout: 20_000 }).toBe('/chat');
+  const [chatPage] = await Promise.all([
+    context.waitForEvent('page', { timeout: 20_000 }),
+    page.locator('.topbar__link', { hasText: '在线客服' }).first().click(),
+  ]);
+  await chatPage.waitForLoadState('domcontentloaded');
+  expect(pathOf(chatPage), '新标签页应落在客服页').toBe('/chat');
+  await chatPage.close();
 
   expect(errors, `console errors: ${errors.join(' | ')}`).toHaveLength(0);
 });
@@ -113,7 +118,7 @@ test('点首页分类在新标签页打开独立分类页，原页停留首页',
   await popup.close();
 });
 
-test('查看团购专区进入团购专区页，而不是训练关键词列表', async ({ page }) => {
+test('查看团购专区进入团购专区页，而不是训练关键词列表', async ({ page, context }) => {
   const errors: string[] = [];
   page.on('console', (m) => {
     if (m.type() === 'error' && !NOISE.test(m.text())) errors.push(m.text());
@@ -122,18 +127,24 @@ test('查看团购专区进入团购专区页，而不是训练关键词列表',
   await loginUser(page);
   await backHome(page);
 
-  await page.locator('.side-tip__btn').first().click();
-  await expect.poll(() => pathOf(page), { timeout: 20_000 }).toBe('/group-buy');
+  // 2026-11-25：新标签页打开，原首页保持不动
+  const [groupBuyPage] = await Promise.all([
+    context.waitForEvent('page', { timeout: 20_000 }),
+    page.locator('.side-tip__btn').first().click(),
+  ]);
+  await groupBuyPage.waitForLoadState('domcontentloaded');
+  expect(pathOf(groupBuyPage), '新标签页应落在团购专区').toBe('/group-buy');
+  expect(groupBuyPage.url(), '团购专区不应再落到训练关键词').not.toContain('keyword=');
 
-  const url = page.url();
-  expect(url, '团购专区不应再落到训练关键词').not.toContain('keyword=');
-
-  await expect(page.locator('.group-buy'), '团购专区页应渲染专属区块').toBeVisible({
+  await expect(groupBuyPage.locator('.group-buy'), '团购专区页应渲染专属区块').toBeVisible({
     timeout: 20_000,
   });
-  await expect(page.locator('.group-buy .good-card').first(), '应有批量采购商品').toBeVisible({
+  await expect(groupBuyPage.locator('.group-buy .good-card').first(), '应有批量采购商品').toBeVisible({
     timeout: 20_000,
   });
+
+  await groupBuyPage.close();
+  expect(page.url(), '原首页不应被导航走').toContain('/home');
 
   expect(errors, `console errors: ${errors.join(' | ')}`).toHaveLength(0);
 });

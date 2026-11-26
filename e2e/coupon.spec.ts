@@ -14,6 +14,7 @@ import {
   ADMIN_NAME, ADMIN_PASSWORD, CUSTOMER_PHONE, CUSTOMER_PASSWORD, CUSTOMER_ID,
 } from './chat-helpers';
 import { pickSellableSku } from './pick-product';
+import { ensureClaimableCoupons } from './demo-state';
 
 const NOISE = /Failed to load resource|net::ERR|ERR_NAME_NOT_RESOLVED/i;
 /** 管理端必有的 9 个金额档位（V42 存量档位，V43 只新增不改） */
@@ -28,6 +29,10 @@ async function loginUserUi(page: Page): Promise<void> {
   await page.getByRole('button', { name: '登录' }).click();
   await expect(page).toHaveURL(/\/(home|products)(\?|$)/, { timeout: 20_000 });
 }
+
+// 数据强依赖：本文件内的用例共享演示库状态（购物车/库存/券/发票/会话/配置），
+// 必须按书写顺序在同一个 worker 里跑完，禁止拆到多 worker 并行。
+test.describe.configure({ mode: 'serial' });
 
 test('新用户注册自动发 3 张券，并收到站内信提醒', async ({ request }) => {
   test.setTimeout(90_000);
@@ -249,6 +254,9 @@ test('领券中心：券型/有效期口径一致，且会员日门禁生效', a
   expect(registered?.code, `注册失败：${JSON.stringify(registered)}`).toBe(0);
 
   const token = await loginApi(request, phone, password, 'user');
+  // 领券中心的前提是「模板还有余量、演示客户没领过」：claimed_qty 是累加计数，
+  // 删券也不会回落，跑够多轮就会把所有券打成「已领完」——先归零再断言，别赌库是新的。
+  ensureClaimableCoupons(CUSTOMER_ID);
   const claimable = await apiCall(request, 'GET', '/coupons/claimable', undefined, token);
   expect(claimable?.code, `可领券查询失败：${JSON.stringify(claimable)}`).toBe(0);
   const cards: any[] = claimable?.data ?? [];
@@ -348,6 +356,9 @@ test('领券中心：券型/有效期口径一致，且会员日门禁生效', a
  */
 test('非会员日：领券中心显示精确倒计时且无法领取', async ({ page }) => {
   test.setTimeout(120_000);
+  // 「至少有一张是『会员日可领』」是绝对数断言：先复位领券中心的领取状态，
+  // 否则演示客户历史领过全部档位时按钮全变「已领取」，用例会假红。
+  ensureClaimableCoupons(CUSTOMER_ID);
   await loginUserUi(page);
   // 2026-11-13 是周五；到 11-18（下周三）00:00 正好 4天8小时30分钟
   await page.clock.install({ time: new Date('2026-11-13T15:30:00') });

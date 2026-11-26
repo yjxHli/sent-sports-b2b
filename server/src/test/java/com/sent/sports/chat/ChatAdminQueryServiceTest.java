@@ -6,11 +6,13 @@ import com.sent.sports.chat.mapper.ChatSatisfactionMapper;
 import com.sent.sports.chat.mapper.ChatSessionMapper;
 import com.sent.sports.chat.mapper.ChatSessionNoteMapper;
 import com.sent.sports.chat.mapper.po.ChatHistoryRowPO;
+import com.sent.sports.chat.mapper.po.ChatSessionNotePO;
 import com.sent.sports.chat.repository.AgentPresenceRepository;
 import com.sent.sports.chat.service.ChatQueryService;
 import com.sent.sports.chat.service.dto.ChatAuditDtos;
 import com.sent.sports.chat.service.dto.TodayStatsResult;
 import com.sent.sports.chat.service.impl.ChatAdminQueryServiceImpl;
+import com.sent.sports.customer.service.dto.CustomerContact;
 import com.sent.sports.support.BaseUnitTest;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -59,6 +61,8 @@ class ChatAdminQueryServiceTest extends BaseUnitTest {
     private ChatQueryService chatQueryService;
     @Mock
     private ChatMetricsMapper metricsMapper;
+    @Mock
+    private com.sent.sports.customer.service.CustomerQueryService customerQueryService;
 
     @InjectMocks
     private ChatAdminQueryServiceImpl queryService;
@@ -138,9 +142,9 @@ class ChatAdminQueryServiceTest extends BaseUnitTest {
         assertEquals(88L, rows.get(0).sessionId());
     }
 
-    /** 小结是否存在要看「问题概述」，不能看处理结果：未解决也是填过小结的。 */
+    /** 审查列表只收已提交工单：小结状态直接反映工单提交状态（V65）。 */
     @Test
-    void auditMarksNoteFilledWhenResultIsUnresolved() {
+    void auditMarksNoteSubmittedWhenResultIsUnresolved() {
         com.sent.sports.chat.mapper.po.ChatAuditRowPO po =
                 new com.sent.sports.chat.mapper.po.ChatAuditRowPO();
         po.setSessionId(7L);
@@ -148,6 +152,7 @@ class ChatAdminQueryServiceTest extends BaseUnitTest {
         po.setStaffId(9001L);
         po.setSummary("客户咨询加急");
         po.setResult("UNRESOLVED");
+        po.setSubmitStatus("SUBMITTED");
         when(auditMapper.selectAuditPage(any(), any(), any(), any(), any(), any())).thenReturn(pageOf(po));
         when(auditMapper.countAudit(any(), any(), any(), any(), any())).thenReturn(1L);
 
@@ -155,7 +160,7 @@ class ChatAdminQueryServiceTest extends BaseUnitTest {
                 null, null, null, null);
 
         assertEquals(1, result.getTotal());
-        assertEquals("已填写", result.getList().get(0).noteStatus());
+        assertEquals("已提交", result.getList().get(0).noteStatus());
         assertEquals("UNRESOLVED", result.getList().get(0).result());
     }
 
@@ -185,6 +190,132 @@ class ChatAdminQueryServiceTest extends BaseUnitTest {
 
         assertEquals(1, result.waiting().size(), "忙碌只是不自动接入，队列仍要可见");
         assertEquals(1, result.waiting().get(0).queuePosition(), "排队位置从 1 开始");
+    }
+
+    @Test
+    void openSessionsFillsCustomerNameAndAvatar() {
+        // 2026-11-25 用户要求：左侧列表显示「进线用户的头像和姓名」，不再只显示「客户 9002」。
+        // 客户资料属于 customer 模块，chat 只能经 CustomerQueryService 取（ArchUnit 规则）。
+        when(presenceRepository.findByStaffId(9001L)).thenReturn(java.util.Optional.of(
+                new com.sent.sports.chat.domain.AgentPresence(9001L,
+                        com.sent.sports.chat.domain.PresenceStatus.ONLINE, 1, 3, 0L)));
+        when(chatSessionMapper.selectVisibleActiveByStaff(9001L))
+                .thenReturn(java.util.List.of(activePo(21L, 9002L)));
+        when(customerQueryService.briefsOf(any())).thenReturn(java.util.Map.of(
+                9002L, new com.sent.sports.customer.service.dto.CustomerBrief(9002L, "林小满", "f-avatar-1")));
+
+        var result = queryService.openSessions(9001L);
+
+        assertEquals("林小满", result.active().get(0).customerName());
+        assertEquals("f-avatar-1", result.active().get(0).customerAvatarFileId());
+    }
+
+    @Test
+    void openSessionsToleratesMissingCustomer() {
+        // 客户被软删/查不到时不能 NPE，留给前端兜底成「客户 {id}」
+        when(presenceRepository.findByStaffId(9001L)).thenReturn(java.util.Optional.of(
+                new com.sent.sports.chat.domain.AgentPresence(9001L,
+                        com.sent.sports.chat.domain.PresenceStatus.ONLINE, 1, 3, 0L)));
+        when(chatSessionMapper.selectVisibleActiveByStaff(9001L))
+                .thenReturn(java.util.List.of(activePo(22L, 9003L)));
+        when(customerQueryService.briefsOf(any())).thenReturn(java.util.Map.of());
+
+        var result = queryService.openSessions(9001L);
+
+        assertEquals(9003L, result.active().get(0).customerId());
+        org.junit.jupiter.api.Assertions.assertNull(result.active().get(0).customerName());
+        org.junit.jupiter.api.Assertions.assertNull(result.active().get(0).customerAvatarFileId());
+    }
+
+    @Test
+    void notePrefillsCustomerInfoBeforeTicketFilled() {
+        // 客服第一次打开抽屉时工单还不存在，基础信息也必须已经带入，否则要客服手抄客户资料。
+        com.sent.sports.chat.mapper.po.ChatSessionPO session = activePo(33L, 9002L);
+        session.setStartedAt(LocalDateTime.of(2026, 11, 25, 9, 30));
+        when(chatSessionMapper.selectById(33L)).thenReturn(session);
+        when(chatQueryService.history(33L, 0)).thenReturn(java.util.List.of());
+        when(noteMapper.selectBySessionId(33L)).thenReturn(null);
+        when(customerQueryService.contactOf(9002L)).thenReturn(new CustomerContact(
+                9002L, "林小满", "13800138000", "lin@sent.test"));
+
+        ChatAuditDtos.NoteVO note = queryService.transcript(33L).note();
+
+        org.junit.jupiter.api.Assertions.assertNotNull(note, "空工单也要返回预填基础信息");
+        assertEquals(33L, note.sessionId());
+        assertEquals("林小满", note.customerNickname());
+        assertEquals("13800138000", note.customerPhone());
+        org.junit.jupiter.api.Assertions.assertNull(note.summary(), "未填写时不能伪造问题描述");
+        org.junit.jupiter.api.Assertions.assertEquals(0L, note.updatedAtMillis());
+        assertEquals(LocalDateTime.of(2026, 11, 25, 9, 30)
+                .atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli(),
+                note.consultedAtMillis());
+    }
+
+    @Test
+    void noteCarriesCustomerContactAndConsultedAt() {
+        // 2026-11-25 服务工单：GET note 必须自动带回客户昵称/联系方式/咨询时间，不需要客服手填。
+        com.sent.sports.chat.mapper.po.ChatSessionPO session = activePo(31L, 9002L);
+        session.setStartedAt(LocalDateTime.of(2026, 11, 25, 9, 30));
+        when(chatSessionMapper.selectById(31L)).thenReturn(session);
+        when(chatQueryService.history(31L, 0)).thenReturn(java.util.List.of());
+        when(customerQueryService.contactOf(9002L)).thenReturn(new CustomerContact(
+                9002L, "林小满", "13800138000", "lin@sent.test"));
+
+        ChatSessionNotePO po = new ChatSessionNotePO();
+        po.setSessionId(31L);
+        po.setCustomerId(9002L);
+        po.setStaffId(9001L);
+        po.setSummary("咨询定制足球印字");
+        po.setCategory("INQUIRY");
+        po.setIssueInfo("CLEAR");
+        po.setResult("DONE");
+        po.setSolution("已告知起订量");
+        po.setSubCategory("印字Logo");
+        po.setCustomerDemand("本周到货");
+        po.setVerifiedInfo("订单 S001");
+        po.setNeedFollowup(true);
+        po.setFollowupTime(LocalDateTime.of(2026, 11, 26, 10, 0));
+        po.setAttachmentsJson("[\"file-1\"]");
+        when(noteMapper.selectBySessionId(31L)).thenReturn(po);
+
+        ChatAuditDtos.NoteVO note = queryService.transcript(31L).note();
+
+        assertEquals("林小满", note.customerNickname());
+        assertEquals("13800138000", note.customerPhone());
+        assertEquals("lin@sent.test", note.customerEmail());
+        assertEquals(LocalDateTime.of(2026, 11, 25, 9, 30)
+                .atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli(),
+                note.consultedAtMillis(), "咨询时间取会话开始时间");
+        assertEquals("印字Logo", note.subCategory());
+        assertEquals("本周到货", note.customerDemand());
+        assertEquals("订单 S001", note.verifiedInfo());
+        assertEquals(true, note.needFollowup());
+        assertEquals("[\"file-1\"]", note.attachmentsJson());
+        verify(customerQueryService).contactOf(9002L);
+    }
+
+    @Test
+    void sessionDetailFallsBackToCreatedAtWhenStartedAtMissing() {
+        // 自动接入的会话可能没有 started_at；工单「咨询时间」必须回退到创建时间而不是 0。
+        com.sent.sports.chat.mapper.po.ChatSessionPO session = activePo(32L, 9002L);
+        session.setStartedAt(null);
+        when(chatSessionMapper.selectById(32L)).thenReturn(session);
+
+        ChatAuditDtos.SessionDetail detail = queryService.sessionDetail(32L);
+
+        assertEquals(LocalDateTime.of(2026, 11, 25, 10, 0)
+                .atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli(),
+                detail.startedAtMillis());
+    }
+
+    private static com.sent.sports.chat.mapper.po.ChatSessionPO activePo(long sessionId, long customerId) {
+        var po = new com.sent.sports.chat.mapper.po.ChatSessionPO();
+        po.setId(sessionId);
+        po.setCustomerId(customerId);
+        po.setStaffId(9001L);
+        po.setStatus("ACTIVE");
+        po.setCreatedAt(LocalDateTime.of(2026, 11, 25, 10, 0));
+        return po;
     }
 
     private static com.sent.sports.chat.mapper.po.ChatSessionPO waitingPo(long sessionId) {

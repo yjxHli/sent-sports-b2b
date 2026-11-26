@@ -2,6 +2,7 @@ package com.sent.sports.refund;
 
 import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
+import com.sent.sports.coupon.service.CouponDeduction;
 import com.sent.sports.member.service.MemberRefundGateway;
 import com.sent.sports.order.service.OrderRefundGateway;
 import com.sent.sports.order.service.OrderRefundViewService;
@@ -47,6 +48,8 @@ class RefundCallbackUseCaseTest extends BaseUseCaseTest {
     private OrderRefundViewService orderRefundViewService;
     @Mock
     private MemberRefundGateway memberRefundGateway;
+    @Mock
+    private CouponDeduction couponDeduction;
     @Mock
     private StockRefundGateway stockRefundGateway;
     @Mock
@@ -186,6 +189,51 @@ class RefundCallbackUseCaseTest extends BaseUseCaseTest {
         when(memberRefundGateway.deductedPointsOf(1L, "SO20240101000099")).thenReturn(3000L);
         doThrow(new BizException(ErrorCode.SYSTEM_ERROR)).when(memberRefundGateway)
                 .returnDeductedPoints(anyLong(), anyString(), anyLong());
+
+        useCase.process(o);
+
+        verify(stockRefundGateway, never()).releaseOnRefund(anyString());
+        verify(refundRepository).save(saveCaptor.capture());
+        assertEquals(RefundStatus.FAILED, saveCaptor.getValue().getStatus());
+    }
+
+    // ==================== 整单退返还优惠券 ====================
+
+    @Test
+    @DisplayName("整单退款：下单时核销的优惠券退回账户（与积分同口径）")
+    void fullRefundReturnsCoupon() {
+        RefundOrder o = refunding();   // 5000 = 行实付 5000 → 整单
+        when(orderRefundViewService.getView("SO20240101000099"))
+                .thenReturn(Optional.of(viewWithLines(1L, 5000L, 7000L)));
+
+        useCase.process(o);
+
+        verify(couponDeduction).returnCoupon("SO20240101000099");
+        verify(refundRepository).save(saveCaptor.capture());
+        assertEquals(RefundStatus.REFUNDED, saveCaptor.getValue().getStatus());
+    }
+
+    @Test
+    @DisplayName("部分退款：不退券（否则同一张券能被用两次）")
+    void partialRefundKeepsCoupon() {
+        RefundOrder o = refunding();   // 5000，行实付 10000 → 只退一半
+        when(orderRefundViewService.getView("SO20240101000099"))
+                .thenReturn(Optional.of(viewWithLines(1L, 10_000L, 7000L)));
+
+        useCase.process(o);
+
+        verify(couponDeduction, never()).returnCoupon(anyString());
+        verify(refundRepository).save(saveCaptor.capture());
+        assertEquals(RefundStatus.REFUNDED, saveCaptor.getValue().getStatus());
+    }
+
+    @Test
+    @DisplayName("退券失败：置 FAILED 待人工对账（钱已退、券没回）")
+    void couponReturnFailureSetsFailed() {
+        RefundOrder o = refunding();
+        when(orderRefundViewService.getView("SO20240101000099"))
+                .thenReturn(Optional.of(viewWithLines(1L, 5000L, 7000L)));
+        when(couponDeduction.returnCoupon(anyString())).thenThrow(new BizException(ErrorCode.SYSTEM_ERROR));
 
         useCase.process(o);
 

@@ -43,6 +43,10 @@ async function waitPaidDialog(page: Page): Promise<{ dialog: ReturnType<Page['lo
   return { dialog, orderNo: matched![1] };
 }
 
+// 数据强依赖：本文件内的用例共享演示库状态（购物车/库存/券/发票/会话/配置），
+// 必须按书写顺序在同一个 worker 里跑完，禁止拆到多 worker 并行。
+test.describe.configure({ mode: 'serial' });
+
 test('「立即购买」下单后，订单详情点「返回我的订单」必须落到我的订单列表', async ({ page }) => {
   test.setTimeout(180_000);
   await loginUser(page);

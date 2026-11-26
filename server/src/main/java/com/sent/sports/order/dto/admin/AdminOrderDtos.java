@@ -49,8 +49,17 @@ public final class AdminOrderDtos {
     public record CloseCmd(@NotBlank(message = "关单原因不能为空") String reason) {
     }
 
-    /** 订单管理视图（中性，不依赖 order 领域类型）。 */
-    public record AdminOrderVO(String orderNo, String status, long payableCent, String payableYuan) {
+    /**
+     * 订单管理视图（中性，不依赖 order 领域类型）。
+     * <p>{@code refundHint} 只在存在在途退款单（PENDING / REFUNDING）时为「退款申请中」，
+     * 由 refund 模块的只读门面判定；四参构造器保留给代客下单/关单等无列表语境的调用方。</p>
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record AdminOrderVO(String orderNo, String status, long payableCent, String payableYuan,
+                               String refundHint) {
+        public AdminOrderVO(String orderNo, String status, long payableCent, String payableYuan) {
+            this(orderNo, status, payableCent, payableYuan, null);
+        }
     }
 
     /**

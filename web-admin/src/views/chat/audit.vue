@@ -7,6 +7,7 @@
 
     <div class="sent-panel">
       <SentTable
+        :select-all-rows="fetchAll"
         :columns="columns"
         :rows="rows"
         :total="total"
@@ -26,7 +27,7 @@
           <BatchDeleteButton
             v-model:active="deleteMode"
             :ids="selected.map((r: ChatAuditRowVO) => String(r.sessionId))"
-            :summary="`已选择 ${selected.length} 条审查记录：${selected.map((r: ChatAuditRowVO) => r.sessionId).join('、')}`"
+            :summary="`已选择 ${selected.length} 条审查记录：${selected.slice(0, 10).map((r: ChatAuditRowVO) => r.sessionId).join('、')}${selected.length > 10 ? ' 等' : ''}`"
             :delete-fn="(ids, config) => unwrap(chatApi.batchDeleteAuditSessions(ids, config))"
             @done="onDeleted"
           />
@@ -64,7 +65,7 @@
           <StatusTag :label="resultLabel(row.result)" :tone="row.result === 'DONE' ? 'success' : 'warning'" />
         </template>
         <template #col-noteStatus="{ row }">
-          <StatusTag :label="row.noteStatus" :tone="row.noteStatus === '已填写' ? 'success' : 'info'" />
+          <StatusTag :label="row.noteStatus" :tone="row.noteStatus === '已提交' ? 'success' : 'info'" />
         </template>
         <template #operations="{ row }">
           <el-button link type="primary" data-testid="audit-detail-btn" @click="openDetail(row.sessionId)">
@@ -109,6 +110,10 @@
                 >{{ fmtChatTime(Number(m.createdAtMillis ?? 0)) }}</div>
                 <div class="audit-msg-line" :class="{ mine: m.senderType === 'STAFF' }">
                   <span v-if="m.senderType === 'SYSTEM'" class="audit-system-card">{{ systemMessageText(m) }}</span>
+                  <!-- 机器人回复单独标注：审计时要能分清「客户说的」「客服说的」「小森自动答的」 -->
+                  <span v-else-if="m.senderType === 'BOT'" class="audit-bubble audit-bubble--bot">
+                    <em>智能助手</em>{{ m.content }}
+                  </span>
                   <span v-else class="audit-bubble">{{ m.content }}</span>
                 </div>
               </template>
@@ -117,17 +122,49 @@
           </section>
 
           <section class="audit-note" data-testid="audit-note">
-            <h4>客服填写信息</h4>
-            <template v-if="transcript.note">
-              <el-descriptions :column="1" border size="small">
-                <el-descriptions-item label="问题概述">{{ transcript.note.summary }}</el-descriptions-item>
+            <h4>完整服务工单记录</h4>
+            <!-- note 现在即使未填写也会返回客户基础信息预填，判定「未填」要看问题描述 -->
+            <template v-if="transcript.note && transcript.note.summary">
+              <!-- 基础信息：服务端联查客户资料带入，主管按此核对身份与咨询时间 -->
+              <el-descriptions :column="1" border size="small" class="ticket-basic">
+                <el-descriptions-item label="客户昵称">
+                  {{ transcript.note.customerNickname || `客户 ${transcript.session.customerId}` }}
+                </el-descriptions-item>
+                <el-descriptions-item label="联系方式">
+                  {{ transcript.note.customerPhone || transcript.note.customerEmail || '--' }}
+                </el-descriptions-item>
+                <el-descriptions-item label="咨询时间">
+                  {{ fmtDateTime(Number(transcript.note.consultedAtMillis ?? transcript.session.startedAtMillis ?? 0)) }}
+                </el-descriptions-item>
+              </el-descriptions>
+              <el-descriptions :column="1" border size="small" class="ticket-detail">
+                <el-descriptions-item label="问题描述">{{ transcript.note.summary }}</el-descriptions-item>
                 <el-descriptions-item label="问题分类">{{ categoryLabel(transcript.note.category) }}</el-descriptions-item>
+                <el-descriptions-item label="子分类">{{ transcript.note.subCategory || '--' }}</el-descriptions-item>
+                <el-descriptions-item label="客户诉求">{{ transcript.note.customerDemand || '--' }}</el-descriptions-item>
+                <el-descriptions-item label="明确信息">{{ transcript.note.verifiedInfo || '--' }}</el-descriptions-item>
                 <el-descriptions-item label="用户问题">{{ infoLabel(transcript.note.info) }}</el-descriptions-item>
                 <el-descriptions-item label="处理结果">{{ resultLabel(transcript.note.result) }}</el-descriptions-item>
                 <el-descriptions-item label="解决办法">{{ transcript.note.solution }}</el-descriptions-item>
+                <el-descriptions-item label="是否需要回访">{{ transcript.note.needFollowup ? '是' : '否' }}</el-descriptions-item>
+                <el-descriptions-item label="回访时间">
+                  {{ transcript.note.followupTimeMillis ? fmtDateTime(Number(transcript.note.followupTimeMillis)) : '--' }}
+                </el-descriptions-item>
+                <el-descriptions-item label="回访联系方式">
+                  {{ transcript.note.followupContact || '--' }}
+                </el-descriptions-item>
+                <el-descriptions-item label="附件凭证">
+                  <template v-if="ticketAttachments(transcript.note).length">
+                    <a v-for="file in ticketAttachments(transcript.note)" :key="file.fileId"
+                       :href="`/api/files/${file.fileId}`" target="_blank" class="ticket-file">
+                      {{ file.fileName }}
+                    </a>
+                  </template>
+                  <span v-else>--</span>
+                </el-descriptions-item>
               </el-descriptions>
             </template>
-            <p v-else class="sent-hint">该会话未填写小结</p>
+            <p v-else class="sent-hint">该会话未填写服务工单</p>
           </section>
         </div>
       </template>
@@ -148,7 +185,9 @@ import {
   shouldShowTimeDivider, statusLabel,
 } from '@sent/shared';
 import { unwrap } from '@/utils/http';
-import { chatApi, type ChatAuditRowVO, type ChatAuditStaffVO, type ChatTranscriptVO } from '@/api';
+import {
+  chatApi, type ChatAuditRowVO, type ChatAuditStaffVO, type ChatNoteVO, type ChatTranscriptVO,
+} from '@/api';
 import { useTable } from '@/composables/useTable';
 import SentTable from '@/components/SentTable.vue';
 import StatusTag from '@/components/StatusTag.vue';
@@ -162,7 +201,7 @@ const columns: TableColumn[] = [
   { prop: 'startedAtMillis', label: '聊天时间', minWidth: 180 },
   { prop: 'summary', label: '问题概述', minWidth: 180 },
   { prop: 'result', label: '解决情况', width: 110, align: 'center' },
-  { prop: 'noteStatus', label: '小结', width: 100, align: 'center' },
+  { prop: 'noteStatus', label: '工单', width: 100, align: 'center' },
 ];
 
 const filter = reactive({
@@ -173,7 +212,7 @@ const filter = reactive({
 const dateRange = ref<string[] | null>(null);
 
 const tableSizes = [10, 15, 20, 50, 100];
-const { rows, total, loading, page, size, load, onPage, onSize, onSearch } = useTable<ChatAuditRowVO>({
+const { rows, total, loading, page, size, load, onPage, onSize, onSearch, fetchAll } = useTable<ChatAuditRowVO>({
   fetch: (params) => unwrap(chatApi.auditSessions({
     ...params,
     staffId: filter.staffId,
@@ -218,6 +257,22 @@ function categoryLabel(value?: string | null): string {
 
 function infoLabel(value?: string | null): string {
   return CHAT_INFO_LABELS[value ?? ''] ?? statusLabel(value) ?? '--';
+}
+
+/** 附件 JSON → 只读凭证链接；格式不合法时退回空数组，不让整个审查弹窗崩掉。 */
+function ticketAttachments(note: ChatNoteVO): { fileId: string; fileName: string }[] {
+  if (!note.attachmentsJson) return [];
+  try {
+    const parsed = JSON.parse(note.attachmentsJson);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((item: unknown) => {
+      if (typeof item === 'string') return { fileId: item, fileName: item };
+      const row = item as { fileId?: string; fileName?: string };
+      return { fileId: String(row.fileId ?? ''), fileName: String(row.fileName ?? row.fileId ?? '') };
+    }).filter((row) => row.fileId);
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -307,6 +362,14 @@ onMounted(async () => {
   word-break: break-word;
 }
 .audit-msg-line.mine .audit-bubble { background: #12664f; color: #fff; border-color: #12664f; }
+/* 机器人回复：同样走左气泡（客户侧），但加一行小标签，别和客户原话混为一谈 */
+.audit-bubble--bot em {
+  display: block;
+  margin-bottom: 2px;
+  font-style: normal;
+  font-size: 11px;
+  color: #12664f;
+}
 .audit-system-card {
   max-width: 76%;
   padding: 8px 12px;
@@ -317,6 +380,13 @@ onMounted(async () => {
   word-break: break-word;
 }
 .audit-msg-empty { text-align: center; padding-top: 80px; }
+/* 工单字段比旧小结多，右侧独立滚动，保持与左聊天记录等高不互相挤压 */
+.audit-note {
+  min-width: 0; max-height: 62vh; overflow-y: auto;
+  padding: 12px; border: 1px solid #e6ece9; border-radius: 8px; background: #f7faf8;
+}
+.audit-note .ticket-basic { margin-bottom: 10px; }
+.audit-note .ticket-file { display: inline-block; margin-right: 10px; color: #12664f; }
 @media (max-width: 900px) {
   .audit-detail-grid { grid-template-columns: 1fr; }
 }

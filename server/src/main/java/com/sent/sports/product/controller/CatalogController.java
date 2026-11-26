@@ -5,6 +5,7 @@ import com.sent.sports.common.web.PageResult;
 import com.sent.sports.common.web.R;
 import com.sent.sports.product.dto.CatalogDtos;
 import com.sent.sports.product.service.ProductQueryService;
+import com.sent.sports.product.service.ProductSearchUseCase;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -25,9 +26,12 @@ import java.util.List;
 public class CatalogController {
 
     private final ProductQueryService productQueryService;
+    private final ProductSearchUseCase productSearchUseCase;
 
-    public CatalogController(ProductQueryService productQueryService) {
+    public CatalogController(ProductQueryService productQueryService,
+                             ProductSearchUseCase productSearchUseCase) {
         this.productQueryService = productQueryService;
+        this.productSearchUseCase = productSearchUseCase;
     }
 
     @GetMapping("/products")
@@ -36,7 +40,7 @@ public class CatalogController {
             @RequestParam(required = false) String keyword,
             @ModelAttribute PageQuery page) {
         CatalogDtos.ProductFilter filter = new CatalogDtos.ProductFilter(categoryId, keyword);
-        return R.ok(productQueryService.search(filter, page));
+        return R.ok(productSearchUseCase.search(filter, page));
     }
 
     /**
@@ -46,7 +50,7 @@ public class CatalogController {
     @GetMapping("/products/suggest")
     public R<List<CatalogDtos.SuggestVO>> suggest(@RequestParam String keyword,
                                                   @RequestParam(defaultValue = "10") int limit) {
-        return R.ok(productQueryService.suggest(keyword, limit));
+        return R.ok(productSearchUseCase.suggest(keyword, limit));
     }
 
     @GetMapping("/products/{productId}")

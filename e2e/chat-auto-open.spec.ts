@@ -11,7 +11,7 @@
  *   4) 全程无 console error。
  */
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
-import { startConsultation } from './chat-helpers';
+import { clearOpenSessions, startConsultation } from './chat-helpers';
 
 const USER_URL = process.env.E2E_USER_URL ?? 'http://127.0.0.1:5173';
 const CS_URL = process.env.E2E_CS_URL ?? 'http://127.0.0.1:5175';
@@ -65,24 +65,16 @@ test('单个用户进线：工作台自动弹出该会话聊天框，无需手�
   const userToken = userLogin?.data?.accessToken as string;
   expect(userToken).toBeTruthy();
 
-  // 清场：全部离线，关掉该客户未结束会话
+  // 清场：全部离线 → 9001 在线（离线坐席看不到排队，close 只对 ACTIVE 生效）→ 分页扫全量关掉未结束会话
   for (const staffId of STAFF_IDS) {
     await api(request, 'POST', '/admin/chat/presence', { staffId, presence: 'OFFLINE' }, adminToken);
   }
   // 先把 9001 切在线再清场：离线坐席的 /sessions/open 不下发排队栏，且 close 只对 ACTIVE 生效，
   // 直接按离线队列去关，那两条 2026-06 的 WAITING 演示会话永远清不掉，
-  // 9001 一上线就被补位成 ACTIVE，工作台开场就多出一个 Tab（`.el-tabs__item` 计数断言必挂）。
+  // 9001 一上线就被补位成 ACTIVE，工作台开场就多出一个会话（自动弹窗断言必挂）。
   await api(request, 'POST', '/admin/chat/presence', { staffId: 9001, presence: 'ONLINE' }, adminToken);
-  // 清「所有」未结束会话：排队栏（/sessions/open）不受分页影响，能捞到 id 最小、落在列表最后一页的
-  // 两条 2026-06 演示会话——服务端启动时 DemoDataGenerator 会把它们重置成 WAITING「待接入」
-  const queue = await api(request, 'GET', '/admin/chat/sessions/open?staffId=9001', undefined, adminToken);
-  const listed = await api(request, 'GET', '/admin/chat/sessions?page=1&size=100', undefined, adminToken);
-  const openRows: any[] = [...(queue?.data?.waiting ?? []), ...(queue?.data?.active ?? []), ...(listed?.data?.list ?? [])];
-  for (const row of openRows) {
-    if (row.status !== 'CLOSED') {
-      await api(request, 'POST', `/admin/chat/sessions/${row.sessionId}/close`, { reason: 'DONE' }, adminToken);
-    }
-  }
+  // clearOpenSessions 会分页扫全量：演示库已 100+ 行，最早的僵尸会话落在第 2 页之外
+  await clearOpenSessions(request, adminToken);
   // 单坐席：只把 9001 设为在线，客户进线应自动分配给 9001（ACTIVE）
   await api(request, 'POST', '/admin/chat/presence', { staffId: 9001, presence: 'ONLINE' }, adminToken);
   const created = await api(request, 'POST', '/chat/sessions', { customerId: CUSTOMER_ID, vip: false }, userToken);
@@ -105,10 +97,10 @@ test('单个用户进线：工作台自动弹出该会话聊天框，无需手�
     await adminPage.goto(join(CS_URL, '/workbench'));
     await expect(adminPage.locator('.el-tag', { hasText: 'WebSocket 已连接' })).toBeVisible({ timeout: 20_000 });
 
-    // 关键：不点左侧会话，Tab 应自动打开（含该会话号）
-    const tab = adminPage.locator('.el-tabs__item', { hasText: `#${sessionId}` }).first();
-    await expect(tab, '第一个用户进线应自动打开聊天 Tab，无需手动点击').toBeVisible({ timeout: 20_000 });
-    await expect(tab, '自动打开的 Tab 应为当前激活').toHaveClass(/is-active/);
+    // 关键：不点左侧会话，聊天区应自动打开该会话（2026-11-25 起顶部 Tab 条改为左侧列表切换）
+    const panel = adminPage.locator(`.chat-panel[data-session-id="${sessionId}"]`);
+    await expect(panel, '第一个用户进线应自动打开聊天窗，无需手动点击').toBeVisible({ timeout: 20_000 });
+    await expect(adminPage.locator('.chat-head__sub'), '聊天区应指向该会话').toContainText(`会话 #${sessionId}`);
 
     // 聊天框就绪：消息输入区可见，右侧顾客历史订单侧栏也跟着该客户加载
     await expect(adminPage.getByPlaceholder('输入消息后回车发送'), '聊天输入框应自动就绪').toBeVisible({ timeout: 15_000 });

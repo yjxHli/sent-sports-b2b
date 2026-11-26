@@ -7,6 +7,7 @@
           <h3 class="section-title">企业客户</h3>
           <div ref="leftTableRef" class="enterprise-table-wrap">
             <SentTable
+              :select-all-rows="exportAll"
               :columns="columns"
               :rows="rows"
               :total="total"

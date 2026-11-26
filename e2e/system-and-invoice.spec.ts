@@ -12,7 +12,8 @@ import { test, expect, type APIRequestContext, type Page } from '@playwright/tes
  * - 发票搜索必须命中后端真实过滤结果（不是前端截断），总数收敛到 1 条；
  * - 员工 / 角色必须有真实库行（sys_staff 6 行、sys_role 6 行）；
  * - 角色权限保存后刷新页面仍生效（证明 updateRolePerms 真落库，不是返回占位 VO）；
- * - 业务参数至少能读到种子参数，且编辑保存后回读一致。
+ * - 系统配置中心（2026-11-25 由「业务参数」改造）：接口下发中文名与说明、页面首列是中文名 +
+ *   小字键名、弹窗先看说明再填值、改完能回读（详见第 4 节用例注释）。
  */
 const ADMIN_URL = process.env.E2E_ADMIN_URL ?? 'http://127.0.0.1:5174/admin/';
 const API_URL = (process.env.E2E_API_URL ?? 'http://127.0.0.1:8088/api').replace(/\/+$/, '');
@@ -48,8 +49,20 @@ async function ensureIssuedInvoice(request: APIRequestContext): Promise<void> {
   });
 }
 
-async function login(page: Page): Promise<void> {
-  await page.goto(ADMIN_URL + 'login');
+/** 直接走接口登录拿令牌：验「接口返回中文名」时不必为了令牌先跑一遍页面 */
+async function adminToken(request: APIRequestContext): Promise<string> {
+  const res = await request.post(`${API_URL}/auth/login`, {
+    data: {
+      username: 'admin', password: '123456', aud: 'admin',
+      deviceId: `e2e-config-${Date.now()}`,
+    },
+  });
+  const token = (await res.json())?.data?.accessToken as string;
+  expect(token, '管理端登录失败，后面的配置断言都无从谈起').toBeTruthy();
+  return token;
+}
+
+async function login(page: Page): Promise<void> {  await page.goto(ADMIN_URL + 'login');
   await page.waitForTimeout(900);
   if (page.url().includes('login')) {
     await page.getByPlaceholder('用户名').fill('admin');
@@ -95,6 +108,10 @@ async function search(page: Page, placeholder: string, value: string, apiPath: s
 /* ------------------------------------------------------------------ */
 /* 1. 发票管理搜索                                                      */
 /* ------------------------------------------------------------------ */
+
+// 数据强依赖：本文件内的用例共享演示库状态（购物车/库存/券/发票/会话/配置），
+// 必须按书写顺序在同一个 worker 里跑完，禁止拆到多 worker 并行。
+test.describe.configure({ mode: 'serial' });
 
 test('发票管理：可按发票 ID / 发票号 / 客户 ID 搜索', async ({ page, request }) => {
   await login(page);
@@ -248,53 +265,109 @@ test('角色权限矩阵：应显示真实角色且权限可保存', async ({ pa
 });
 
 /* ------------------------------------------------------------------ */
-/* 4. 业务参数：种子参数可读 + 编辑保存                                  */
+/* 4. 系统配置中心：中文名可读、说明可见、编辑保存后回读一致              */
 /* ------------------------------------------------------------------ */
 
-test('业务参数：应有默认参数且编辑后回读一致', async ({ page }) => {
+/**
+ * 2026-11-25 改造：原「业务参数」只有 `order.pay.timeout.minutes | 30` 两列，
+ * 运营看不出这一项是什么、填错了会怎样。现在改成「系统配置中心」：
+ *
+ * 断言链（真实读写）：
+ *   1) 接口 `GET /api/admin/configs` 必须下发中文名与说明（去极客化的真源在后端字典）；
+ *   2) 页面首列是中文名 + 小字键名，说明列有内容，键名不能再当主标题；
+ *   3) 弹窗里先看到说明再填值，数字类填字母被拦下（前端即时挡一次，后端还有一道）；
+ *   4) 改值 → 保存 → 列表显示「45 分钟」→ 刷新仍生效 → 改回原值（用例可重复跑）。
+ */
+test('系统配置中心：中文名 + 说明可见，编辑保存后回读一致', async ({ page, request }) => {
+  // 接口口径先验：页面展示的中文名来自后端字典，不是前端自己拼的
+  const token = await adminToken(request);
+  const listed = await request.get(`${API_URL}/admin/configs`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const configs: any[] = (await listed.json())?.data ?? [];
+  const timeout = configs.find((item) => item.configKey === 'order.pay.timeout.minutes');
+  expect(timeout, '接口应返回种子配置 order.pay.timeout.minutes').toBeTruthy();
+  expect(timeout.configName, 'config_name 必须是中文名').toBe('订单支付超时时间');
+  expect(String(timeout.description)).toContain('自动取消');
+  expect(timeout.displayValue).toBe(`${timeout.configValue} 分钟`);
+  const original: string = String(timeout.configValue);
+  const marker = original === '45' ? '46' : '45';
+
   await login(page);
   await page.goto(ADMIN_URL + 'system/config');
-  await page.waitForSelector('.el-table__body-wrapper tbody tr');
-  await page.waitForTimeout(1200);
+  await expect(page.locator('h2.sent-page-title')).toHaveText('系统配置中心', { timeout: 15_000 });
+  await page.waitForSelector('[data-testid="config-list"] .el-table__body-wrapper tbody tr');
+  await page.waitForTimeout(800);
 
-  const keys = await cellTexts(page, 1);
-  const values = await cellTexts(page, 2);
-  console.log('参数行数:', keys.length, keys.slice(0, 5).join(','));
-  expect(keys.length).toBeGreaterThanOrEqual(5);
-  await expect(page.getByText('暂无数据')).toHaveCount(0);
+  // 首列：中文名当主标题，键名降级为小字；说明列必须有内容
+  const row = page.locator('[data-testid="config-list"] .el-table__body-wrapper tbody tr')
+    .filter({ hasText: '订单支付超时时间' });
+  await expect(row, '列表应按中文名展示，而不是只显示英文键名').toHaveCount(1);
+  await expect(row).toContainText('order.pay.timeout.minutes');
+  await expect(row).toContainText('自动取消');
+  const nameFontSize = await row.locator('.cfg-item__name').evaluate(
+    (el) => getComputedStyle(el as HTMLElement).fontSize);
+  const keyFontSize = await row.locator('.cfg-item__key').evaluate(
+    (el) => getComputedStyle(el as HTMLElement).fontSize);
+  expect(parseFloat(nameFontSize), '配置项名称要比键名大，否则还是极客视图')
+    .toBeGreaterThan(parseFloat(keyFontSize));
 
-  // 编辑首行参数值 → 保存 → 刷新回读 → 再改回原值（用例可重复跑，不污染演示数据）
-  const key = keys[0];
-  const original = values[0];
-  const marker = '业务参数回归值';
+  async function editValue(next: string): Promise<void> {
+    await row.getByTestId('config-edit-btn').click();
+    const dialog = page.locator('[data-testid="config-dialog"]');
+    await expect(dialog, '点「修改」应弹出表单').toBeVisible({ timeout: 10_000 });
+    // 输入框上方必须先说明「改这一项会发生什么」
+    await expect(dialog).toContainText('自动取消');
 
-  async function editValue(value: string): Promise<void> {
-    await page.locator('.el-table__row', { hasText: key }).first()
-      .getByRole('button', { name: '编辑' }).click();
-    await page.waitForTimeout(400);
-    const valueInput = page.locator('.el-dialog__body input').nth(1);
-    await expect(valueInput).toBeVisible({ timeout: 5000 });
-    await valueInput.fill(value);
+    const input = page.getByTestId('config-value-input');
+    await expect(input).toBeVisible({ timeout: 5000 });
+    await input.fill(next);
     await Promise.all([
       page.waitForResponse(
-        (r) => r.url().includes('/api/admin/params') && r.request().method() === 'PUT',
-        { timeout: 15000 },
+        (r) => r.url().includes('/api/admin/configs/order.pay.timeout.minutes')
+          && r.request().method() === 'PUT',
+        { timeout: 15_000 },
       ),
-      page.getByRole('button', { name: '保存' }).click(),
+      page.getByTestId('config-save-btn').click(),
     ]);
-    await page.waitForTimeout(900);
-    await page.reload();
-    await page.waitForSelector('.el-table__body-wrapper tbody tr');
-    await page.waitForTimeout(1200);
+    await expect(dialog).toBeHidden({ timeout: 10_000 });
+    await page.waitForTimeout(600);
   }
 
-  await editValue(marker);
-  const readBack = await cellTexts(page, 2);
-  const idx = (await cellTexts(page, 1)).indexOf(key);
-  console.log('回读参数:', key, '→', readBack[idx]);
-  expect(readBack[idx]).toBe(marker);
+  // 非法值：数字类配置填中文，前端直接拦下，不发请求
+  await row.getByTestId('config-edit-btn').click();
+  await expect(page.locator('[data-testid="config-dialog"]')).toBeVisible({ timeout: 10_000 });
+  await page.getByTestId('config-value-input').fill('半小时');
+  await page.getByTestId('config-save-btn').click();
+  await expect(page.locator('.el-message').last(),
+    '数字类配置填中文应提示只能填非负整数').toContainText('只能填非负整数', { timeout: 8000 });
+  await page.getByTestId('config-cancel-btn').click();
+  await expect(page.locator('[data-testid="config-dialog"]')).toBeHidden({ timeout: 8000 });
 
-  await editValue(original);
-  const restored = await cellTexts(page, 2);
-  expect(restored[(await cellTexts(page, 1)).indexOf(key)]).toBe(original);
+  await editValue(marker);
+  await expect(row, '保存后列表应显示带单位的新值').toContainText(`${marker} 分钟`);
+
+  await page.reload();
+  await page.waitForSelector('[data-testid="config-list"] .el-table__body-wrapper tbody tr');
+  await page.waitForTimeout(900);
+  const restoredRow = page.locator('[data-testid="config-list"] .el-table__body-wrapper tbody tr')
+    .filter({ hasText: '订单支付超时时间' });
+  await expect(restoredRow, '刷新后仍是新值，证明真落库而不是只改了内存').toContainText(`${marker} 分钟`);
+
+  // 改回原值，保证演示库与后续用例不受影响
+  await restoredRow.getByTestId('config-edit-btn').click();
+  await expect(page.locator('[data-testid="config-dialog"]')).toBeVisible({ timeout: 10_000 });
+  await page.getByTestId('config-value-input').fill(original);
+  await Promise.all([
+    page.waitForResponse(
+      (r) => r.url().includes('/api/admin/configs/order.pay.timeout.minutes')
+        && r.request().method() === 'PUT',
+      { timeout: 15_000 },
+    ),
+    page.getByTestId('config-save-btn').click(),
+  ]);
+  await page.waitForSelector('[data-testid="config-list"] .el-table__body-wrapper tbody tr');
+  await expect(page.locator('[data-testid="config-list"] .el-table__body-wrapper tbody tr')
+    .filter({ hasText: '订单支付超时时间' })).toContainText(`${original} 分钟`);
 });
+

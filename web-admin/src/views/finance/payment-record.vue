@@ -166,6 +166,7 @@
     <div class="sent-panel">
       <h3 class="section-title">核销与冲销明细</h3>
       <SentTable
+        :select-all-rows="exportAllWriteOffs"
         :columns="writeOffColumns"
         :rows="writeOffRows"
         :total="writeOffTotal"

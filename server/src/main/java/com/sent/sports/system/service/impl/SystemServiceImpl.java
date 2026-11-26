@@ -5,13 +5,15 @@ import com.sent.sports.common.anno.UseCase;
 import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
 import com.sent.sports.common.util.SensitiveWordFilter;
-import com.sent.sports.common.web.PageQuery;
 import com.sent.sports.common.web.PageResult;
 import com.sent.sports.report.dto.DashboardReportDtos;
 import com.sent.sports.report.service.DashboardReportService;
 import com.sent.sports.stock.service.StockQueryService;
 import com.sent.sports.system.dto.admin.AdminSystemDtos;
 import com.sent.sports.system.dto.admin.LogQuery;
+import com.sent.sports.system.dto.admin.StaffQuery;
+import com.sent.sports.system.domain.ConfigValueType;
+import com.sent.sports.system.domain.SystemConfigCatalog;
 import com.sent.sports.system.mapper.OperationLogMapper;
 import com.sent.sports.system.mapper.PermissionMapper;
 import com.sent.sports.system.mapper.RoleMapper;
@@ -29,6 +31,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -191,10 +194,12 @@ public class SystemServiceImpl implements SystemService {
     }
 
     @Override
-    public PageResult<AdminSystemDtos.StaffVO> listStaff(PageQuery page) {
-        Page<StaffAdminRow> dbPage = new Page<>(page.getPage(), page.getSize());
-        staffMapper.selectAdminPage(dbPage);
-        long total = staffMapper.countAdmin();
+    public PageResult<AdminSystemDtos.StaffVO> listStaff(StaffQuery query) {
+        String keyword = query.normalizedKeyword();
+        Boolean enabled = query.normalizedEnabled();
+        Page<StaffAdminRow> dbPage = new Page<>(query.getPage(), query.getSize());
+        staffMapper.selectAdminPage(dbPage, keyword, enabled);
+        long total = staffMapper.countAdmin(keyword, enabled);
         dbPage.setTotal(total);
         List<AdminSystemDtos.StaffVO> list = dbPage.getRecords().stream()
                 .map(row -> new AdminSystemDtos.StaffVO(
@@ -205,7 +210,7 @@ public class SystemServiceImpl implements SystemService {
                         row.getPhone(),
                         DEFAULT_STAFF_STATUS.equals(row.getStatus())))
                 .toList();
-        return PageResult.of(list, total, page.getPage(), page.getSize());
+        return PageResult.of(list, total, query.getPage(), query.getSize());
     }
 
     /** 角色编码 → 角色行；空白回退 {@link #DEFAULT_ROLE_CODE}，编码不存在按参数错误处理。 */
@@ -299,6 +304,127 @@ public class SystemServiceImpl implements SystemService {
         return rows.stream()
                 .map(row -> new AdminSystemDtos.ParamVO(row.getParamKey(), row.getParamValue()))
                 .toList();
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* 系统配置中心（配置字典化）                                            */
+    /* ------------------------------------------------------------------ */
+
+    /**
+     * 列表口径：字典里的键按「业务分组顺序」排（订单 → 库存 → 财务 → 会员），
+     * 字典外的键按键名升序垫在最后。
+     *
+     * <p>不能直接按 {@code config_key} 排序——那样第一页全是 {@code finance.*}，
+     * 运营想改「订单多久不付款就关闭」得先翻两页。</p>
+     */
+    @Override
+    public List<AdminSystemDtos.ConfigVO> listConfigs() {
+        List<ParamRow> rows = configMapper.selectAll();
+        if (rows == null || rows.isEmpty()) {
+            return List.of();
+        }
+        return rows.stream()
+                .map(this::toConfigVo)
+                .sorted(Comparator.comparingInt(this::configOrder)
+                        .thenComparing(AdminSystemDtos.ConfigVO::configKey))
+                .toList();
+    }
+
+    /** 字典声明顺序即业务分组顺序；未登记的键一律垫底。 */
+    private int configOrder(AdminSystemDtos.ConfigVO vo) {
+        return SystemConfigCatalog.of(vo.configKey())
+                .map(SystemConfigCatalog::ordinal)
+                .orElse(Integer.MAX_VALUE);
+    }
+
+    @Override
+    @UseCase
+    public AdminSystemDtos.ConfigVO updateConfigValue(String configKey,
+                                                     AdminSystemDtos.ConfigValueForm form,
+                                                     Long staffId) {
+        String key = trim(configKey);
+        if (key == null) {
+            throw new BizException(ErrorCode.PARAM_INVALID, "配置键不能为空");
+        }
+        ParamRow existing = findConfig(key);
+        if (existing == null) {
+            // 只允许改已存在的键：允许新建就等于允许「拼错一个字母」凭空造出一条没人读的配置，
+            // 运营以为改好了，系统照旧按老值跑
+            throw new BizException(ErrorCode.NOT_FOUND);
+        }
+        String raw = form == null ? null : form.configValue();
+        String value = SystemConfigCatalog.of(key)
+                .map(meta -> meta.normalize(raw))
+                .orElseGet(() -> normalizeTextValue(raw));
+
+        configMapper.upsert(key, value);
+        // 超时时间 / 税率这类值会直接改变全站行为，必须留痕：谁、什么时候、把哪项从什么改成了什么。
+        // 留痕失败不回滚业务：值已经生效，这里再抛错只会让运营以为「没改成功」而重复提交。
+        try {
+            operationLogMapper.insert("SYSTEM", "CONFIG_UPDATE", "SYS_CONFIG", key,
+                    "配置「" + displayNameOf(key, existing) + "」："
+                            + displayOf(key, existing.getParamValue()) + " → " + displayOf(key, value),
+                    staffId);
+        } catch (RuntimeException ignored) {
+            // 审计表异常不阻塞配置生效；接口日志里有 trace，事后可查
+        }
+
+        ParamRow updated = new ParamRow();
+        updated.setParamKey(key);
+        updated.setParamValue(value);
+        updated.setRemark(existing.getRemark());
+        return toConfigVo(updated);
+    }
+
+    private ParamRow findConfig(String key) {
+        List<ParamRow> rows = configMapper.selectAll();
+        if (rows == null) {
+            return null;
+        }
+        return rows.stream().filter(row -> key.equals(row.getParamKey())).findFirst().orElse(null);
+    }
+
+    /** 字典外的键按自由文本处理：只去空格、限长，不对内容做猜测。 */
+    private String normalizeTextValue(String raw) {
+        String value = raw == null ? "" : raw.trim();
+        if (value.isEmpty()) {
+            throw new BizException(ErrorCode.PARAM_INVALID, "配置值不能为空");
+        }
+        if (value.length() > 1024) {
+            throw new BizException(ErrorCode.PARAM_INVALID, "配置值最长 1024 个字符");
+        }
+        return value;
+    }
+
+    private String displayNameOf(String key, ParamRow row) {
+        return SystemConfigCatalog.of(key)
+                .map(SystemConfigCatalog::displayName)
+                .orElseGet(() -> row.getRemark() == null || row.getRemark().isBlank()
+                        ? key : row.getRemark());
+    }
+
+    private String displayOf(String key, String value) {
+        String raw = value == null ? "" : value;
+        return SystemConfigCatalog.of(key)
+                .map(meta -> meta.display(raw))
+                .orElse(raw.isBlank() ? "未设置" : raw);
+    }
+
+    /**
+     * 行 → 配置视图。字典命中时中文名 / 说明 / 单位 / 类型全部来自字典；
+     * 未命中（历史遗留或临时排查手工加的键）回落键名 + 库里备注，按自由文本展示。
+     */
+    private AdminSystemDtos.ConfigVO toConfigVo(ParamRow row) {
+        String key = row.getParamKey();
+        String value = row.getParamValue() == null ? "" : row.getParamValue();
+        String remark = row.getRemark() == null ? "" : row.getRemark();
+        return SystemConfigCatalog.of(key)
+                .map(meta -> new AdminSystemDtos.ConfigVO(key, meta.displayName(), meta.description(),
+                        meta.groupName(), value, meta.display(value), meta.unit(),
+                        meta.type().name(), remark))
+                .orElseGet(() -> new AdminSystemDtos.ConfigVO(key, key, remark, "其它",
+                        value, value.isBlank() ? "未设置" : value, "",
+                        ConfigValueType.TEXT.name(), remark));
     }
 
     /* ------------------------------------------------------------------ */

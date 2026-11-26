@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { readFileSync } from 'node:fs';
+import { sql, sqlNumber } from './db';
 
 /**
  * 财务三处缺陷验收（TDD 红→绿）。
@@ -13,8 +14,20 @@ import { readFileSync } from 'node:fs';
  *
  * 断言：剩余天数按真实系统日期算出、应收台账能翻页且 openOnly 下推 SQL、
  * 核销超额给出带具体金额的提示、发票能预览 blob PDF 并真的下到一个 %PDF 文件。
+ *
+ * 数据前置（2026-11-26 收尾）：9002 的未结清应收过去靠种子里的 `ensureTiny*` 兜底，
+ * 一旦被核销掉就会让「共 N 条 > 一页」不成立。现在改为**用例自己造**：
+ * beforeEach 补齐到 14 条（一页 10 条），afterAll 按 id 精确删除，既不依赖种子也不留垃圾。
  */
 const ADMIN_URL = process.env.E2E_ADMIN_URL ?? 'http://127.0.0.1:5174/admin/';
+const CUSTOMER_ID = 9002;
+/** 一页 10 条，>10 才可能翻到第 2 页；留 4 条余量给「核销过程中被关掉几张」的情况 */
+const SEED_RECEIVABLE_TARGET = 14;
+
+/** 本次用例自建的应收 id（收尾精确删除，不动演示库既有台账） */
+const seededReceivableIds: number[] = [];
+/** 兜底自建订单 id（只有在「没有现成订单可挂应收」时才会用到） */
+const seededOrderIds: number[] = [];
 
 async function login(page: Page): Promise<void> {
   await page.goto(ADMIN_URL + 'login');
@@ -40,6 +53,106 @@ function diffDays(dateText: string): number | null {
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   return Math.round((target.getTime() - today.getTime()) / 86_400_000);
 }
+
+/**
+ * 未结清应收条数——必须与页面 `openOnly=true` 同一口径
+ * （`ReceivableMapper.countReceivable`：`deleted = 0 AND status <> 'CLOSED'`）。
+ */
+function openReceivableCount(): number {
+  return sqlNumber(
+    'SELECT COUNT(*) FROM receivable '
+    + `WHERE deleted = 0 AND status <> 'CLOSED' AND customer_id = ${CUSTOMER_ID}`,
+  );
+}
+
+/**
+ * 兜底自建一笔订单（只写订单头 + 明细，不碰库存）。
+ * 只在「9002 名下已经没有可挂应收的订单」时才用得上，收尾会连订单一起删。
+ */
+function seedOrder(): number {
+  const orderNo = `FI${Date.now().toString().slice(-7)}${seededOrderIds.length}`;
+  sql(`INSERT INTO orders (order_no, customer_id, status, pay_status, goods_amount_cent, payable_cent, paid_cent)
+VALUES ('${orderNo}', ${CUSTOMER_ID}, 'COMPLETED', 'UNPAID', 12000, 12000, 0);
+SET @oid = LAST_INSERT_ID();
+INSERT INTO order_item (order_id, sku_id, qty, unit_price_cent, amount_cent)
+VALUES (@oid, (SELECT id FROM sku ORDER BY id ASC LIMIT 1), 1, 12000, 12000);`);
+  const id = sqlNumber(`SELECT id FROM orders WHERE order_no = '${orderNo}'`);
+  if (id > 0) {
+    seededOrderIds.push(id);
+  }
+  return id;
+}
+
+/**
+ * 把 9002 的未结清应收补齐到 `target` 条（默认 14 > 一页 10 条）。
+ *
+ * <p>优先复用「9002 名下还没有应收台账的订单」——这样收尾只需要删应收行，
+ * 订单表一行不动，不会把「订单列表/工作台」这类并行用例的可见数据搅乱。</p>
+ */
+function ensureOpenReceivables(target = SEED_RECEIVABLE_TARGET): void {
+  const need = target - openReceivableCount();
+  if (need <= 0) {
+    return;
+  }
+  const reusable = sql(
+    'SELECT o.id FROM orders o '
+    + `WHERE o.customer_id = ${CUSTOMER_ID} `
+    + 'AND NOT EXISTS (SELECT 1 FROM receivable r WHERE r.order_id = o.id) '
+    + `ORDER BY o.id DESC LIMIT ${need}`,
+  ).split(/\r?\n/).map((line) => Number(line.trim())).filter((id) => id > 0);
+
+  const orderIds = [...reusable];
+  while (orderIds.length < need) {
+    const created = seedOrder();
+    if (created <= 0) {
+      break;
+    }
+    orderIds.push(created);
+  }
+
+  orderIds.forEach((orderId, i) => {
+    // 一条 SQL 里插完立刻取 id（每次 sql() 都是新连接，跨语句的 LAST_INSERT_ID() 拿不到）
+    const id = sqlNumber(
+      'INSERT INTO receivable (order_id, customer_id, amount_cent, received_cent, due_date, status) '
+      + `VALUES (${orderId}, ${CUSTOMER_ID}, ${12000 + i * 100}, 0, `
+      + `DATE_ADD(CURDATE(), INTERVAL ${7 + i} DAY), 'NORMAL'); `
+      + 'SELECT LAST_INSERT_ID();',
+    );
+    if (id > 0) {
+      seededReceivableIds.push(id);
+    }
+  });
+  console.log(`应收台账补数据：原有 ${target - need} 条，补 ${seededReceivableIds.length} 条 → ${target} 条`);
+}
+
+/** 收尾：按 id 精确删掉本次自建的应收（连带兜底订单），演示库既有台账一行不动 */
+function cleanupSeededReceivables(): void {
+  if (seededReceivableIds.length) {
+    sql(`DELETE FROM receivable WHERE id IN (${seededReceivableIds.join(',')})`);
+    seededReceivableIds.length = 0;
+  }
+  if (seededOrderIds.length) {
+    const ids = seededOrderIds.join(',');
+    sql(`DELETE oi FROM order_item oi WHERE oi.order_id IN (${ids});
+DELETE FROM orders WHERE id IN (${ids});`);
+    seededOrderIds.length = 0;
+  }
+}
+
+// 数据强依赖：本文件内的用例共享演示库状态（购物车/库存/券/发票/会话/配置），
+// 必须按书写顺序在同一个 worker 里跑完，禁止拆到多 worker 并行。
+test.describe.configure({ mode: 'serial' });
+
+// 前置：每个用例开跑前把 9002 的未结清应收补到 14 条（够翻到第 2 页）。
+// 已有足够数据时只做一次 COUNT，不写库；缺失时自建并登记 id。
+test.beforeEach(() => {
+  ensureOpenReceivables();
+});
+
+// 收尾：无论用例成功还是失败，都把自建的应收/订单删干净
+test.afterAll(() => {
+  cleanupSeededReceivables();
+});
 
 test('合同剩余天数按真实系统日期显示，不再是 --', async ({ page }) => {
   const errors: string[] = [];
@@ -87,7 +200,7 @@ test('核销与冲销的应收台账支持翻页，且只查未结清', async ({
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 
   await login(page);
-  // 带上客户 9002：该客户历史应收最多，能翻出第 2 页
+  // 带上客户 9002：未结清应收由本文件的 beforeEach 补到 14 条，保证能翻出第 2 页
   await page.goto(ADMIN_URL + 'finance/payment-record?customerId=9002');
   await page.waitForSelector('.el-table__body tbody tr');
   await page.locator('.el-checkbox').filter({ hasText: '仅看当前客户' }).first().click();

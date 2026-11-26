@@ -10,11 +10,19 @@ import com.sent.sports.customer.dto.admin.AdminCustomerDtos;
 import com.sent.sports.customer.mapper.CustomerMapper;
 import com.sent.sports.customer.mapper.po.CustomerPO;
 import com.sent.sports.customer.service.CustomerQueryService;
+import com.sent.sports.customer.service.dto.CustomerBrief;
+import com.sent.sports.customer.service.dto.CustomerContact;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 客户查询实现（收口阶段）：列表从桩换成 {@code customer} 表真分页。
@@ -61,6 +69,41 @@ public class CustomerQueryServiceImpl implements CustomerQueryService {
             return null;
         }
         return po.getType();
+    }
+
+    @Override
+    public Map<Long, CustomerBrief> briefsOf(Collection<Long> customerIds) {
+        if (customerIds == null || customerIds.isEmpty()) {
+            return Map.of();
+        }
+        // 去重 + 去 null：调用方（工作台）会把一屏会话的 customerId 直接丢进来，可能有重复
+        Set<Long> ids = customerIds.stream().filter(Objects::nonNull).collect(Collectors.toSet());
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, CustomerBrief> briefs = new HashMap<>(ids.size());
+        for (CustomerPO po : customerMapper.selectBatchIds(ids)) {
+            if (Integer.valueOf(1).equals(po.getDeleted())) {
+                continue; // 已软删客户不给展示信息，前端兜底成「客户 ID」
+            }
+            briefs.put(po.getId(), new CustomerBrief(po.getId(),
+                    blankToNull(po.getNickname()), blankToNull(po.getAvatarFileId())));
+        }
+        return briefs;
+    }
+
+    @Override
+    public CustomerContact contactOf(long customerId) {
+        CustomerPO po = customerMapper.selectById(customerId);
+        if (po == null || Integer.valueOf(1).equals(po.getDeleted())) {
+            return null;
+        }
+        return new CustomerContact(po.getId(), blankToNull(po.getNickname()),
+                blankToNull(po.getPhone()), blankToNull(po.getEmail()));
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     private static AdminCustomerDtos.CustomerRow toRow(CustomerPO po) {

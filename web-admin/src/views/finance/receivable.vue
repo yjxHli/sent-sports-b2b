@@ -3,6 +3,7 @@
     <h2 class="sent-page-title">应收台账</h2>
     <div class="sent-panel">
       <SentTable
+        :select-all-rows="exportAll"
         :columns="columns"
         :rows="rows"
         :total="total"

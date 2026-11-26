@@ -3,6 +3,7 @@
     <h2 class="sent-page-title">退款审核</h2>
     <div class="sent-panel">
       <SentTable
+        :select-all-rows="fetchAll"
         :columns="columns"
         :rows="rows"
         :total="total"
@@ -134,7 +135,7 @@ const router = useRouter();
 const status = ref<string>('');
 /** 退款单号 / 订单号模糊搜索（两者都匹配，客服拿到哪个号都能定位） */
 const keyword = ref('');
-const { rows, total, loading, page, size, load, onPage, onSize, onSearch } = useTable<any>({
+const { rows, total, loading, page, size, load, onPage, onSize, onSearch, fetchAll } = useTable<any>({
   fetch: (params) => unwrap(financeApi.refunds({
     ...params,
     status: status.value || undefined,

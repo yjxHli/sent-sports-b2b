@@ -9,7 +9,7 @@
  *      用户端排队条消失（收到 ASSIGNED）
  */
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
-import { startConsultation } from './chat-helpers';
+import { startConsultation, closeSessionWithTicket, fillMinimalTicket } from './chat-helpers';
 
 const USER_URL = process.env.E2E_USER_URL ?? 'http://127.0.0.1:5173';
 const CS_URL = process.env.E2E_CS_URL ?? 'http://127.0.0.1:5175';
@@ -92,7 +92,7 @@ async function resetOpenSessions(request: APIRequestContext, adminToken: string)
       const list: any[] = listed?.data?.list ?? [];
       const open = list.filter((row: any) => row.status !== 'CLOSED');
       for (const row of open) {
-        await apiPost(request, `/admin/chat/sessions/${row.sessionId}/close`, { reason: 'DONE' }, adminToken);
+        await closeSessionWithTicket(request, Number(row.sessionId), adminToken);
         closed += 1;
       }
       const total = Number(listed?.data?.total ?? 0);
@@ -164,7 +164,7 @@ test('并发上限 3 + 排队位置 + 关一个自动补位（多 Tab 上限 3�
     await expect(userPage.locator('.queue-banner')).toContainText('前方还有 0 人');
     await expect(userPage.getByPlaceholder('排队中，接入后可发送消息')).toBeDisabled();
 
-    // 5) 工作台：左侧 进行中 3 / 排队中 1，右侧最多 3 个 Tab
+    // 5) 工作台：左侧只剩「进行中 3」，排队只在顶部留一行提示（2026-11-25 用户要求删掉排队列表）
     await loginAdmin(adminPage, ADMIN_NAME, ADMIN_PASSWORD);
     await adminPage.goto(join(CS_URL, '/workbench'));
     await expect(
@@ -172,33 +172,30 @@ test('并发上限 3 + 排队位置 + 关一个自动补位（多 Tab 上限 3�
       '客服工作台 WS 必须已连接',
     ).toBeVisible({ timeout: 20_000 });
 
-    const activePanel = adminPage.locator('.list-panel').first();
-    const waitingPanel = adminPage.locator('.list-panel').nth(1);
+    const activePanel = adminPage.locator('[data-testid="active-panel"]');
     await expect(activePanel.locator('.count'), '进行中应为 3').toHaveText('3', { timeout: 20_000 });
-    await expect(waitingPanel.locator('.count'), '排队中应为 1').toHaveText('1');
-    await expect(waitingPanel.locator('.session-item')).toHaveCount(1);
-    await expect(waitingPanel.locator('.session-item')).toContainText('第 1 位');
+    await expect(adminPage.locator('[data-testid="queue-panel"]'), '排队列表已按需求删除').toHaveCount(0);
+    await expect(
+      adminPage.locator('[data-testid="queue-hint"]'),
+      '顶部应提示还有客户在排队（在线即自动接待，队列不再列表化）',
+    ).toContainText('另有');
 
-    // 打开 3 个 Tab
+    // 逐个点左侧会话切换：聊天区始终只有一个面板（顶部 Tab 条已删除）
     for (let i = 0; i < 3; i += 1) {
       await activePanel.locator('.session-item').nth(i).click();
+      await expect(adminPage.locator('.chat-panel'), '单会话视图只应有一个聊天面板').toHaveCount(1);
     }
-    await expect(adminPage.locator('.el-tabs__item'), '最多只能开 3 个 Tab').toHaveCount(3);
-
-    // 第 4 个被拒
-    await waitingPanel.locator('.session-item').first().click();
     await expect(
-      adminPage.locator('.el-message', { hasText: '最多同时打开 3 个会话' }),
-      '打开第 4 个会话应提示已达上限',
-    ).toBeVisible({ timeout: 5000 });
-    await expect(adminPage.locator('.el-tabs__item')).toHaveCount(3);
+      adminPage.locator('.wb__chip', { hasText: '我的并发' }).first(),
+      '并发名额应显示 3/3',
+    ).toContainText('3/3');
 
-    // 6) 在第一个 Tab 里结束会话 → 自动补位
+    // 6) 结束当前会话 → 自动补位排队客户
     // 顶栏「今日完成接待」是本次新增指标：结束一个会话后必须 +1（按本地自然日统计）
     const todayBefore = Number((await adminPage.locator('.today-stat__num').innerText()).trim());
     expect(Number.isFinite(todayBefore), '工作台顶栏应显示今日完成接待数').toBe(true);
 
-    await adminPage.locator('.el-tabs__item').first().click();
+    await fillMinimalTicket(adminPage);
     await adminPage.getByRole('button', { name: '结束会话' }).first().click();
     await adminPage.locator('.el-message-box').getByRole('button', { name: '确认结束' }).click();
     await expect(

@@ -4,6 +4,9 @@ import com.sent.sports.common.web.PageQuery;
 import com.sent.sports.common.web.PageResult;
 import com.sent.sports.refund.dto.RefundDtos;
 
+import java.util.List;
+import java.util.Set;
+
 /**
  * 退款查询门面（P4-22 接口契约，跨模块可用）。
  * <p>用户端「我的售后 / 详情」仍为 P4 桩（需绑定当前客户后补齐）；管理端审核列表在收口阶段
@@ -39,4 +42,10 @@ public interface RefundQueryService {
      * <p>退款单不存在按契约抛 {@code NOT_FOUND}，不返回半截空对象（前端拿空壳会白屏）。</p>
      */
     RefundDtos.RefundAuditDetailVO getAuditDetail(String refundNo);
+
+    /**
+     * 管理端订单列表用：批量给出这批订单中存在在途退款单（PENDING / REFUNDING）的订单号。
+     * <p>只读门面，order 模块经此接口取数，不直连 refund 的 Mapper（ArchUnit 规则 4）。</p>
+     */
+    Set<String> inFlightOrderNos(List<String> orderNos);
 }

@@ -1,11 +1,12 @@
 package com.sent.sports.system.controller.admin;
 
 import com.sent.sports.common.anno.RequirePerm;
-import com.sent.sports.common.web.PageQuery;
+import com.sent.sports.common.web.CurrentUser;
 import com.sent.sports.common.web.PageResult;
 import com.sent.sports.common.web.R;
 import com.sent.sports.system.dto.admin.AdminSystemDtos;
 import com.sent.sports.system.dto.admin.LogQuery;
+import com.sent.sports.system.dto.admin.StaffQuery;
 import com.sent.sports.system.service.SystemService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -37,8 +39,8 @@ public class AdminSystemController {
 
     @GetMapping("/staff")
     @RequirePerm("system:staff:manage")
-    public R<PageResult<AdminSystemDtos.StaffVO>> listStaff(@ModelAttribute PageQuery page) {
-        return R.ok(systemService.listStaff(page));
+    public R<PageResult<AdminSystemDtos.StaffVO>> listStaff(@ModelAttribute StaffQuery query) {
+        return R.ok(systemService.listStaff(query));
     }
 
     @PostMapping("/staff")
@@ -86,6 +88,33 @@ public class AdminSystemController {
     @RequirePerm("system:param:manage")
     public R<AdminSystemDtos.ParamVO> upsertParam(@Valid @RequestBody AdminSystemDtos.ParamForm form) {
         return R.ok(systemService.upsertParam(form));
+    }
+
+    /**
+     * 系统配置中心列表（2026-11-25）：每行带中文名 / 说明 / 单位 / 展示值。
+     * <p>{@code /params} 原样保留：老的调用方（脚本、旧页面、E2E）不受影响，
+     * 翻译只发生在读侧，不动存储。</p>
+     * <p>权限点用 {@code system:config}——与左侧菜单（{@code router/modules/business.ts}）
+     * 同一个键，避免出现「菜单看得见、点进去 403」的半通状态。</p>
+     */
+    @GetMapping("/configs")
+    @RequirePerm("system:config")
+    public R<List<AdminSystemDtos.ConfigVO>> listConfigs() {
+        return R.ok(systemService.listConfigs());
+    }
+
+    /**
+     * 修改单个配置值：键名走路径，取值按字典类型校验（数字 / 百分比 / 布尔 / 文本）。
+     * <p>为什么不用原来的 {@code PUT /params} 全量提交：配置项一旦多起来，一个整表单提交
+     * 只要有一项校验失败就整批回滚，运营分不清是哪一项填错了；单项提交的报错文案能直接带中文名。</p>
+     */
+    @PutMapping("/configs/{configKey}")
+    @RequirePerm("system:config")
+    public R<AdminSystemDtos.ConfigVO> updateConfigValue(
+            @PathVariable String configKey,
+            @Valid @RequestBody AdminSystemDtos.ConfigValueForm form,
+            @RequestAttribute(value = CurrentUser.ATTR, required = false) CurrentUser user) {
+        return R.ok(systemService.updateConfigValue(configKey, form, user == null ? null : user.userId()));
     }
 
     @GetMapping("/logs")

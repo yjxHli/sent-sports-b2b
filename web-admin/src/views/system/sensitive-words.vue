@@ -158,6 +158,7 @@ const CATEGORY_OPTIONS = [
 ];
 
 const columns: TableColumn[] = [
+  // 2026-11-26 用户要求：取消序号列；列表顺序由后端按分类+首字拼音给出
   { prop: 'word', label: '违禁词', minWidth: 160 },
   { prop: 'categoryLabel', label: '分类', width: 120 },
   { prop: 'enabled', label: '状态', width: 110, align: 'center' },

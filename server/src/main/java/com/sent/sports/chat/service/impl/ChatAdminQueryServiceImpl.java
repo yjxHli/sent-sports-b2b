@@ -3,6 +3,7 @@ package com.sent.sports.chat.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.sent.sports.chat.domain.ChatSessionNote;
 import com.sent.sports.chat.domain.PresenceStatus;
 import com.sent.sports.chat.dto.admin.ChatMetricsDtos;
 import com.sent.sports.chat.mapper.ChatAuditMapper;
@@ -25,6 +26,9 @@ import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
 import com.sent.sports.common.web.PageQuery;
 import com.sent.sports.common.web.PageResult;
+import com.sent.sports.customer.service.CustomerQueryService;
+import com.sent.sports.customer.service.dto.CustomerBrief;
+import com.sent.sports.customer.service.dto.CustomerContact;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
@@ -33,6 +37,8 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.stream.IntStream;
 
 /**
@@ -57,6 +63,8 @@ public class ChatAdminQueryServiceImpl implements ChatAdminQueryService {
     private final ChatSessionNoteMapper noteMapper;
     private final ChatQueryService chatQueryService;
     private final ChatMetricsMapper metricsMapper;
+    /** 客户展示信息（昵称 + 头像）：跨模块只经 customer 的 service 接口取，不碰对方表。 */
+    private final CustomerQueryService customerQueryService;
 
     public ChatAdminQueryServiceImpl(ChatSessionMapper chatSessionMapper,
                                      AgentPresenceRepository presenceRepository,
@@ -65,7 +73,8 @@ public class ChatAdminQueryServiceImpl implements ChatAdminQueryService {
                                      ChatAuditMapper auditMapper,
                                      ChatSessionNoteMapper noteMapper,
                                      ChatQueryService chatQueryService,
-                                     ChatMetricsMapper metricsMapper) {
+                                     ChatMetricsMapper metricsMapper,
+                                     CustomerQueryService customerQueryService) {
         this.chatSessionMapper = chatSessionMapper;
         this.presenceRepository = presenceRepository;
         this.satisfactionMapper = satisfactionMapper;
@@ -73,6 +82,7 @@ public class ChatAdminQueryServiceImpl implements ChatAdminQueryService {
         this.auditMapper = auditMapper;
         this.noteMapper = noteMapper;
         this.chatQueryService = chatQueryService;
+        this.customerQueryService = customerQueryService;
         this.metricsMapper = metricsMapper;
     }
 
@@ -100,9 +110,19 @@ public class ChatAdminQueryServiceImpl implements ChatAdminQueryService {
 
     @Override
     public OpenSessionsResult openSessions(long staffId) {
-        List<OpenSessionsResult.Row> active = chatSessionMapper.selectVisibleActiveByStaff(staffId).stream()
-                .map(po -> new OpenSessionsResult.Row(po.getId(), po.getStatus(), po.getStaffId(),
-                        po.getCustomerId(), toMillis(po.getCreatedAt()), 0))
+        List<ChatSessionPO> activePos = chatSessionMapper.selectVisibleActiveByStaff(staffId);
+        // 一次性批量取客户昵称/头像（2026-11-25：左侧列表要显示「进线用户是谁」）。
+        // 查不到的客户留在 briefs 之外，行里给 null，前端兜底成「客户 {id}」。
+        Map<Long, CustomerBrief> briefs = customerQueryService.briefsOf(
+                activePos.stream().map(ChatSessionPO::getCustomerId).filter(Objects::nonNull).toList());
+        List<OpenSessionsResult.Row> active = activePos.stream()
+                .map(po -> {
+                    CustomerBrief brief = briefs.get(po.getCustomerId());
+                    return new OpenSessionsResult.Row(po.getId(), po.getStatus(), po.getStaffId(),
+                            po.getCustomerId(), toMillis(po.getCreatedAt()), 0,
+                            brief == null ? null : brief.nickname(),
+                            brief == null ? null : brief.avatarFileId());
+                })
                 .toList();
 
         // 排队栏：先来后到（同一毫秒按主键），位置按序号给出，与客户端的排队位置口径一致
@@ -145,8 +165,11 @@ public class ChatAdminQueryServiceImpl implements ChatAdminQueryService {
         if (po == null) {
             throw new BizException(ErrorCode.NOT_FOUND);
         }
+        // 自动分配（SessionAssignmentUseCase）只改 status/staff_id，不一定写 started_at；
+        // 审查 SQL 也用 COALESCE(started_at, created_at)，这里必须同口径，否则工单「咨询时间」会是 0。
+        java.time.LocalDateTime started = po.getStartedAt() == null ? po.getCreatedAt() : po.getStartedAt();
         return new ChatAuditDtos.SessionDetail(po.getId(), po.getStatus(), po.getStaffId(), po.getCustomerId(),
-                toMillis(po.getStartedAt()), toMillis(po.getEndedAt()), po.getCloseReason());
+                toMillis(started), toMillis(po.getEndedAt()), po.getCloseReason());
     }
 
     @Override
@@ -156,17 +179,37 @@ public class ChatAdminQueryServiceImpl implements ChatAdminQueryService {
                 .map(m -> new ChatAuditDtos.MessageLine(m.seq(), m.senderType(), m.msgType(),
                         m.content(), m.createdAtMillis()))
                 .toList();
-        return new ChatAuditDtos.Transcript(detail, messages, noteOf(sessionId));
+        return new ChatAuditDtos.Transcript(detail, messages, noteOf(detail));
     }
 
-    private ChatAuditDtos.NoteVO noteOf(long sessionId) {
-        ChatSessionNotePO po = noteMapper.selectBySessionId(sessionId);
+    /**
+     * 工单读模型：联查客户资料的只读基础信息（昵称/联系方式）+ 会话开始时间作为咨询时间。
+     * <p>客户资料属于 customer 模块，跨模块只走 {@link CustomerQueryService}，不碰对方 mapper。</p>
+     */
+    private ChatAuditDtos.NoteVO noteOf(ChatAuditDtos.SessionDetail detail) {
+        ChatSessionNotePO po = noteMapper.selectBySessionId(detail.sessionId());
+        CustomerContact contact = detail.customerId() == null ? null
+                : customerQueryService.contactOf(detail.customerId());
+        String nickname = contact == null ? null : contact.nickname();
+        String phone = contact == null ? null : contact.phone();
+        String email = contact == null ? null : contact.email();
         if (po == null) {
-            return null;
+            // 工单还没填：仍然返回基础信息预填，客服第一次打开抽屉就不用抄客户资料。
+            // summary/solution 等业务字段保持 null，前端据此判断「还没填」。
+            return new ChatAuditDtos.NoteVO(detail.sessionId(), null, null, null, null, null,
+                    detail.staffId(), 0L, null, null, null, false, null, null, null,
+                    ChatSessionNote.SubmitStatus.DRAFT.name(), null,
+                    nickname, phone, email, detail.startedAtMillis());
         }
         return new ChatAuditDtos.NoteVO(po.getSessionId(), po.getSummary(), po.getCategory(),
                 po.getIssueInfo(), po.getResult(), po.getSolution(), po.getStaffId(),
-                toMillis(po.getUpdatedAt()));
+                toMillis(po.getUpdatedAt()), po.getSubCategory(), po.getCustomerDemand(),
+                po.getVerifiedInfo(), Boolean.TRUE.equals(po.getNeedFollowup()),
+                po.getFollowupTime() == null ? null : toMillis(po.getFollowupTime()),
+                po.getFollowupContact(), po.getAttachmentsJson(),
+                po.getSubmitStatus() == null ? ChatSessionNote.SubmitStatus.DRAFT.name() : po.getSubmitStatus(),
+                po.getSubmittedAt() == null ? null : toMillis(po.getSubmittedAt()),
+                nickname, phone, email, detail.startedAtMillis());
     }
 
     @Override
@@ -192,7 +235,9 @@ public class ChatAdminQueryServiceImpl implements ChatAdminQueryService {
         List<ChatAuditDtos.AuditRow> rows = dbPage.getRecords().stream()
                 .map(r -> new ChatAuditDtos.AuditRow(r.getSessionId(), r.getCustomerId(), r.getStaffId(),
                         r.getStaffName(), toMillis(r.getStartedAt()), toMillis(r.getEndedAt()),
-                        r.getSummary(), r.getResult(), r.getSummary() == null ? "未填写" : "已填写"))
+                        r.getSummary(), r.getResult(),
+                        ChatSessionNote.SubmitStatus.SUBMITTED.name().equals(r.getSubmitStatus())
+                                ? "已提交" : "草稿"))
                 .toList();
         return PageResult.of(rows, total, pageQuery.getPage(), pageQuery.getSize());
     }

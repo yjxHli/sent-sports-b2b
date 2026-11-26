@@ -15,7 +15,7 @@ import { onUnmounted, ref, type Ref } from 'vue';
 import { getAccessToken } from '@/utils/auth';
 import { newIdempotencyKey } from '@/utils/idempotent';
 
-export type WsType = 'MSG' | 'ACK' | 'READ' | 'QUEUE' | 'ASSIGNED' | 'TYPING' | 'CLOSED';
+export type WsType = 'MSG' | 'ACK' | 'READ' | 'QUEUE' | 'ASSIGNED' | 'TYPING' | 'CLOSED' | 'SYSTEM';
 
 export interface WsEnvelope {
   type: WsType;
@@ -57,6 +57,13 @@ export interface ChatSocketOptions {
   onTyping?: (sessionId: number) => void;
   /** 会话已结束（客服主动关闭 / 超时）：页面显示「本次会话已结束」，Tab 不会自动消失 */
   onClosed?: (sessionId: number, reason: string) => void;
+  /**
+   * 系统提示帧（2026-11-24）：机器人回复、转人工提示、人工接入提示。
+   * event=TRANSFER 表示客户请求了转人工，前端据此切回「排队中」口径。
+   * <p>senderType 决定渲染成什么：BOT 是机器人说的话 → 普通气泡 + 机器人头像；
+   * SYSTEM 是旁白（已接入 / 已结束）→ 聊天区正中的浅灰提示。</p>
+   */
+  onSystem?: (sessionId: number, content: string, seq: number, event: string, senderType: string) => void;
 }
 
 export interface ChatSocket {
@@ -128,6 +135,13 @@ export function useChatSocket(options: ChatSocketOptions): ChatSocket {
     if (envelope.type === 'CLOSED') {
       options.onClosed?.(Number(envelope.sessionId || body.sessionId || 0),
         String(body.reason ?? ''));
+      return;
+    }
+    if (envelope.type === 'SYSTEM') {
+      options.onSystem?.(Number(envelope.sessionId || body.sessionId || 0),
+        String(body.content ?? ''), Number(body.seq ?? 0), String(body.event ?? 'SYSTEM_MESSAGE'),
+        // 老服务端不发 senderType 时按 SYSTEM 走（居中提示），不会把旁白错认成机器人说话
+        String(body.senderType ?? 'SYSTEM'));
       return;
     }
     if (envelope.type === 'ACK') {

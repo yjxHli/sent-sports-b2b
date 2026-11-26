@@ -78,15 +78,32 @@ public interface StaffMapper extends BaseMapper<SysStaffPO> {
     // 管理端列表（P5 遗留空桩收口：员工管理页此前恒为空表）
     // ------------------------------------------------------------------
 
+    /**
+     * 员工列表公共筛选片段：分页与 count 必须拼同一份，不能一边过滤一边全表计数。
+     * keyword 覆盖员工号 / 登录名 / 姓名 / 手机号；enabled 与 VO 派生口径一致，
+     * ACTIVE 为启用中，其它（含 NULL）统一视为已停用。
+     */
+    String ADMIN_FILTER_SQL = "<if test=\"keyword != null and keyword != ''\"> "
+            + "AND (s.staff_no LIKE CONCAT('%', #{keyword}, '%') "
+            + "OR s.username LIKE CONCAT('%', #{keyword}, '%') "
+            + "OR s.name LIKE CONCAT('%', #{keyword}, '%') "
+            + "OR s.phone LIKE CONCAT('%', #{keyword}, '%')) </if>"
+            + "<if test=\"enabled != null and enabled == true\"> AND s.status = 'ACTIVE' </if>"
+            + "<if test=\"enabled != null and enabled == false\"> "
+            + "AND (s.status IS NULL OR s.status &lt;&gt; 'ACTIVE') </if>";
+
     /** 员工分页：左联 {@code sys_role} 取角色编码，只读未删除行，固定按 id 升序。 */
-    @Select("SELECT s.id AS staffId, s.staff_no AS staffNo, s.username AS username, "
+    @Select("<script>SELECT s.id AS staffId, s.staff_no AS staffNo, s.username AS username, "
             + "s.name AS name, s.phone AS phone, "
             + "r.code AS roleCode, s.status AS status "
             + "FROM sys_staff s LEFT JOIN sys_role r ON r.id = s.role_id "
-            + "WHERE s.deleted = 0 ORDER BY s.id")
-    IPage<StaffAdminRow> selectAdminPage(Page<StaffAdminRow> page);
+            + "WHERE s.deleted = 0 " + ADMIN_FILTER_SQL + " ORDER BY s.id</script>")
+    IPage<StaffAdminRow> selectAdminPage(Page<StaffAdminRow> page,
+                                         @Param("keyword") String keyword,
+                                         @Param("enabled") Boolean enabled);
 
-    /** 与 {@link #selectAdminPage} 同条件（只排除逻辑删除）的独立总数。 */
-    @Select("SELECT COUNT(*) FROM sys_staff s WHERE s.deleted = 0")
-    long countAdmin();
+    /** 与 {@link #selectAdminPage} 同条件的独立总数。 */
+    @Select("<script>SELECT COUNT(*) FROM sys_staff s WHERE s.deleted = 0 "
+            + ADMIN_FILTER_SQL + "</script>")
+    long countAdmin(@Param("keyword") String keyword, @Param("enabled") Boolean enabled);
 }

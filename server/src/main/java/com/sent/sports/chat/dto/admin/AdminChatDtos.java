@@ -51,13 +51,29 @@ public final class AdminChatDtos {
     public record CloseVO(long sessionId, String status, Long promotedSessionId) {
     }
 
-    /** 填写会话小结：问题概述 + 分类 + 信息状态 + 处理结果 + 解决办法，全部必填。 */
+    /**
+     * 填写服务工单：前六项必填；V61 扩展字段（子分类/诉求/核实信息/回访/附件）可为空。
+     * 必填为空时服务端抛 40005，前端据此提示补全工单。
+     */
     public record SaveNoteCmd(
             @NotNull(message = "客服不能为空") Long staffId,
-            @NotBlank(message = "问题概述不能为空") String summary,
-            @NotBlank(message = "问题分类不能为空") String category,
-            @NotBlank(message = "用户问题信息不能为空") String info,
-            @NotBlank(message = "处理结果不能为空") String result,
-            @NotBlank(message = "解决办法不能为空") String solution) {
+            String summary,
+            String category,
+            String info,
+            String result,
+            String solution,
+            String subCategory,
+            String customerDemand,
+            String verifiedInfo,
+            Boolean needFollowup,
+            String followupTime,
+            /** 回访联系方式由客服手填，不再默认取客户登录手机号（V65）。 */
+            String followupContact,
+            String attachmentsJson,
+            /**
+             * true = 提交工单（校验必填并进客服审查）；显式 false = 暂时保存草稿。
+             * 缺省按「提交」处理：老前端只传保存时行为不变，不会把已经填好的工单悄悄退回草稿态。
+             */
+            Boolean submit) {
     }
 }

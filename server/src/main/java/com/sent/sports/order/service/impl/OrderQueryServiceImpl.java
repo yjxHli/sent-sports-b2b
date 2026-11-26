@@ -136,4 +136,15 @@ public class OrderQueryServiceImpl implements OrderQueryService {
         String orderNo = orderMapper.selectCompletedOrderNoForReview(customerId, productId, skuId);
         return orderNo == null || orderNo.isBlank() ? Optional.empty() : Optional.of(orderNo);
     }
+
+    @Override
+    public boolean isClosedWithFullRefund(String orderNo) {
+        if (orderNo == null || orderNo.isBlank()) {
+            return false;
+        }
+        OrderPO po = orderMapper.selectByOrderNo(orderNo);
+        return po != null
+                && OrderStatus.CLOSED.name().equals(po.getStatus())
+                && PayStatus.FULL_REFUNDED.name().equals(po.getPayStatus());
+    }
 }

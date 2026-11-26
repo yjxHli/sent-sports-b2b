@@ -3,6 +3,7 @@
     <h2 class="sent-page-title">合同管理</h2>
     <div class="sent-panel">
       <SentTable
+        :select-all-rows="fetchAll"
         :columns="columns"
         :rows="rows"
         :total="total"
@@ -119,7 +120,7 @@ function remainingInfo(validTo: number | string | null | undefined): RemainingIn
   return { days, text: `剩余 ${days} 天`, overdue: days <= 30, hint };
 }
 
-const { rows, total, loading, page, size, load, onPage, onSize, onSearch } = useTable<any>({
+const { rows, total, loading, page, size, load, onPage, onSize, onSearch, fetchAll } = useTable<any>({
   fetch: (params) => unwrap(financeApi.contracts({
     ...params,
     dueState: dueState.value || undefined,

@@ -56,6 +56,28 @@ public final class AdminSystemDtos {
     }
 
     /**
+     * 配置中心行（系统配置中心，2026-11-25）：把键值对翻译成运营能直接读的一项配置。
+     *
+     * @param configKey    原始键名（{@code sys_config.config_key}），前端以小字灰色展示
+     * @param configName   中文名（字典提供；字典里没有的键回落为键名本身）
+     * @param description  一句话说明「改这个值会发生什么」，编辑弹窗必须展示
+     * @param groupName    业务分组（订单与交易 / 库存与商品 / 财务与开票 / 会员与积分）
+     * @param configValue  原始值，弹窗回填与提交都用它
+     * @param displayValue 展示值（{@code 30 分钟} / {@code ¥50,000.00} / {@code 开启}）
+     * @param unit         单位文案，弹窗输入框后缀用它
+     * @param valueType    NUMBER / MONEY_CENT / PERCENT / BOOLEAN / TEXT，前端据此选控件
+     * @param remark       库里的备注（历史遗留字段，仅作补充说明）
+     */
+    public record ConfigVO(String configKey, String configName, String description, String groupName,
+                           String configValue, String displayValue, String unit, String valueType,
+                           String remark) {
+    }
+
+    /** 修改配置值入参：键名在路径上，这里只收值。 */
+    public record ConfigValueForm(@NotBlank(message = "配置值不能为空") String configValue) {
+    }
+
+    /**
      * 日志视图（对齐 sys_operation_log 全字段）。
      * <p>operator 由 staff_id 左联 sys_staff.name 得到；Job / 系统动作无操作人时回退为员工号占位。</p>
      */

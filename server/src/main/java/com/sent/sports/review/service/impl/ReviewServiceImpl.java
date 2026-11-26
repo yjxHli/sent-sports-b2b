@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
 import com.sent.sports.common.util.JsonListCodec;
+import com.sent.sports.common.util.SensitiveWordFilter;
 import com.sent.sports.common.web.PageQuery;
 import com.sent.sports.order.service.OrderQueryService;
 import com.sent.sports.review.dto.ReviewDtos;
@@ -45,14 +46,17 @@ public class ReviewServiceImpl implements ReviewService {
     private static final int MAX_FILE_ID_LENGTH = 512;
     /** rating ≥ 4 视为好评（与主流电商口径一致）。 */
     private static final int POSITIVE_RATING = 4;
-    private static final String ANONYMOUS_NICKNAME = "匿名用户";
+    private static final String ANONYMOUS_NICKNAME = ReviewDisplayNames.ANONYMOUS;
 
     private final ReviewMapper reviewMapper;
     private final OrderQueryService orderQueryService;
+    private final SensitiveWordFilter sensitiveWordFilter;
 
-    public ReviewServiceImpl(ReviewMapper reviewMapper, OrderQueryService orderQueryService) {
+    public ReviewServiceImpl(ReviewMapper reviewMapper, OrderQueryService orderQueryService,
+                             SensitiveWordFilter sensitiveWordFilter) {
         this.reviewMapper = reviewMapper;
         this.orderQueryService = orderQueryService;
+        this.sensitiveWordFilter = sensitiveWordFilter;
     }
 
     @Override
@@ -67,6 +71,9 @@ public class ReviewServiceImpl implements ReviewService {
         }
         int rating = requireRating(cmd.rating());
         String content = requireContent(cmd.content());
+        if (sensitiveWordFilter.contains(content)) {
+            throw new BizException(ErrorCode.SENSITIVE_MESSAGE, "输入包含违禁词，请文明发言");
+        }
         List<String> images = requireImages(cmd.images());
         boolean anonymous = Boolean.TRUE.equals(cmd.anonymous());
 
@@ -140,17 +147,18 @@ public class ReviewServiceImpl implements ReviewService {
         ReviewSummaryRow row = reviewMapper.selectSummary(productId);
         long total = row == null || row.getTotal() == null ? 0L : row.getTotal();
         long positive = row == null || row.getPositiveCount() == null ? 0L : row.getPositiveCount();
+        long negative = row == null || row.getNegativeCount() == null ? 0L : row.getNegativeCount();
         int rate = total <= 0 ? 0 : (int) Math.round(positive * 100.0 / total);
         BigDecimal avg = row == null || row.getAverageRating() == null
                 ? BigDecimal.ZERO : row.getAverageRating();
-        return new ReviewDtos.ReviewSummaryVO(total, positive, rate,
+        return new ReviewDtos.ReviewSummaryVO(total, positive, negative, rate,
                 avg.setScale(1, RoundingMode.HALF_UP).toPlainString());
     }
 
     private ReviewDtos.ReviewVO toVo(ReviewRow row) {
         boolean anonymous = row.getIsAnonymous() != null && row.getIsAnonymous() == 1;
-        // 匿名：连首字都不给，否则「张**」本身就泄露了姓氏
-        String nickname = anonymous ? ANONYMOUS_NICKNAME : maskNickname(row.getNickname());
+        // 匿名：连首字都不给，否则「张**」本身就泄露了姓氏（脱敏口径与治理页共用）
+        String nickname = ReviewDisplayNames.of(row.getNickname(), anonymous);
         String avatarText = nickname.substring(0, 1);
         return new ReviewDtos.ReviewVO(
                 row.getId() == null ? "" : String.valueOf(row.getId()),
@@ -160,14 +168,6 @@ public class ReviewServiceImpl implements ReviewService {
                 JsonListCodec.read(row.getImagesJson(), String.class),
                 anonymous,
                 toMillis(row.getCreatedAt()));
-    }
-
-    /** 昵称脱敏：保留首字，其余打码；空昵称退化为匿名。 */
-    private String maskNickname(String nickname) {
-        if (nickname == null || nickname.isBlank()) {
-            return ANONYMOUS_NICKNAME;
-        }
-        return nickname.trim().substring(0, 1) + "**";
     }
 
     private long requireProductId(Long productId) {

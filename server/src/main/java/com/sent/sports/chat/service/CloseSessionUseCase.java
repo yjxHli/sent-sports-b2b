@@ -76,6 +76,14 @@ public class CloseSessionUseCase {
         }
     }
 
+    /**
+     * 结束会话（2026-11-26 用户口径变更）：不再强制「必须提交工单」。
+     *
+     * <p>客服可以先结束与客户的对话，再在空闲时补工单——「工单必须是已提交状态才能关闭会话窗口」
+     * 由前端在关 Tab 时按工单状态拦截；服务端只保留「谁有资格填工单」的限制（见 SaveSessionNoteUseCase）。
+     * 未分配客服的 WAITING 会话同样可关；超时自动结束路径行为不变。</p>
+     */
+
     @UseCase
     public CloseSessionResult close(CloseCmd cmd) {
         try {
@@ -85,6 +93,9 @@ public class CloseSessionUseCase {
         }
         ChatSession session = sessionRepository.findById(cmd.sessionId())
                 .orElseThrow(() -> new BizException(ErrorCode.NOT_FOUND));
+        if (session.getStatus() == ChatSessionStatus.CLOSED) {
+            throw new BizException(ErrorCode.STATE_CONFLICT);
+        }
         Long staffId = session.getStaffId();
         boolean releasing = session.getStatus() == ChatSessionStatus.ACTIVE;
         autoSendSatisfactionCard(cmd.sessionId());

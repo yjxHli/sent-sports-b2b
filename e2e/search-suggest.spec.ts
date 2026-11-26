@@ -25,6 +25,8 @@ test('输入联想 → 带分类跳结果页 → 历史搜索可清除', async (
   test.setTimeout(90_000);
 
   const input = page.getByTestId('search-input');
+  // 真实路径是「点输入框 → 输入」；显式 click 也保证 focus 事件一定触发（下拉靠它打开）
+  await input.click();
   await input.fill('球');
   const dropdown = page.getByTestId('search-suggest');
   await expect(dropdown).toBeVisible({ timeout: 15_000 });
@@ -35,16 +37,25 @@ test('输入联想 → 带分类跳结果页 → 历史搜索可清除', async (
   const picked = (await options.first().innerText()).trim().split('\n')[0].trim();
   expect(picked.length).toBeGreaterThan(0);
 
-  // 点击联想：跳 /products?categoryId=X&keyword=商品名
-  await options.first().click();
-  await expect(page).toHaveURL(/\/products\?/, { timeout: 15_000 });
-  const url = new URL(page.url());
+  // 点击联想：新开一页落在 /products?categoryId=X&keyword=商品名（2026-11-26 用户要求新开）
+  const [popup] = await Promise.all([
+    page.context().waitForEvent('page', { timeout: 20_000 }),
+    options.first().click(),
+  ]);
+  await popup.waitForLoadState('domcontentloaded');
+  const url = new URL(popup.url());
+  expect(url.pathname).toBe('/products');
   expect(url.searchParams.get('keyword')).toBeTruthy();
   expect(url.searchParams.get('categoryId')).toBeTruthy();
+  await popup.close();
+  await expect(page, '原页应停在首页').toHaveURL(/\/home/, { timeout: 15_000 });
 
-  // 回到首页：空输入聚焦应显示刚才搜过的词
-  await page.goto(`${USER_URL}/home`);
-  await input.click();
+  // 空输入聚焦应显示刚才搜过的词（历史写在原页 localStorage）。
+  // 新开页关闭后原页输入框可能仍是聚焦态：先点空白处失焦，再清空并聚焦，
+  // 才会走「空输入 → 历史搜索」这一支（否则下拉还停在联想列表上）。
+  await page.bringToFront();
+  await page.locator('.site-main').click({ position: { x: 5, y: 5 } });
+  await input.fill('');
   await expect(page.getByTestId('search-suggest')).toBeVisible();
   await expect(page.getByTestId('history-item').filter({ hasText: picked })).toBeVisible();
 

@@ -8,6 +8,8 @@ import java.util.List;
 /**
  * 客服会话实体（plan §7.8 / spec §6.10）：待接入 / 进行中 / 已结束。
  * 同一客户仅允许一个 ACTIVE 会话（业务约束由 {@link #hasActiveSession}/{@link #canStartNew} 校验）。
+ * <p>2026-11-24 增加接待模式 {@link SessionType}：BOT（智能助手先接待）/ HUMAN（人工）。
+ * 缺省 HUMAN——历史会话与 API 直接建的会话都不该被机器人接管。</p>
  * 纯 POJO，不依赖 Spring。
  */
 public class ChatSession {
@@ -21,6 +23,8 @@ public class ChatSession {
     private int seq;
     private long createdAtMillis;
     private long lastActiveAtMillis;
+    /** 接待模式：BOT 机器人 / HUMAN 人工（默认 HUMAN）。 */
+    private SessionType sessionType;
 
     public ChatSession(long id, long customerId) {
         this(id, customerId, false, ChatSessionStatus.WAITING, null, 0L, 0L, 0);
@@ -32,6 +36,11 @@ public class ChatSession {
 
     public ChatSession(long id, long customerId, boolean vip, ChatSessionStatus status, Long staffId,
                        long createdAtMillis, long lastActiveAtMillis, int seq) {
+        this(id, customerId, vip, status, staffId, createdAtMillis, lastActiveAtMillis, seq, SessionType.HUMAN);
+    }
+
+    public ChatSession(long id, long customerId, boolean vip, ChatSessionStatus status, Long staffId,
+                       long createdAtMillis, long lastActiveAtMillis, int seq, SessionType sessionType) {
         this.id = id;
         this.customerId = customerId;
         this.vip = vip;
@@ -40,15 +49,41 @@ public class ChatSession {
         this.createdAtMillis = createdAtMillis;
         this.lastActiveAtMillis = lastActiveAtMillis;
         this.seq = seq;
+        this.sessionType = sessionType == null ? SessionType.HUMAN : sessionType;
     }
 
-    /** 分配客服：WAITING → ACTIVE；非 WAITING 抛 STATE_CONFLICT(40901)。 */
+    /**
+     * 分配客服：WAITING → ACTIVE；非 WAITING 抛 STATE_CONFLICT(40901)。
+     * <p>人工一旦接线，接待模式强制切 HUMAN：否则坐席接过来的会话仍按机器人规则拦截客户消息，
+     * 客户会看到「有人接了但消息没人回」。</p>
+     */
     public void assign(long staffId) {
         if (status != ChatSessionStatus.WAITING) {
             throw new BizException(ErrorCode.STATE_CONFLICT);
         }
         this.staffId = staffId;
         this.status = ChatSessionStatus.ACTIVE;
+        this.sessionType = SessionType.HUMAN;
+    }
+
+    /**
+     * 转人工（机器人 → 人工，2026-11-24）：接待模式切 HUMAN，会话回到 WAITING 排队等坐席接线。
+     * <p>已结束会话抛 STATE_CONFLICT：不能让一句「转人工」把结束的会话重新拉活。
+     * 已经是 ACTIVE 的会话保持 ACTIVE——那说明人工已经接管，不需要再排一次队。</p>
+     */
+    public void transferToHuman() {
+        if (status == ChatSessionStatus.CLOSED) {
+            throw new BizException(ErrorCode.STATE_CONFLICT);
+        }
+        this.sessionType = SessionType.HUMAN;
+        if (status != ChatSessionStatus.ACTIVE) {
+            this.status = ChatSessionStatus.WAITING;
+        }
+    }
+
+    /** 是否是机器人接待中（机器人只对 BOT 会话生效）。 */
+    public boolean isBot() {
+        return sessionType == SessionType.BOT;
     }
 
     /** 结束会话：ACTIVE/WAITING → CLOSED；重复关闭抛 STATE_CONFLICT(40901)。 */
@@ -68,8 +103,17 @@ public class ChatSession {
     public static ChatSession rehydrate(long id, long customerId, boolean vip, ChatSessionStatus status,
                                         Long staffId, String closeReason,
                                         long createdAtMillis, long lastActiveAtMillis, int seq) {
+        return rehydrate(id, customerId, vip, status, staffId, closeReason,
+                createdAtMillis, lastActiveAtMillis, seq, SessionType.HUMAN);
+    }
+
+    /** 同 {@link #rehydrate} 但带上接待模式：读库时必须还原 session_type，否则机器人会话会被当人工。 */
+    public static ChatSession rehydrate(long id, long customerId, boolean vip, ChatSessionStatus status,
+                                        Long staffId, String closeReason,
+                                        long createdAtMillis, long lastActiveAtMillis, int seq,
+                                        SessionType sessionType) {
         ChatSession session = new ChatSession(id, customerId, vip, status, staffId,
-                createdAtMillis, lastActiveAtMillis, seq);
+                createdAtMillis, lastActiveAtMillis, seq, sessionType);
         session.closeReason = closeReason;
         return session;
     }
@@ -171,5 +215,9 @@ public class ChatSession {
     /** 当前消息序号水位（持久化与断线补拉的依据）。 */
     public int getSeq() {
         return seq;
+    }
+
+    public SessionType getSessionType() {
+        return sessionType;
     }
 }

@@ -8,6 +8,7 @@ import com.sent.sports.coupon.service.dto.CouponLine;
 import com.sent.sports.customer.service.CustomerQueryService;
 import com.sent.sports.product.service.ProductQueryService;
 import com.sent.sports.support.BaseUnitTest;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -17,6 +18,9 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -90,6 +94,23 @@ class CouponUseCaseTest extends BaseUnitTest {
 
         assertEquals(0L, useCase.discountFor(21L, 9002L, List.of(new CouponLine(1L, 1999L))));
         assertEquals(1000L, useCase.discountFor(21L, 9002L, List.of(new CouponLine(1L, 2000L))));
+    }
+
+    @Test
+    @DisplayName("整单退款/关单：按下单号把核销的券退回未使用（幂等由 SQL 条件保证）")
+    void returnCouponReleasesUsedCouponOfOrder() {
+        when(couponMapper.returnByOrderNo("SO20261123000001")).thenReturn(1);
+
+        assertEquals(1, useCase.returnCoupon("SO20261123000001"));
+        verify(couponMapper).returnByOrderNo("SO20261123000001");
+    }
+
+    @Test
+    @DisplayName("空单号不触发更新（避免把全库 USED 券一次清空）")
+    void returnCouponIgnoresBlankOrderNo() {
+        assertEquals(0, useCase.returnCoupon(null));
+        assertEquals(0, useCase.returnCoupon("  "));
+        verify(couponMapper, never()).returnByOrderNo(any());
     }
 
     private static Coupon coupon(long id, long amountCent, long thresholdCent, String name,

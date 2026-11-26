@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { ensureHealthySku, ensureWarningSku } from './demo-state';
 
 /**
  * 库存预警无数据（TDD 红→绿）。
@@ -37,6 +38,11 @@ async function cellTexts(page: Page, colIndex: number): Promise<string[]> {
   );
 }
 
+/** 库存数字表格里带千分位（`1,000`），直接 Number() 会得到 NaN，必须先剥掉非数字字符 */
+function num(text: string | undefined): number {
+  return Number(String(text ?? '').replace(/[^\d.-]/g, ''));
+}
+
 async function totalOf(page: Page): Promise<number> {
   const text = (await page.locator('.sent-table-pager').first().innerText()).replace(/\s+/g, ' ');
   const m = text.match(/共\s*(\d+)\s*条/);
@@ -44,68 +50,77 @@ async function totalOf(page: Page): Promise<number> {
 }
 
 test('库存预警：默认有真实台账，仅看预警由后端下推且有真实告警行', async ({ page }) => {
-  await login(page);
-  await page.goto(ADMIN_URL + 'report/stock-warning');
-  await page.waitForSelector('.el-table__body-wrapper tbody tr', { timeout: 15000 });
-  await page.waitForTimeout(1200);
+  // 两个绝对数断言要现场保底：① 至少 1 行低于安全库存（买空／补库存后可能为 0）；
+  // ② 至少 1 行不预警（全库都预警时「预警条数 < 全量条数」不成立）。库健康时两者都不写库。
+  const restoreWarning = ensureWarningSku();
+  const restoreHealthy = ensureHealthySku();
+  try {
+    await login(page);
+    await page.goto(ADMIN_URL + 'report/stock-warning');
+    await page.waitForSelector('.el-table__body-wrapper tbody tr', { timeout: 15000 });
+    await page.waitForTimeout(1200);
 
-  // ① 摘要必须是真查库的结果，不再是占位值
-  const summaryText = await page.locator('.el-descriptions').first().innerText();
-  console.log('预警摘要:', summaryText.replace(/\s+/g, ' '));
-  expect(summaryText).not.toContain('占位');
-  const skuMatch = summaryText.replace(/\s+/g, ' ').match(/SKU\s*(\d+)/);
-  expect(Number(skuMatch?.[1] ?? 0)).toBeGreaterThan(0);
+    // ① 摘要必须是真查库的结果，不再是占位值
+    const summaryText = await page.locator('.el-descriptions').first().innerText();
+    console.log('预警摘要:', summaryText.replace(/\s+/g, ' '));
+    expect(summaryText).not.toContain('占位');
+    const skuMatch = summaryText.replace(/\s+/g, ' ').match(/SKU\s*(\d+)/);
+    expect(Number(skuMatch?.[1] ?? 0)).toBeGreaterThan(0);
 
-  // ② 默认清单有真实库存行（不再是「暂无数据」）
-  const allRows = await page.locator('.el-table__body-wrapper tbody tr').count();
-  const allTotal = await totalOf(page);
-  console.log('默认台账行数:', allRows, '共:', allTotal);
-  expect(allRows).toBeGreaterThan(0);
-  expect(allTotal).toBeGreaterThan(0);
-  await expect(page.getByText('暂无数据')).toHaveCount(0);
+    // ② 默认清单有真实库存行（不再是「暂无数据」）
+    const allRows = await page.locator('.el-table__body-wrapper tbody tr').count();
+    const allTotal = await totalOf(page);
+    console.log('默认台账行数:', allRows, '共:', allTotal);
+    expect(allRows).toBeGreaterThan(0);
+    expect(allTotal).toBeGreaterThan(0);
+    await expect(page.getByText('暂无数据')).toHaveCount(0);
 
-  // ③ 勾选「仅看低于安全库存」：必须触发带 warningOnly=true 的后端请求
-  const checkbox = page.locator('.el-checkbox', { hasText: '仅看低于安全库存' }).first();
-  await expect(checkbox).toBeVisible();
-  const [response] = await Promise.all([
-    page.waitForResponse(
-      (r) => r.url().includes('/api/admin/stock')
-        && r.url().includes('warningOnly=true')
-        && r.request().method() === 'GET',
-      { timeout: 15000 },
-    ),
-    checkbox.click(),
-  ]);
-  expect(response.status()).toBe(200);
-  await page.waitForTimeout(900);
+    // ③ 勾选「仅看低于安全库存」：必须触发带 warningOnly=true 的后端请求
+    const checkbox = page.locator('.el-checkbox', { hasText: '仅看低于安全库存' }).first();
+    await expect(checkbox).toBeVisible();
+    const [response] = await Promise.all([
+      page.waitForResponse(
+        (r) => r.url().includes('/api/admin/stock')
+          && r.url().includes('warningOnly=true')
+          && r.request().method() === 'GET',
+        { timeout: 15000 },
+      ),
+      checkbox.click(),
+    ]);
+    expect(response.status()).toBe(200);
+    await page.waitForTimeout(900);
 
-  const warnRows = await page.locator('.el-table__body-wrapper tbody tr').count();
-  const available = await cellTexts(page, 7);
-  const safe = await cellTexts(page, 8);
-  const statuses = await cellTexts(page, 9);
-  const warnTotal = await totalOf(page);
-  console.log('预警行数:', warnRows, '共:', warnTotal, '状态:', statuses.join(','));
+    const warnRows = await page.locator('.el-table__body-wrapper tbody tr').count();
+    const available = await cellTexts(page, 7);
+    const safe = await cellTexts(page, 8);
+    const statuses = await cellTexts(page, 9);
+    const warnTotal = await totalOf(page);
+    console.log('预警行数:', warnRows, '共:', warnTotal, '状态:', statuses.join(','));
 
-  expect(warnRows).toBeGreaterThan(0);
-  expect(warnRows).toBeLessThanOrEqual(allRows);
-  expect(warnTotal).toBeGreaterThan(0);
-  expect(warnTotal).toBeLessThan(allTotal);
-  for (let i = 0; i < warnRows; i++) {
-    expect(Number(available[i])).toBeLessThanOrEqual(Number(safe[i]));
-    expect(statuses[i]).toBe('预警');
+    expect(warnRows).toBeGreaterThan(0);
+    expect(warnRows).toBeLessThanOrEqual(allRows);
+    expect(warnTotal).toBeGreaterThan(0);
+    expect(warnTotal).toBeLessThan(allTotal);
+    for (let i = 0; i < warnRows; i++) {
+      expect(num(available[i]), `第 ${i + 1} 行可用量`).toBeLessThanOrEqual(num(safe[i]));
+      expect(statuses[i]).toBe('预警');
+    }
+
+    // ④ 取消勾选恢复全量，行数回到更多
+    await Promise.all([
+      page.waitForResponse(
+        (r) => r.url().includes('/api/admin/stock') && r.request().method() === 'GET',
+        { timeout: 15000 },
+      ),
+      checkbox.click(),
+    ]);
+    await page.waitForTimeout(900);
+    const restoredRows = await page.locator('.el-table__body-wrapper tbody tr').count();
+    console.log('恢复后行数:', restoredRows);
+    expect(restoredRows).toBeGreaterThanOrEqual(warnRows);
+    expect(await totalOf(page)).toBe(allTotal);
+  } finally {
+    restoreHealthy();
+    restoreWarning();
   }
-
-  // ④ 取消勾选恢复全量，行数回到更多
-  await Promise.all([
-    page.waitForResponse(
-      (r) => r.url().includes('/api/admin/stock') && r.request().method() === 'GET',
-      { timeout: 15000 },
-    ),
-    checkbox.click(),
-  ]);
-  await page.waitForTimeout(900);
-  const restoredRows = await page.locator('.el-table__body-wrapper tbody tr').count();
-  console.log('恢复后行数:', restoredRows);
-  expect(restoredRows).toBeGreaterThanOrEqual(warnRows);
-  expect(await totalOf(page)).toBe(allTotal);
 });

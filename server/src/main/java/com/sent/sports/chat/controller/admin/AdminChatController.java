@@ -159,7 +159,10 @@ public class AdminChatController {
         return R.ok(chatAdminQueryService.customerHistory(customerId, excludeSessionId, limit));
     }
 
-    /** 会话小结：客服填写后可按同一会话重复提交（幂等更新）。 */
+    /**
+     * 服务工单详情：除工单字段外，服务端自动带入客户昵称、联系方式与咨询时间（会话开始时间）。
+     * 这些基础信息只读，客服无需手填；主管审查页复用同一接口并排展示。
+     */
     @GetMapping("/sessions/{id}/note")
     @RequirePerm("chat:serve")
     public R<?> note(@PathVariable long id) {
@@ -170,7 +173,10 @@ public class AdminChatController {
     @RequirePerm("chat:note")
     public R<?> saveNote(@PathVariable long id, @Valid @RequestBody AdminChatDtos.SaveNoteCmd cmd) {
         return R.ok(saveSessionNoteUseCase.save(new SaveNoteCmd(id, cmd.staffId(), cmd.summary(),
-                cmd.category(), cmd.info(), cmd.result(), cmd.solution())));
+                cmd.category(), cmd.info(), cmd.result(), cmd.solution(),
+                cmd.subCategory(), cmd.customerDemand(), cmd.verifiedInfo(),
+                Boolean.TRUE.equals(cmd.needFollowup()), cmd.followupTime(), cmd.followupContact(),
+                cmd.attachmentsJson(), !Boolean.FALSE.equals(cmd.submit()))));
     }
 
     /** 客服审查：仅超管与客服经理（exact=true，不吃 '*' 通配）。 */

@@ -28,8 +28,15 @@ public record WsEnvelope(String type, long sessionId, long seq, String payload, 
     public static final String TYPING = "TYPING";
     /** 会话已结束：服务端推给客户与接待客服，工作台 Tab 变灰、客户侧显示「本次会话已结束」。 */
     public static final String CLOSED = "CLOSED";
+    /**
+     * 系统提示（2026-11-24）：机器人回复 / 转人工提示 / 人工接入提示。
+     * <p>payload 形如 {@code {"event":"BOT_REPLY","content":"…","seq":7}}；
+     * 客户端渲染成聊天区正中的浅灰「系统提示」，不进左右气泡。</p>
+     */
+    public static final String SYSTEM = "SYSTEM";
 
-    private static final Set<String> VALID_TYPES = Set.of(MSG, ACK, READ, QUEUE, ASSIGNED, TYPING, CLOSED);
+    private static final Set<String> VALID_TYPES =
+            Set.of(MSG, ACK, READ, QUEUE, ASSIGNED, TYPING, CLOSED, SYSTEM);
 
     private static final ObjectMapper MAPPER = new ObjectMapper()
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
@@ -86,6 +93,11 @@ public record WsEnvelope(String type, long sessionId, long seq, String payload, 
     /** 「正在输入」提示（双向：客户打字 → 客服端；客服打字 → 用户端）。 */
     public static WsEnvelope typing(long sessionId, String payload) {
         return of(TYPING, sessionId, 0L, payload);
+    }
+
+    /** 系统提示（服务端 → 客户）：机器人回复 / 转人工 / 人工接入。 */
+    public static WsEnvelope system(long sessionId, String payload) {
+        return of(SYSTEM, sessionId, 0L, payload);
     }
 
     private static WsEnvelope of(String type, long sessionId, long seq, String payload) {

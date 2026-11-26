@@ -149,6 +149,22 @@ public interface RefundOrderMapper extends BaseMapper<RefundOrderPO> {
     long countMyInFlight(@Param("customerId") long customerId);
 
     /**
+     * 管理端订单列表的「退款申请中」提示（2026-11-26）：批量回传当前页存在在途退款单的订单号。
+     *
+     * <p>口径与 {@link #countMyInFlight(long)} 一致（PENDING / REFUNDING），
+     * 并排除已软删的退款单——审核列表看不到它，订单列表也不该继续提示。
+     * 入参限定为当前页订单号，避免订单量上千时全表扫描；空集合由门面拦截，不会拼出 {@code IN ()}。</p>
+     */
+    @Select({"<script>",
+            "SELECT DISTINCT o.order_no FROM refund_order r ",
+            "JOIN orders o ON o.id = r.order_id ",
+            "WHERE r.deleted = 0 AND r.status IN ('PENDING', 'REFUNDING') ",
+            "AND o.order_no IN ",
+            "<foreach collection='orderNos' item='no' open='(' separator=',' close=')'>#{no}</foreach>",
+            "</script>"})
+    List<String> selectInFlightOrderNos(@Param("orderNos") List<String> orderNos);
+
+    /**
      * 用户端售后详情投影：联查订单号与归属客户，供控制器做归属隔离（非本人 → NOT_FOUND）。
      * reason 优先取自由文本 remark，回退到结构化 reason_code。
      */

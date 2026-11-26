@@ -41,6 +41,10 @@ export interface OpenSessionRow {
   waitingSinceMillis: number;
   /** 排队位置，1 开始；进行中为 0 */
   queuePosition: number;
+  /** 进线客户昵称（2026-11-25）：未设置为 null，前端兜底成「客户 {id}」 */
+  customerName?: string | null;
+  /** 进线客户头像 fileId；无头像为 null，前端用姓名首字兜底 */
+  customerAvatarFileId?: string | null;
 }
 
 /** 工作台「今日完成接待数」：服务端按本地自然日统计，跨零点自动归零 */
@@ -71,6 +75,7 @@ export interface ChatSessionDetailVO {
   closeReason?: string | null;
 }
 
+/** 服务工单记录（V61）：原有小结字段 + 工单扩展字段 + 服务端带入的只读客户基础信息。 */
 export interface ChatNoteVO {
   sessionId: number;
   summary: string;
@@ -80,6 +85,21 @@ export interface ChatNoteVO {
   solution: string;
   staffId: number;
   updatedAtMillis: number;
+  subCategory?: string | null;
+  customerDemand?: string | null;
+  verifiedInfo?: string | null;
+  needFollowup?: boolean;
+  followupTimeMillis?: number | null;
+  /** 回访联系方式：客服手填（V65），不再回落到客户登录手机号。 */
+  followupContact?: string | null;
+  attachmentsJson?: string | null;
+  /** DRAFT 暂存 / SUBMITTED 已提交；只有已提交的工单进管理端客服审查（V65）。 */
+  submitStatus?: 'DRAFT' | 'SUBMITTED' | null;
+  submittedAtMillis?: number | null;
+  customerNickname?: string | null;
+  customerPhone?: string | null;
+  customerEmail?: string | null;
+  consultedAtMillis?: number;
 }
 
 export interface ChatMessageLineVO {
@@ -152,6 +172,16 @@ export interface SaveNotePayload {
   info: string;
   result: string;
   solution: string;
+  subCategory?: string | null;
+  customerDemand?: string | null;
+  verifiedInfo?: string | null;
+  needFollowup?: boolean;
+  followupTime?: string | null;
+  /** 回访联系方式：客服手填（V65）。 */
+  followupContact?: string | null;
+  attachmentsJson?: string | null;
+  /** true = 提交工单（校验必填并进客服审查）；false = 暂时保存草稿。 */
+  submit?: boolean;
 }
 
 export const chatApi = {

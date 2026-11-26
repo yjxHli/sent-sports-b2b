@@ -62,4 +62,13 @@ public class CouponUseCase implements CouponDeduction {
     public void markUsed(long couponId, String orderNo) {
         if (couponId > 0) couponMapper.markUsed(couponId, orderNo);
     }
+
+    /** 整单退：把该订单核销的券退回未使用（SQL 带 status='USED'，重复退影响 0 行）。 */
+    @Override
+    public int returnCoupon(String orderNo) {
+        if (orderNo == null || orderNo.isBlank()) {
+            return 0;
+        }
+        return couponMapper.returnByOrderNo(orderNo);
+    }
 }

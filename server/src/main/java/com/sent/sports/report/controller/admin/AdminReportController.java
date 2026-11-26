@@ -4,10 +4,12 @@ import com.sent.sports.common.anno.RequirePerm;
 import com.sent.sports.common.web.R;
 import com.sent.sports.report.dto.DashboardReportDtos;
 import com.sent.sports.report.dto.HotProductDtos;
+import com.sent.sports.report.dto.ReportExtensionDtos;
 import com.sent.sports.report.dto.SalesTrendDtos;
 import com.sent.sports.report.dto.TopCustomerDtos;
 import com.sent.sports.report.service.DashboardReportService;
 import com.sent.sports.report.service.HotProductService;
+import com.sent.sports.report.service.ReportExtensionService;
 import com.sent.sports.report.service.SalesTrendService;
 import com.sent.sports.report.service.TopCustomerService;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -31,15 +33,18 @@ public class AdminReportController {
     private final DashboardReportService dashboardReportService;
     private final HotProductService hotProductService;
     private final TopCustomerService topCustomerService;
+    private final ReportExtensionService reportExtensionService;
 
     public AdminReportController(SalesTrendService salesTrendService,
                                  DashboardReportService dashboardReportService,
                                  HotProductService hotProductService,
-                                 TopCustomerService topCustomerService) {
+                                 TopCustomerService topCustomerService,
+                                 ReportExtensionService reportExtensionService) {
         this.salesTrendService = salesTrendService;
         this.dashboardReportService = dashboardReportService;
         this.hotProductService = hotProductService;
         this.topCustomerService = topCustomerService;
+        this.reportExtensionService = reportExtensionService;
     }
 
     @GetMapping("/sales-trend")
@@ -79,6 +84,31 @@ public class AdminReportController {
             @RequestParam(required = false, defaultValue = "30") int days,
             @RequestParam(required = false, defaultValue = "5") int limit) {
         return R.ok(topCustomerService.topCustomers(days, limit));
+    }
+
+    /** 客户采购结构：企业 / 个人 / 未分类的成交金额占比，数据范围随账号下推。 */
+    @GetMapping("/customer-mix")
+    @RequirePerm("system:report:view")
+    public R<ReportExtensionDtos.CustomerMixVO> customerMix(
+            @RequestParam(required = false, defaultValue = "30") int days) {
+        return R.ok(reportExtensionService.customerMix(days));
+    }
+
+    /** 商品销售明细：销量 / 金额 / 价格来源 / 毛利 / 可用库存，数据范围随账号下推。 */
+    @GetMapping("/product-details")
+    @RequirePerm("system:report:view")
+    public R<ReportExtensionDtos.ProductDetailVO> productDetails(
+            @RequestParam(required = false, defaultValue = "30") int days,
+            @RequestParam(required = false, defaultValue = "10") int limit) {
+        return R.ok(reportExtensionService.productDetails(days, limit));
+    }
+
+    /** 复购 / 新老客结构：以区间前是否已有成交区分，人数与金额均为区间内口径。 */
+    @GetMapping("/repeat-customers")
+    @RequirePerm("system:report:view")
+    public R<ReportExtensionDtos.RepeatCustomerVO> repeatCustomers(
+            @RequestParam(required = false, defaultValue = "30") int days) {
+        return R.ok(reportExtensionService.repeatCustomers(days));
     }
 
     /** 工作台六卡与角色化待办数量，一次请求取齐，避免六张卡各自发请求。 */

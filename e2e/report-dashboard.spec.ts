@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { ensurePendingShipOrder, ensureWarningSku } from './demo-state';
 
 /**
  * 销售业绩排行 + 工作台指标卡「有数据吗」（TDD 红→绿）。
@@ -84,35 +85,44 @@ test('热销商品 Top 5：真实数据、按成交金额降序、统计区间�
 });
 
 test('工作台：六张指标卡全部来自真实报表，不再有 -- 与占位', async ({ page }) => {
-  await login(page);
-  const [summaryResp] = await Promise.all([
-    page.waitForResponse(
-      (r) => r.url().includes('/api/admin/reports/dashboard')
-        && r.request().method() === 'GET',
-      { timeout: 20000 },
-    ),
-    page.goto(ADMIN_URL + 'dashboard'),
-  ]);
-  expect(summaryResp.status()).toBe(200);
-  await page.waitForTimeout(1200);
+  // 「待发货 > 0」「预警 SKU > 0」是绝对数断言，种子跑久了会不成立（单发完了／库存补上了）。
+  // 缺失时才临时补一笔待发货单、抬一个 SKU 的安全库存，跑完还原；库是好的时候一行 SQL 都不写。
+  const restoreWarning = ensureWarningSku();
+  const restoreOrder = ensurePendingShipOrder();
+  try {
+    await login(page);
+    const [summaryResp] = await Promise.all([
+      page.waitForResponse(
+        (r) => r.url().includes('/api/admin/reports/dashboard')
+          && r.request().method() === 'GET',
+        { timeout: 20000 },
+      ),
+      page.goto(ADMIN_URL + 'dashboard'),
+    ]);
+    expect(summaryResp.status()).toBe(200);
+    await page.waitForTimeout(1200);
 
-  const values = await page.$$eval('.metric-value', (els) =>
-    (els as HTMLElement[]).map((el) => el.innerText.trim()),
-  );
-  const hints = await page.$$eval('.metric-hint', (els) =>
-    (els as HTMLElement[]).map((el) => el.innerText.trim()),
-  );
-  console.log('工作台六卡:', values.join(' | '));
-  expect(values).toHaveLength(6);
-  // ① 不再有未接接口的 '--'
-  expect(values.every((v) => v !== '--')).toBe(true);
-  // ② 提示文案不再是「等待 XX 接口」
-  expect(hints.some((h) => h.includes('等待'))).toBe(false);
-  // ③ 真实待办：待发货 > 0，预警 SKU 数 > 0
-  expect(Number(values[2].replace(/[^\d]/g, ''))).toBeGreaterThan(0);
-  expect(Number(values[4].replace(/[^\d]/g, ''))).toBeGreaterThan(0);
-  // ④ 角色化待办带上真实数量
-  const todoText = await page.locator('.todo-list').innerText();
-  console.log('待办:', todoText.replace(/\s+/g, ' ').slice(0, 220));
-  expect(todoText).toMatch(/\d+\s*项/);
+    const values = await page.$$eval('.metric-value', (els) =>
+      (els as HTMLElement[]).map((el) => el.innerText.trim()),
+    );
+    const hints = await page.$$eval('.metric-hint', (els) =>
+      (els as HTMLElement[]).map((el) => el.innerText.trim()),
+    );
+    console.log('工作台六卡:', values.join(' | '));
+    expect(values).toHaveLength(6);
+    // ① 不再有未接接口的 '--'
+    expect(values.every((v) => v !== '--')).toBe(true);
+    // ② 提示文案不再是「等待 XX 接口」
+    expect(hints.some((h) => h.includes('等待'))).toBe(false);
+    // ③ 真实待办：待发货 > 0，预警 SKU 数 > 0
+    expect(Number(values[2].replace(/[^\d]/g, ''))).toBeGreaterThan(0);
+    expect(Number(values[4].replace(/[^\d]/g, ''))).toBeGreaterThan(0);
+    // ④ 角色化待办带上真实数量
+    const todoText = await page.locator('.todo-list').innerText();
+    console.log('待办:', todoText.replace(/\s+/g, ' ').slice(0, 220));
+    expect(todoText).toMatch(/\d+\s*项/);
+  } finally {
+    restoreOrder();
+    restoreWarning();
+  }
 });

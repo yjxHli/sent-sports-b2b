@@ -10,7 +10,9 @@ import com.sent.sports.chat.domain.ChatSessionStatus;
 import com.sent.sports.chat.domain.SenderType;
 import com.sent.sports.chat.repository.ChatMessageRepository;
 import com.sent.sports.chat.repository.ChatSessionRepository;
+import com.sent.sports.chat.service.BotConversationUseCase;
 import com.sent.sports.chat.service.ChatNotifier;
+import com.sent.sports.chat.service.dto.BotTurnResult;
 import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
 import com.sent.sports.common.util.IdGen;
@@ -69,12 +71,14 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
     private final IdGen idGen;
     private final Clock clock;
     private final SensitiveWordFilter sensitiveWordFilter;
+    private final BotConversationUseCase botConversationUseCase;
 
     public ChatWebSocketHandler(SessionBroadcaster broadcaster, ChatNotifier notifier,
                                 TokenService tokenService, ObjectMapper objectMapper,
                                 ChatSessionRepository chatSessionRepository,
                                 ChatMessageRepository chatMessageRepository, IdGen idGen, Clock clock,
-                                SensitiveWordFilter sensitiveWordFilter) {
+                                SensitiveWordFilter sensitiveWordFilter,
+                                BotConversationUseCase botConversationUseCase) {
         this.broadcaster = broadcaster;
         this.notifier = notifier;
         this.tokenService = tokenService;
@@ -84,6 +88,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         this.idGen = idGen;
         this.clock = clock;
         this.sensitiveWordFilter = sensitiveWordFilter;
+        this.botConversationUseCase = botConversationUseCase;
     }
 
     @Override
@@ -219,6 +224,21 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
             return;
         }
         try {
+            // 机器人接待（2026-11-24）：BOT 会话的文本消息先交给智能助手，
+            // 命中知识库就直接回、答不上来或客户要人工就切 HUMAN 进排队，
+            // 都不把这条消息投给坐席（转人工那一下除外——坐席得看到客户说了什么）。
+            if (fromCustomer && chatSession.isBot() && ChatMsgType.of(msgType) == ChatMsgType.TEXT) {
+                BotTurnResult bot = botConversationUseCase.handle(chatSession, content, clientMsgId);
+                if (bot.handled()) {
+                    if (bot.notifyStaff()) {
+                        broadcaster.broadcastAll(WsEnvelope.queue(sessionId, bot.customerSeq(), rawPayload));
+                    }
+                    reply(session, WsEnvelope.ack(sessionId, bot.customerSeq(),
+                            json(Map.of("event", "ACCEPTED", "seq", bot.customerSeq(),
+                                    "clientMsgId", clientMsgId), "ACCEPTED")));
+                    return;
+                }
+            }
             int seq = chatSession.appendMessage();
             long now = clock.instant().toEpochMilli();
             chatSession.touch(now);

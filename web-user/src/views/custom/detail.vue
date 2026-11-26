@@ -15,8 +15,32 @@
     <el-empty v-if="!loading && !detail" description="未找到该定制单" :image-size="80" />
 
     <template v-if="detail">
-      <!-- 状态提示：告诉用户现在该做什么 -->
-      <div class="detail-hint" :class="`detail-hint--${hint.tone}`">{{ hint.text }}</div>
+      <!-- 状态提示 + 图稿上传倒计时（2026-11-23）：两者说的是同一件事，合成一条，
+           否则页面顶部会叠三条同为橙色的提示条（提示 / 倒计时 / 退款说明）。
+           倒计时只在「待提交图稿 + 一稿未传 + 服务端给了截止时刻」时出现，
+           秒级刷新只影响展示，判定口径以服务端 draftDeadlineMillis 为准。 -->
+      <div
+        class="detail-hint"
+        :class="[
+          `detail-hint--${hint.tone}`,
+          {
+            'detail-hint--urgent': showDraftCountdown && draftUrgent,
+            'detail-hint--overdue': showDraftCountdown && draftOverdue,
+          },
+        ]"
+      >
+        <span class="detail-hint__text">{{ hint.text }}</span>
+        <span v-if="showDraftCountdown" class="detail-hint__timer" data-testid="draft-countdown">
+          <template v-if="draftOverdue">已超过上传时限，系统即将自动取消并退款</template>
+          <template v-else>
+            距上传设计图稿截止
+            <strong class="detail-hint__time sent-num">{{ countdownText }}</strong>
+          </template>
+        </span>
+        <span v-if="showDraftCountdown" class="detail-hint__sub">
+          逾期未上传将自动取消订单并原路退款，抵扣的积分与使用的优惠券会一并返还账户。
+        </span>
+      </div>
 
       <!-- 退款入口（2026-11-21 用户要求）：从「我的订单 → 定制订单」进来就能退，
            不必再回商品订单里翻这张单。口径与订单详情一致：生产前可退，排产后只给一句解释。 -->
@@ -175,7 +199,7 @@
  *
  * 数据一次拿全（后端详情已联查 custom_draft / custom_review_log），不再发多个请求。
  */
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import {
@@ -259,6 +283,44 @@ const STATUS_HINT: Record<string, { text: string; tone: 'info' | 'warn' | 'ok' }
 const hint = computed(
   () => STATUS_HINT[detail.value?.status ?? ''] ?? { text: '定制单处理中。', tone: 'info' as const },
 );
+
+/**
+ * 图稿上传倒计时（2026-11-23 用户口径）：支付后 72 小时未上传，系统自动取消订单并全额退款。
+ * <p>只在「待提交图稿 + 一稿未传 + 服务端给了截止时刻」时展示——已传稿、未支付、已取消都不显示。
+ * 秒级刷新只影响展示，判定口径始终以服务端 {@code draftDeadlineMillis} 为准。</p>
+ */
+const draftDeadlineMillis = computed(() => Number(detail.value?.draftDeadlineMillis ?? 0));
+const showDraftCountdown = computed(
+  () => draftDeadlineMillis.value > 0
+    && detail.value?.status === 'WAIT_DRAFT'
+    && drafts.value.length === 0,
+);
+const nowTick = ref(Date.now());
+let tickTimer: ReturnType<typeof setInterval> | null = null;
+onMounted(() => {
+  tickTimer = setInterval(() => {
+    nowTick.value = Date.now();
+  }, 1000);
+});
+onUnmounted(() => {
+  if (tickTimer) clearInterval(tickTimer);
+});
+const remainingMs = computed(() => Math.max(0, draftDeadlineMillis.value - nowTick.value));
+const draftOverdue = computed(() => showDraftCountdown.value && remainingMs.value <= 0);
+/** 剩余不足 12 小时转告警色：最后一轮站内信提醒也在这一刻发出 */
+const draftUrgent = computed(
+  () => showDraftCountdown.value && remainingMs.value > 0 && remainingMs.value <= 12 * 3600 * 1000,
+);
+const countdownText = computed(() => {
+  const ms = remainingMs.value;
+  const totalMinutes = Math.floor(ms / 60000);
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+  const seconds = Math.floor((ms % 60000) / 1000);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return days > 0 ? `${days} 天 ${pad(hours)}:${pad(minutes)}` : `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+});
 
 const SIDE_LABELS: Record<string, string> = {
   SINGLE: '单面',
@@ -388,8 +450,12 @@ watch(customOrderId, load);
   margin-left: auto;
 }
 
-/* ---------- 状态提示 ---------- */
+/* ---------- 状态提示（内含图稿上传倒计时） ---------- */
 .detail-hint {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
   border-radius: var(--sent-radius);
   padding: 11px 16px;
   font-size: 13px;
@@ -410,6 +476,43 @@ watch(customOrderId, load);
   background: #eef8f2;
   border-color: #2f9e6a;
   color: #1e7a4f;
+}
+/* 倒计时：与状态文案同行，剩余时间用大号等宽数字，扫一眼就能读出紧迫度 */
+.detail-hint__timer {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 13px;
+}
+.detail-hint__time {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: #b46a00;
+  font-variant-numeric: tabular-nums;
+}
+.detail-hint__sub {
+  flex: 1 1 100%;
+  font-size: 12px;
+  line-height: 1.6;
+}
+/* 剩余不足 12 小时：整条转告警色，与最后一轮站内信提醒同步 */
+.detail-hint--urgent {
+  background: #fdf0ef;
+  border-color: #c0392b;
+  color: #9c3a30;
+}
+.detail-hint--urgent .detail-hint__time {
+  color: #c0392b;
+}
+/* 已超时：不再报时，只说明即将自动取消 */
+.detail-hint--overdue {
+  background: #f7f7f8;
+  border-color: #b9b9c0;
+  color: #5c5c66;
+}
+.detail-hint--overdue .detail-hint__timer {
+  font-weight: 600;
 }
 
 /* ---------- 退款入口 ---------- */

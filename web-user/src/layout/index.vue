@@ -1,5 +1,5 @@
 <template>
-  <div class="site">
+  <div class="site" :class="{ 'site--no-search': hideSearchbar }">
     <!-- 顶部窄条：右侧 账户/订单/会员中心/在线客服/消息/购物车 -->
     <div class="topbar">
       <div class="container topbar__inner">
@@ -38,13 +38,14 @@
           <span class="topbar__sep"></span>
           <router-link to="/member" class="topbar__link topbar__member">会员中心</router-link>
           <span class="topbar__sep"></span>
-          <router-link to="/chat" class="topbar__link topbar__chat">在线客服</router-link>
+          <!-- 在线客服 / 购物车：新开标签页（用户 2026-11-25 口径 —— 不打断正在浏览的商品页） -->
+          <router-link to="/chat" target="_blank" rel="noopener" class="topbar__link topbar__chat">在线客服</router-link>
           <span class="topbar__sep"></span>
           <router-link to="/messages" class="topbar__link topbar__msg">
             消息<i v-if="msg.unreadCount > 0" class="msg-badge">{{ msg.unreadCount > 99 ? '99+' : msg.unreadCount }}</i>
           </router-link>
           <span class="topbar__sep"></span>
-          <router-link to="/cart" class="topbar__link topbar__cart">
+          <router-link to="/cart" target="_blank" rel="noopener" class="topbar__link topbar__cart">
             购物车<i v-if="cartCount > 0" class="cart-badge">{{ cartCount > 99 ? '99+' : cartCount }}</i>
           </router-link>
           <span class="topbar__sep"></span>
@@ -61,11 +62,12 @@
       </div>
     </div>
 
-    <!-- 搜索区：左 Logo / 中加粗搜索框 / 下方热搜词 -->
-    <div class="searchbar">
+    <!-- 搜索区：左 Logo / 中加粗搜索框 / 下方热搜词
+         在线客服与帮助中心分类页是「专注阅读 / 专注沟通」的场景，整块搜索区（含品牌标识）不展示。 -->
+    <div v-if="!hideSearchbar" class="searchbar">
       <div class="container searchbar__inner">
         <router-link to="/home" class="brand">
-          <span class="brand__mark">S</span>
+          <img class="brand__mark" src="/sent-icon-192.png" alt="" />
           <span class="brand__text">
             <b>森特体育</b>
             <i>SENT SPORTS</i>
@@ -130,7 +132,8 @@
       <router-view />
     </main>
 
-    <footer class="site-footer">
+    <!-- 站点页脚：在线客服是「沉浸式」沟通界面，整屏留给聊天，不挂页脚 -->
+    <footer v-if="!isChatPage" class="site-footer">
       <div class="container">
         <div class="footer__copy">© 2026 森特体育用品有限公司 · 专业运动装备 B2B 商城 · 演示环境</div>
       </div>
@@ -148,6 +151,7 @@ import { useMessageStore } from '@/store/modules/useMessageStore';
 import { productApi } from '@/api/product';
 import { profileApi } from '@/api/profile';
 import { unwrap } from '@/utils/http';
+import { openInNewTab } from '@/utils/link';
 
 const route = useRoute();
 const router = useRouter();
@@ -156,6 +160,26 @@ const cart = useCartStore();
 const msg = useMessageStore();
 
 const keyword = ref('');
+
+/**
+ * 在线客服页：沉浸式沟通界面，搜索区与站点页脚都不展示，整屏留给聊天卡。
+ * 顶栏（含「帮助中心」下拉、返回首页）必须保留，否则没有出口。
+ */
+const isChatPage = computed(() => route.path === '/chat');
+
+/**
+ * 是否隐藏整块搜索区（品牌图标 + 文字 + 搜索框 + 热搜）。
+ *
+ * 用户诉求（2026-11-25）：在线客服、帮助中心各分类页、消息中心都不需要顶部搜索框与品牌文字，
+ * 这三类页面是「专注沟通 / 专注阅读 / 专注处理站内信」的独立版式；其余页面（首页、商品、购物车……）
+ * 保持原样，因为搜索是商城的主入口。顶栏必须保留，否则这些页面没有跳走的口子。
+ *
+ * 商品详情页（同日晚）：同理去掉整站品牌 + 搜索区，改由页面自己在左上角放「森特 / SENT SPORTS」
+ * （见 `views/product/detail.vue` 的 `.detail-brand`）。注意前缀必须带尾斜杠 `/product/`，
+ * 写成 `/product` 会把商品列表 `/products` 一起隐藏掉。
+ */
+const HIDE_SEARCHBAR_PREFIXES = ['/chat', '/help/', '/messages', '/product/'];
+const hideSearchbar = computed(() => HIDE_SEARCHBAR_PREFIXES.some((p) => route.path.startsWith(p)));
 
 /** 顶栏账户名：真源是 GET /api/me，不写死、不读本地缓存。 */
 const accountName = ref('我的账户');
@@ -253,7 +277,9 @@ function clickSuggestion(item: SuggestItem): void {
   rememberSearch(item.name);
   const query: Record<string, string> = { keyword: item.name };
   if (item.categoryId != null) query.categoryId = String(item.categoryId);
-  router.push({ path: '/products', query });
+  // 2026-11-26 用户口径：从顶部搜索（含联想、热搜、历史）出发都像点商品详情一样新开一页，
+  // 原页面（首页/正在浏览的列表）保持不动，方便对比着看。
+  openInNewTab(router, { path: '/products', query });
 }
 
 const cartCount = computed(() => cart.totalQty);
@@ -275,7 +301,8 @@ function onSearch(): void {
   const kw = keyword.value.trim();
   rememberSearch(kw);
   dropdownOpen.value = false;
-  router.push({ path: '/products', query: kw ? { keyword: kw } : {} });
+  // 搜索（回车 / 点「搜索」/ 点热搜 / 点历史）统一新开一页，2026-11-26 用户要求。
+  openInNewTab(router, { path: '/products', query: kw ? { keyword: kw } : {} });
 }
 
 function searchWord(word: string): void {

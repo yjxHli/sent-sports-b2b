@@ -15,7 +15,7 @@
  *   3) 双方刷新后（走历史接口）图片依然是图片，而不是路径文本。
  */
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
-import { startConsultation } from './chat-helpers';
+import { startConsultation , closeSessionWithTicket} from './chat-helpers';
 import path from 'node:path';
 
 const USER_URL = process.env.E2E_USER_URL ?? 'http://127.0.0.1:5173';
@@ -112,7 +112,7 @@ test('客服双向发图：客户发的图客服看得到，客服发的图客�
   const openRows: any[] = [...(queue?.data?.waiting ?? []), ...(queue?.data?.active ?? []), ...(listed?.data?.list ?? [])];
   for (const row of openRows) {
     if (row.status !== 'CLOSED') {
-      await apiPost(request, `/admin/chat/sessions/${row.sessionId}/close`, { reason: 'DONE' }, adminToken);
+      await closeSessionWithTicket(request, Number(row.sessionId), adminToken);
     }
   }
   const created = await apiPost(request, '/chat/sessions', { customerId: CUSTOMER_ID, vip: false }, userToken);
@@ -142,7 +142,7 @@ test('客服双向发图：客户发的图客服看得到，客服发的图客�
     await expect(sessionItem, `工作台左侧未出现会话 ${sessionId}`).toBeVisible({ timeout: 20_000 });
     await sessionItem.click();
     await expect(
-      adminPage.locator('.el-tabs__item', { hasText: `#${sessionId}` }).first(),
+      adminPage.locator(`.chat-panel[data-session-id="${sessionId}"]`),
     ).toBeVisible({ timeout: 10_000 });
 
     // 3) 客服先回一句话完成接管（排队中客户输入框是禁用的）
@@ -164,7 +164,8 @@ test('客服双向发图：客户发的图客服看得到，客服发的图客�
     expect(customerImgSrc, `图片地址应指向文件服务：${customerImgSrc}`).toContain('/api/files/');
 
     // 5) 客服发图 → 客户页面 3s 内出现图片气泡
-    await adminPage.getByRole('button', { name: /图片/ }).click();
+    // 用 testid 锁定聊天工具栏的「图片」，否则会和右栏工单的「上传图片凭证」撞名
+    await adminPage.getByTestId('send-image').click();
     await adminPage.locator('.hidden-input').setInputFiles(CHAT_IMAGE);
     await expect(
       userPage.locator('.chat-msg--other .chat-img').first(),

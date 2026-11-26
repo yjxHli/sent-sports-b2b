@@ -38,7 +38,7 @@ export function join(base: string, path: string): string {
 
 export async function apiCall(
   request: APIRequestContext,
-  method: 'GET' | 'POST' | 'PUT',
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
   path: string,
   data?: unknown,
   token?: string,
@@ -132,18 +132,83 @@ export async function clearOpenSessions(request: APIRequestContext, adminToken: 
   // 需要连 WAITING 一起清的用例（如 chat-auto-open*，它断言开场 Tab 数为 0）自己在用例内补一步
   // 「先切在线 → 再关 → 再离场」。
   const queue = await apiCall(request, 'GET', '/admin/chat/sessions/open?staffId=9001', undefined, adminToken);
-  const listed = await apiCall(request, 'GET', '/admin/chat/sessions?page=1&size=100', undefined, adminToken);
   const rows: any[] = [
     ...(queue?.data?.waiting ?? []),
     ...(queue?.data?.active ?? []),
-    ...(listed?.data?.list ?? []),
   ];
+
+  // **分页扫全量**（2026-11-25 补）：chat_session 已沉淀 100+ 行，列表按 created_at 倒序、
+  // size 上限 100，最早的僵尸会话（id=1）永远落在第 2 页之外。只扫第一页时它会一直挂在
+  // 9001 名下占并发位，还会被工作台当成「新会话」自动弹出，把真正进线的客户挤掉。
+  const size = 100;
+  for (let page = 1; page <= 50; page += 1) {
+    const listed = await apiCall(request, 'GET', `/admin/chat/sessions?page=${page}&size=${size}`,
+      undefined, adminToken);
+    const list: any[] = listed?.data?.list ?? [];
+    rows.push(...list);
+    const total = Number(listed?.data?.total ?? 0);
+    if (list.length === 0 || page * size >= total) break;
+  }
+
+  const seen = new Set<number>();
   for (const row of rows) {
+    const sessionId = Number(row.sessionId);
+    if (!sessionId || seen.has(sessionId)) continue;
+    seen.add(sessionId);
     if (row.status !== 'CLOSED') {
-      await apiCall(request, 'POST', `/admin/chat/sessions/${row.sessionId}/close`,
-        { reason: 'DONE' }, adminToken);
+      await closeSessionWithTicket(request, sessionId, adminToken);
     }
   }
+}
+
+/**
+ * 人工结束会话的统一出口。
+ *
+ * 2026-11-26 起后端不再强制「先有完整工单才能关单」，但**管理端客服审查只收已提交工单**，
+ * 所以清理/关闭仍统一走这里：先补一份最小合法工单并提交（submit=true），再关单。
+ * 接待人从会话详情动态取（转接用例可能不是 9001），避免 42201。
+ */
+export async function closeSessionWithTicket(
+  request: APIRequestContext,
+  sessionId: number,
+  token: string,
+  reason = 'DONE',
+): Promise<any> {
+  const detail = await apiCall(request, 'GET', `/admin/chat/sessions/${sessionId}`, undefined, token);
+  const staffId = Number(detail?.data?.staffId ?? 9001);
+  const existing = await apiCall(request, 'GET', `/admin/chat/sessions/${sessionId}/note`, undefined, token);
+  const note = existing?.data;
+  const complete = note && note.submitStatus === 'SUBMITTED'
+    && String(note.summary ?? '').trim() && String(note.solution ?? '').trim()
+    && note.category && note.info && note.result;
+  if (staffId > 0 && !complete) {
+    await apiCall(request, 'PUT', `/admin/chat/sessions/${sessionId}/note`, {
+      staffId,
+      summary: `E2E 服务工单 ${sessionId}`,
+      category: 'INQUIRY',
+      info: 'CLEAR',
+      result: 'DONE',
+      solution: '已按标准流程处理完成',
+      submit: true,
+    }, token);
+  }
+  return apiCall(request, 'POST', `/admin/chat/sessions/${sessionId}/close`, { reason }, token);
+}
+
+/**
+ * 在客服工作台填一份最小合法服务工单并**提交**。
+ * 只用于「测的是别的功能、只是需要先能结束会话 / 让审查列表有数据」的用例；
+ * 工单本身的完整字段由 service-ticket-note.spec.ts 覆盖。
+ */
+export async function fillMinimalTicket(page: Page): Promise<void> {
+  // 抽屉已取消（2026-11-25 二次改版），工单字段全部内联在右侧「本次情况」
+  const panel = page.getByTestId('session-note-panel');
+  await panel.getByTestId('note-inline-summary').fill('E2E 测试工单');
+  await panel.getByTestId('note-inline-solution').fill('已按标准流程处理完成');
+  // 2026-11-26：按钮拆成「暂时保存 / 提交工单」，只有提交的工单才进客服审查
+  await panel.getByTestId('note-inline-submit').click();
+  await expect(page.locator('.el-message', { hasText: '工单已提交' }).first())
+    .toBeVisible({ timeout: 15_000 });
 }
 
 /**

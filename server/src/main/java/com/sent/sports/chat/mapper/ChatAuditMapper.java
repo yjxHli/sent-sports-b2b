@@ -17,8 +17,12 @@ import java.util.List;
 @Mapper
 public interface ChatAuditMapper {
 
-    /** count 与分页共用的过滤片段，杜绝两边漂移（注解值必须是常量表达式）。 */
-    String AUDIT_FILTERS = " AND s.audit_deleted = 0 "
+    /**
+     * count 与分页共用的过滤片段，杜绝两边漂移（注解值必须是常量表达式）。
+     * <p>2026-11-26：只收「已提交工单」的会话——客服先暂存去接待下一位客户时，
+     * 半成品不该出现在主管的审查列表里；未填工单的会话同样不出现。</p>
+     */
+    String AUDIT_FILTERS = " AND s.audit_deleted = 0 AND n.submit_status = 'SUBMITTED' "
             + "<if test='staffId != null'> AND s.staff_id = #{staffId} </if>"
             + "<if test='from != null'> AND s.ended_at &gt;= #{from} </if>"
             + "<if test='to != null'> AND s.ended_at &lt; #{to} </if>"
@@ -47,7 +51,7 @@ public interface ChatAuditMapper {
             + "SELECT s.id AS sessionId, s.customer_id AS customerId, s.staff_id AS staffId, "
             + "st.name AS staffName, COALESCE(s.started_at, s.created_at) AS startedAt, "
             + "s.ended_at AS endedAt, "
-            + "n.summary AS summary, n.result AS result "
+            + "n.summary AS summary, n.result AS result, n.submit_status AS submitStatus "
             + "FROM chat_session s LEFT JOIN sys_staff st ON st.id = s.staff_id "
             + "LEFT JOIN chat_session_note n ON n.session_id = s.id "
             + "WHERE s.status = 'CLOSED' "

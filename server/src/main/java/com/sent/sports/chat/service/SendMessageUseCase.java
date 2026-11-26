@@ -4,8 +4,11 @@ import com.sent.sports.chat.domain.ChatMessage;
 import com.sent.sports.chat.domain.ChatMsgType;
 import com.sent.sports.chat.domain.ChatSession;
 import com.sent.sports.chat.domain.ChatSessionStatus;
+import com.sent.sports.chat.domain.SenderType;
+import com.sent.sports.chat.domain.SessionType;
 import com.sent.sports.chat.repository.ChatMessageRepository;
 import com.sent.sports.chat.repository.ChatSessionRepository;
+import com.sent.sports.chat.service.dto.BotTurnResult;
 import com.sent.sports.chat.service.dto.SendMessageCmd;
 import com.sent.sports.chat.service.dto.SendMessageResult;
 import com.sent.sports.common.anno.UseCase;
@@ -32,16 +35,19 @@ public class SendMessageUseCase {
     private final Clock clock;
     private final ChatNotifier notifier;
     private final SensitiveWordFilter sensitiveWordFilter;
+    private final BotConversationUseCase botConversationUseCase;
 
     public SendMessageUseCase(ChatSessionRepository sessionRepository,
                               ChatMessageRepository messageRepository, IdGen idGen, Clock clock,
-                              ChatNotifier notifier, SensitiveWordFilter sensitiveWordFilter) {
+                              ChatNotifier notifier, SensitiveWordFilter sensitiveWordFilter,
+                              BotConversationUseCase botConversationUseCase) {
         this.sessionRepository = sessionRepository;
         this.messageRepository = messageRepository;
         this.idGen = idGen;
         this.clock = clock;
         this.notifier = notifier;
         this.sensitiveWordFilter = sensitiveWordFilter;
+        this.botConversationUseCase = botConversationUseCase;
     }
 
     @UseCase
@@ -68,6 +74,22 @@ public class SendMessageUseCase {
             throw new BizException(ErrorCode.SENSITIVE_MESSAGE);
         }
         long now = clock.instant().toEpochMilli();
+        // 机器人接待（2026-11-24）：REST 兜底链路必须与 WS 同口径，
+        // 只在 WS 拦的话，客户端把长连接一断就能绕过机器人直接找人工。
+        // 只对「客户发的文本」生效：客服/系统消息、图片(fileId)、订单卡(JSON) 一律走原链路。
+        if (cmd.senderType() == SenderType.CUSTOMER && msgType == ChatMsgType.TEXT
+                && session.getSessionType() == SessionType.BOT) {
+            BotTurnResult bot = botConversationUseCase.handle(session, cmd.content(), cmd.clientMsgId());
+            if (bot.handled()) {
+                if (bot.notifyStaff()) {
+                    // 转人工：这条客户消息要让排队中的坐席看到（与 WS 链路同一口径）
+                    notifier.messagePublished(session, new ChatMessage(bot.customerMsgId(), cmd.sessionId(),
+                            SenderType.CUSTOMER, cmd.content(), cmd.clientMsgId(), bot.customerSeq(),
+                            now, ChatMsgType.TEXT));
+                }
+                return new SendMessageResult(bot.customerMsgId(), bot.customerSeq(), cmd.sessionId());
+            }
+        }
         int seq = session.appendMessage();
         session.touch(now);
         String messageId = idGen.next("CM");

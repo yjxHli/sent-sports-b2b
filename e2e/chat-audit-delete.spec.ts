@@ -8,7 +8,7 @@ import { test, expect, type Page } from '@playwright/test';
 import {
   ADMIN_URL, join, apiCall, loginApi, clearOpenSessions, setStaffPresence, startConsultation,
   ADMIN_NAME, ADMIN_PASSWORD, CHAT_MANAGER_NAME, CHAT_MANAGER_PASSWORD, CUSTOMER_ID,
-  CUSTOMER_PHONE, CUSTOMER_PASSWORD,
+  CUSTOMER_PHONE, CUSTOMER_PASSWORD, closeSessionWithTicket,
 } from './chat-helpers';
 
 const LOCAL_MYSQL = 'D:/MySQL/MySQL Server 8.0/bin/mysql.exe';
@@ -55,8 +55,7 @@ test('客服审查可批量软删：确认令牌后从列表消失，库里只�
   }
   await apiCall(request, 'PUT', `/admin/chat/sessions/${sessionId}/note`,
     { staffId: 9001, ...NOTE }, adminToken);
-  await apiCall(request, 'POST', `/admin/chat/sessions/${sessionId}/close`,
-    { reason: 'DONE' }, adminToken);
+  await closeSessionWithTicket(request, Number(sessionId), adminToken);
 
   sql(`UPDATE chat_session SET audit_deleted = 0 WHERE id = ${sessionId};`);
   try {
@@ -68,7 +67,13 @@ test('客服审查可批量软删：确认令牌后从列表消失，库里只�
       await expect(page.getByRole('heading', { name: '客服审查' })).toBeVisible();
       await page.getByPlaceholder('用户 ID / 会话号 / 问题概述').fill(String(sessionId));
       await page.getByRole('button', { name: '查询' }).click();
-      const row = page.locator('tbody tr', { hasText: String(sessionId) }).first();
+      // 关键字是模糊匹配，列表可能同时出现 13012 / 30120 等会话；
+      // 用「会话号单元格文本恰好等于本次 id」精确定位，避免 hasText 子串误伤其它行。
+      const exactSessionCell = new RegExp(`^\\s*${sessionId}\\s*$`);
+      const targetRow = page.locator('tbody tr').filter({
+        has: page.locator('td', { hasText: exactSessionCell }),
+      });
+      const row = targetRow.first();
       await expect(row).toBeVisible({ timeout: 20_000 });
 
       await page.getByTestId('batch-delete-btn').click();
@@ -87,8 +92,7 @@ test('客服审查可批量软删：确认令牌后从列表消失，库里只�
       const resp: any = await (await done).json().catch(() => null);
       expect(resp?.code, `审查删除失败：${JSON.stringify(resp)}`).toBe(0);
 
-      await expect(page.locator('tbody tr', { hasText: String(sessionId) }))
-        .toHaveCount(0, { timeout: 20_000 });
+      await expect(targetRow).toHaveCount(0, { timeout: 20_000 });
       const flag = sql(`SELECT audit_deleted FROM chat_session WHERE id = ${sessionId};`);
       expect(flag).toBe('1');
 

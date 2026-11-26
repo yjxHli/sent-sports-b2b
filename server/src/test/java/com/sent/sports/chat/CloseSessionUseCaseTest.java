@@ -4,6 +4,7 @@ import com.sent.sports.chat.domain.AgentPresence;
 import com.sent.sports.chat.domain.ChatSession;
 import com.sent.sports.chat.domain.ChatSessionStatus;
 import com.sent.sports.chat.domain.PresenceStatus;
+import com.sent.sports.chat.mapper.po.ChatSessionNotePO;
 import com.sent.sports.chat.repository.AgentPresenceRepository;
 import com.sent.sports.chat.repository.ChatSessionRepository;
 import com.sent.sports.chat.service.ChatNotifier;
@@ -30,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -55,6 +57,17 @@ class CloseSessionUseCaseTest extends BaseUseCaseTest {
     private CloseSessionUseCase useCase;
     @Captor
     private ArgumentCaptor<ChatSession> sessionCaptor;
+
+    /** 只给「草稿也能结束会话」这条用例造一份填了一半的工单。 */
+    private static ChatSessionNotePO completeTicket() {
+        ChatSessionNotePO po = new ChatSessionNotePO();
+        po.setSummary("客户咨询定制足球印字");
+        po.setCategory("INQUIRY");
+        po.setIssueInfo("CLEAR");
+        po.setResult("DONE");
+        po.setSolution("已告知起订量与交期");
+        return po;
+    }
 
     @Test
     void closeWithValidReason() {
@@ -273,6 +286,49 @@ class CloseSessionUseCaseTest extends BaseUseCaseTest {
         CloseSessionResult r = useCase.close(new CloseCmd(1L, "DONE", 9001L));
 
         assertEquals(ChatSessionStatus.CLOSED, r.status());
+        verify(sessionRepository).save(active);
+    }
+
+    /**
+     * 2026-11-26 用户口径变更：结束会话不再强制工单。
+     * 客服可以先结束与客户的对话，再在空闲时补工单；真正「关闭会话窗口」由前端按提交状态拦截。
+     */
+    @Test
+    void closeWithoutServiceTicketAllowed() {
+        ChatSession active = new ChatSession(1L, 100L, ChatSessionStatus.ACTIVE, 9001L);
+        when(sessionRepository.findById(1L)).thenReturn(Optional.of(active));
+
+        CloseSessionResult r = useCase.close(new CloseCmd(1L, "DONE", 9001L));
+
+        assertEquals(ChatSessionStatus.CLOSED, r.status());
+        verify(sessionRepository).save(active);
+        verify(notifier).sessionClosed(anyLong(), anyLong(), any(), any());
+    }
+
+    /** 草稿（填了一半）同样不拦：只有「提交」才是审查入口，结束会话不该被半成品卡住。 */
+    @Test
+    void closeWithDraftTicketAllowed() {
+        ChatSession active = new ChatSession(1L, 100L, ChatSessionStatus.ACTIVE, 9001L);
+        when(sessionRepository.findById(1L)).thenReturn(Optional.of(active));
+        ChatSessionNotePO draft = completeTicket();
+        draft.setSolution(null);
+        draft.setSubmitStatus("DRAFT");
+
+        CloseSessionResult r = useCase.close(new CloseCmd(1L, "DONE", 9001L));
+
+        assertEquals(ChatSessionStatus.CLOSED, r.status());
+        verify(sessionRepository).save(active);
+    }
+
+    /** 超时自动结束不要求工单：客户已离线，客服根本补不了单，不能让会话永远关不掉。 */
+    @Test
+    void timeoutCloseDoesNotRequireTicket() {
+        ChatSession active = new ChatSession(1L, 100L, false, ChatSessionStatus.ACTIVE, 9001L,
+                NOW - 40 * 60 * 1000, NOW - 40 * 60 * 1000, 0);
+        when(sessionRepository.findById(1L)).thenReturn(Optional.of(active));
+
+        assertTrue(useCase.timeoutClose(1L));
+
         verify(sessionRepository).save(active);
     }
 }

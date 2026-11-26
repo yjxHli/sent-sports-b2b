@@ -2,6 +2,7 @@ package com.sent.sports.refund.service;
 
 import com.sent.sports.common.anno.UseCase;
 import com.sent.sports.common.error.BizException;
+import com.sent.sports.coupon.service.CouponDeduction;
 import com.sent.sports.member.service.MemberRefundGateway;
 import com.sent.sports.order.service.OrderRefundGateway;
 import com.sent.sports.order.service.OrderRefundViewService;
@@ -33,6 +34,7 @@ public class RefundCallbackUseCase implements RefundCallbackService {
     private final PaymentRefundGateway paymentRefundGateway;
     private final OrderRefundViewService orderRefundViewService;
     private final MemberRefundGateway memberRefundGateway;
+    private final CouponDeduction couponDeduction;
     private final StockRefundGateway stockRefundGateway;
     private final OrderRefundGateway orderRefundGateway;
 
@@ -40,12 +42,14 @@ public class RefundCallbackUseCase implements RefundCallbackService {
                                  PaymentRefundGateway paymentRefundGateway,
                                  OrderRefundViewService orderRefundViewService,
                                  MemberRefundGateway memberRefundGateway,
+                                 CouponDeduction couponDeduction,
                                  StockRefundGateway stockRefundGateway,
                                  OrderRefundGateway orderRefundGateway) {
         this.refundRepository = refundRepository;
         this.paymentRefundGateway = paymentRefundGateway;
         this.orderRefundViewService = orderRefundViewService;
         this.memberRefundGateway = memberRefundGateway;
+        this.couponDeduction = couponDeduction;
         this.stockRefundGateway = stockRefundGateway;
         this.orderRefundGateway = orderRefundGateway;
     }
@@ -86,8 +90,9 @@ public class RefundCallbackUseCase implements RefundCallbackService {
 
         // 4) 退回抵扣积分（P5 闭环）。用户支付时被扣掉的抵扣积分，退款时必须还回去，
         //    否则「钱退回来了、积分被吃了」。口径：整单退全额、部分退按商品金额比例（见 RefundCalculator）。
+        long goodsPaidCent = 0L;
         try {
-            long goodsPaidCent = view.items().stream().mapToLong(RefundLineView::paidAmountCent).sum();
+            goodsPaidCent = view.items().stream().mapToLong(RefundLineView::paidAmountCent).sum();
             long deducted = memberRefundGateway.deductedPointsOf(view.customerId(), orderNo);
             long pointsToReturn = RefundCalculator.pointsToReturn(
                     deducted, amountCent, goodsPaidCent, view.payableCent());
@@ -101,6 +106,19 @@ public class RefundCallbackUseCase implements RefundCallbackService {
             refundOrder.transit(RefundAction.REFUND_FAIL);
             refundRepository.save(refundOrder);
             return;
+        }
+
+        // 4b) 整单退才返还优惠券：部分退款不退券，否则同一张券会被用两次。
+        //     与积分共用 RefundCalculator.isFullRefund 口径，避免「积分退了、券没退」。
+        if (RefundCalculator.isFullRefund(amountCent, goodsPaidCent, view.payableCent())) {
+            try {
+                couponDeduction.returnCoupon(orderNo);
+            } catch (BizException e) {
+                // 券没退回去属于用户权益受损，与积分同理置 FAILED 交人工对账
+                refundOrder.transit(RefundAction.REFUND_FAIL);
+                refundRepository.save(refundOrder);
+                return;
+            }
         }
 
         // 5) 释放库存额度（未发货部分回补待检）——下游副作用，失败保留 REFUNDING 重试

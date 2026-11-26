@@ -11,6 +11,16 @@ import java.util.Optional;
  */
 public final class StaffAssignmentPolicy {
 
+    /**
+     * 单坐席（2026-11-16）：系统只用 9001 接待，客户会话统一分配给他。
+     * 其他客服（9003 等）即使在线也不参与自动分配——保留 presence 是为了
+     * 历史报表/手动分配，但进线分配只认 9001。
+     *
+     * <p>规则放在 domain 里而不是某个用例里：进线建会话与机器人转人工**两条链路**都要用，
+     * 各自抄一份字面量迟早会漂移（一个改 9001、一个还留着旧工号）。</p>
+     */
+    public static final long SINGLE_AGENT_STAFF_ID = 9001L;
+
     private StaffAssignmentPolicy() {
     }
 

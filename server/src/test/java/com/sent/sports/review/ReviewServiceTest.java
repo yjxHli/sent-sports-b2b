@@ -3,6 +3,7 @@ package com.sent.sports.review;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
+import com.sent.sports.common.util.SensitiveWordFilter;
 import com.sent.sports.common.web.PageQuery;
 import com.sent.sports.order.service.OrderQueryService;
 import com.sent.sports.review.dto.ReviewDtos;
@@ -59,11 +60,14 @@ class ReviewServiceTest extends BaseUnitTest {
     @Mock
     private OrderQueryService orderQueryService;
 
+    @Mock
+    private SensitiveWordFilter sensitiveWordFilter;
+
     private ReviewServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        service = new ReviewServiceImpl(reviewMapper, orderQueryService);
+        service = new ReviewServiceImpl(reviewMapper, orderQueryService, sensitiveWordFilter);
     }
 
     private ReviewDtos.CreateReviewCmd cmd(Integer rating, String content, List<String> images, boolean anonymous) {
@@ -89,6 +93,19 @@ class ReviewServiceTest extends BaseUnitTest {
         BizException ex = assertThrows(BizException.class,
                 () -> service.submit(0L, cmd(5, "很好", List.of(), false)));
         assertEquals(ErrorCode.UNAUTHENTICATED, ex.getErrorCode());
+        verifyNoInteractions(orderQueryService, reviewMapper);
+    }
+
+    @Test
+    @DisplayName("评价内容含违禁词：抛 40003，在查订单资格之前直接拦掉")
+    void sensitiveContentRejected() {
+        when(sensitiveWordFilter.contains("毒品")).thenReturn(true);
+
+        BizException ex = assertThrows(BizException.class,
+                () -> service.submit(CUSTOMER_ID, cmd(5, "毒品", List.of(), false)));
+
+        assertEquals(40003, ex.getErrorCode().getCode());
+        assertTrue(ex.resolvedMessage().contains("文明发言"), ex.resolvedMessage());
         verifyNoInteractions(orderQueryService, reviewMapper);
     }
 
@@ -234,6 +251,7 @@ class ReviewServiceTest extends BaseUnitTest {
         ReviewSummaryRow summary = new ReviewSummaryRow();
         summary.setTotal(2L);
         summary.setPositiveCount(1L);
+        summary.setNegativeCount(1L);
         summary.setAverageRating(new BigDecimal("4.0000"));
         when(reviewMapper.selectSummary(PRODUCT_ID)).thenReturn(summary);
 
@@ -251,8 +269,50 @@ class ReviewServiceTest extends BaseUnitTest {
         assertTrue(second.anonymous());
 
         assertEquals(2L, page.summary().total());
+        assertEquals(1L, page.summary().negativeCount(), "差评数 = rating<=2 的条数（3 星属于中评，不计入差评）");
         assertEquals(50, page.summary().positiveRate(), "好评率 = rating>=4 的占比");
         assertEquals("4.0", page.summary().avgRating());
+    }
+
+    @Test
+    @DisplayName("摘要区分好评/差评：中评(3 星)两边都不算，好评+差评可以不等于总数")
+    void summaryCountsPositiveAndNegativeSeparately() {
+        Page<ReviewRow> dbPage = new Page<>(1, 10);
+        dbPage.setRecords(List.of(row(3L, "王五", 3, false)));
+        dbPage.setTotal(1L);
+        when(reviewMapper.selectByProductPage(any(), anyLong())).thenReturn(dbPage);
+
+        ReviewSummaryRow summary = new ReviewSummaryRow();
+        summary.setTotal(5L);
+        summary.setPositiveCount(3L);
+        summary.setNegativeCount(1L);
+        summary.setAverageRating(new BigDecimal("3.6000"));
+        when(reviewMapper.selectSummary(PRODUCT_ID)).thenReturn(summary);
+
+        ReviewDtos.ReviewSummaryVO vo = service.list(PRODUCT_ID, new PageQuery()).summary();
+
+        assertEquals(5L, vo.total());
+        assertEquals(3L, vo.positiveCount());
+        assertEquals(1L, vo.negativeCount(), "5 条里只有 1 条 <=2 星 → 差评 1 条");
+        assertEquals(60, vo.positiveRate());
+    }
+
+    @Test
+    @DisplayName("摘要空集：无评价或聚合行为 null 时好评/差评都必须是 0，前端不能显示 null/NaN")
+    void summaryEmptyProductHasZeroCounts() {
+        Page<ReviewRow> empty = new Page<>(1, 10);
+        empty.setRecords(List.of());
+        empty.setTotal(0L);
+        when(reviewMapper.selectByProductPage(any(), anyLong())).thenReturn(empty);
+        when(reviewMapper.selectSummary(PRODUCT_ID)).thenReturn(null);
+
+        ReviewDtos.ReviewSummaryVO vo = service.list(PRODUCT_ID, new PageQuery()).summary();
+
+        assertEquals(0L, vo.total());
+        assertEquals(0L, vo.positiveCount());
+        assertEquals(0L, vo.negativeCount());
+        assertEquals(0, vo.positiveRate());
+        assertEquals("0.0", vo.avgRating());
     }
 
     @Test

@@ -5,7 +5,7 @@
 
     <div class="cs-login__card">
       <div class="cs-login__brand">
-        <span class="cs-login__logo">S</span>
+        <img class="cs-login__logo" :src="brandIcon" alt="" />
         <div>
           <h1 class="cs-login__title">森特客服工作台</h1>
           <p class="cs-login__sub">仅限客服人员登录</p>
@@ -69,6 +69,7 @@ const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
 const presence = usePresenceStore();
+const brandIcon = `${import.meta.env.BASE_URL}sent-icon-192.png`;
 
 const form = reactive({ username: '', password: '' });
 const loading = ref(false);
@@ -158,16 +159,10 @@ async function submit(): Promise<void> {
   margin-bottom: 26px;
 }
 .cs-login__logo {
-  display: grid;
-  place-items: center;
+  display: block;
   width: 40px;
   height: 40px;
-  border-radius: 11px;
-  background: linear-gradient(160deg, #1b8a6b, var(--sent-primary));
-  color: #fff;
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
+  object-fit: contain;
 }
 .cs-login__title {
   margin: 0;

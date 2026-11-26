@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
 import com.sent.sports.common.util.SensitiveWordFilter;
-import com.sent.sports.common.web.PageQuery;
 import com.sent.sports.common.web.PageResult;
 import com.sent.sports.report.dto.DashboardReportDtos;
 import com.sent.sports.report.service.DashboardReportService;
@@ -12,6 +11,7 @@ import com.sent.sports.stock.dto.admin.AdminStockDtos;
 import com.sent.sports.stock.service.StockQueryService;
 import com.sent.sports.system.dto.admin.AdminSystemDtos;
 import com.sent.sports.system.dto.admin.LogQuery;
+import com.sent.sports.system.dto.admin.StaffQuery;
 import com.sent.sports.system.mapper.OperationLogMapper;
 import com.sent.sports.system.mapper.PermissionMapper;
 import com.sent.sports.system.mapper.RoleMapper;
@@ -172,15 +172,15 @@ class SystemServiceImplTest {
     @Test
     @DisplayName("listStaff 读 sys_staff 分页并用独立 count，状态派生 enabled")
     void listStaffReadsRealRows() {
-        when(staffMapper.selectAdminPage(any(Page.class))).thenAnswer(invocation -> {
+        when(staffMapper.selectAdminPage(any(Page.class), any(), any())).thenAnswer(invocation -> {
             Page<StaffAdminRow> page = invocation.getArgument(0);
             page.setRecords(List.of(staffRow(9001L, "ADMIN001", "验收管理员", "13800009001", "SUPER_ADMIN", "ACTIVE"),
                     staffRow(9007L, "WH001", "仓管·李强", "13800009007", "WAREHOUSE", "DISABLED")));
             return page;
         });
-        when(staffMapper.countAdmin()).thenReturn(6L);
+        when(staffMapper.countAdmin(any(), any())).thenReturn(6L);
 
-        PageQuery query = new PageQuery();
+        StaffQuery query = new StaffQuery();
         query.setPage(1);
         query.setSize(20);
         PageResult<AdminSystemDtos.StaffVO> result = newService().listStaff(query);
@@ -195,6 +195,28 @@ class SystemServiceImplTest {
         assertEquals("13800009001", first.phone());
         assertTrue(first.enabled());
         assertFalse(result.getList().get(1).enabled());
+    }
+
+    @Test
+    @DisplayName("listStaff 把关键词与状态筛选同源下推到分页和独立 count")
+    void listStaffPushesFiltersToBothQueries() {
+        StaffQuery query = new StaffQuery();
+        query.setKeyword("  13800009001  ");
+        query.setEnabled(true);
+
+        newService().listStaff(query);
+
+        verify(staffMapper).selectAdminPage(any(Page.class), eq("13800009001"), eq(Boolean.TRUE));
+        verify(staffMapper).countAdmin("13800009001", Boolean.TRUE);
+
+        StaffQuery blankKeyword = new StaffQuery();
+        blankKeyword.setKeyword("   ");
+        blankKeyword.setEnabled(false);
+
+        newService().listStaff(blankKeyword);
+
+        verify(staffMapper).selectAdminPage(any(Page.class), isNull(), eq(Boolean.FALSE));
+        verify(staffMapper).countAdmin(isNull(), eq(Boolean.FALSE));
     }
 
     @Test
@@ -352,6 +374,91 @@ class SystemServiceImplTest {
         verify(configMapper).upsert("stock.warning.threshold", "20");
         assertEquals("stock.warning.threshold", vo.paramKey());
         assertEquals("20", vo.paramValue());
+    }
+
+    /* ---------------- 系统配置中心（配置字典化） ---------------- */
+
+    @Test
+    @DisplayName("listConfigs 把键名翻译成中文名/说明/单位/展示值，未知键回落键名而不是报错")
+    void listConfigsTranslatesKeyNames() {
+        when(configMapper.selectAll()).thenReturn(List.of(
+                param("order.pay.timeout.minutes", "45"),
+                param("legacy.hand.added.key", "abc")));
+
+        List<AdminSystemDtos.ConfigVO> configs = newService().listConfigs();
+
+        assertEquals(2, configs.size());
+        AdminSystemDtos.ConfigVO timeout = configs.get(0);
+        assertEquals("order.pay.timeout.minutes", timeout.configKey());
+        assertEquals("订单支付超时时间", timeout.configName());
+        assertEquals("分钟", timeout.unit());
+        assertEquals("45", timeout.configValue(), "原始值要原样下发，弹窗回填靠它");
+        assertEquals("45 分钟", timeout.displayValue());
+        assertTrue(timeout.description().contains("自动取消"));
+
+        // 手工加进库的键没有字典条目：显示键名、说明空白，但必须能正常列出来
+        AdminSystemDtos.ConfigVO legacy = configs.get(1);
+        assertEquals("legacy.hand.added.key", legacy.configName());
+        assertEquals("abc", legacy.displayValue());
+    }
+
+    @Test
+    @DisplayName("listConfigs 已知键按业务分组排序，未知键排最后（列表不能按英文键名乱序）")
+    void listConfigsSortsKnownKeysFirst() {
+        when(configMapper.selectAll()).thenReturn(List.of(
+                param("zzz.unknown", "1"),
+                param("stock.warning.threshold", "10"),
+                param("order.pay.timeout.minutes", "30")));
+
+        List<AdminSystemDtos.ConfigVO> configs = newService().listConfigs();
+
+        assertEquals("order.pay.timeout.minutes", configs.get(0).configKey(), "订单类排在库存类前面");
+        assertEquals("stock.warning.threshold", configs.get(1).configKey());
+        assertEquals("zzz.unknown", configs.get(2).configKey(), "未知键排最后");
+    }
+
+    @Test
+    @DisplayName("updateConfigValue 先按字典校验取值类型，再落库并写审计日志")
+    void updateConfigValueValidatesAndLogs() {
+        when(configMapper.selectAll()).thenReturn(List.of(
+                param("order.pay.timeout.minutes", "30")));
+
+        AdminSystemDtos.ConfigVO vo = newService().updateConfigValue(
+                "order.pay.timeout.minutes", new AdminSystemDtos.ConfigValueForm(" 60 "), 9001L);
+
+        verify(configMapper).upsert("order.pay.timeout.minutes", "60");
+        verify(operationLogMapper).insert(eq("SYSTEM"), eq("CONFIG_UPDATE"), eq("SYS_CONFIG"),
+                eq("order.pay.timeout.minutes"), anyString(), eq(9001L));
+        assertEquals("60", vo.configValue());
+        assertEquals("60 分钟", vo.displayValue());
+    }
+
+    @Test
+    @DisplayName("updateConfigValue 拒绝非数字/空值，且不写库（配错超时时间会静默改掉全站下单规则）")
+    void updateConfigValueRejectsInvalidValue() {
+        when(configMapper.selectAll()).thenReturn(List.of(
+                param("order.pay.timeout.minutes", "30")));
+
+        assertEquals(ErrorCode.PARAM_INVALID, assertThrows(BizException.class,
+                () -> newService().updateConfigValue("order.pay.timeout.minutes",
+                        new AdminSystemDtos.ConfigValueForm("半小时"), 9001L)).getErrorCode());
+        assertEquals(ErrorCode.PARAM_INVALID, assertThrows(BizException.class,
+                () -> newService().updateConfigValue("order.pay.timeout.minutes",
+                        new AdminSystemDtos.ConfigValueForm("   "), 9001L)).getErrorCode());
+
+        verify(configMapper, never()).upsert(anyString(), anyString());
+        verify(operationLogMapper, never()).insert(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("updateConfigValue 只允许改库里已存在的键，避免拼错键名凭空建出一条无人读取的配置")
+    void updateConfigValueRejectsUnknownKey() {
+        when(configMapper.selectAll()).thenReturn(List.of(param("order.pay.timeout.minutes", "30")));
+
+        assertEquals(ErrorCode.NOT_FOUND, assertThrows(BizException.class,
+                () -> newService().updateConfigValue("order.pay.timeout.minute",
+                        new AdminSystemDtos.ConfigValueForm("60"), 9001L)).getErrorCode());
+        verify(configMapper, never()).upsert(anyString(), anyString());
     }
 
     /* ---------------- 库存预警摘要（跨模块只经 stock 的 service 门面） ---------------- */

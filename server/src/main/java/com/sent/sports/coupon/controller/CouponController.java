@@ -6,6 +6,8 @@ import com.sent.sports.common.web.R;
 import com.sent.sports.coupon.dto.CouponDtos;
 import com.sent.sports.coupon.service.CouponClaimUseCase;
 import com.sent.sports.coupon.service.CouponQueryService;
+import com.sent.sports.coupon.service.DeleteMyCouponUseCase;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -23,11 +25,14 @@ public class CouponController {
 
     private final CouponQueryService couponQueryService;
     private final CouponClaimUseCase couponClaimUseCase;
+    private final DeleteMyCouponUseCase deleteMyCouponUseCase;
 
     public CouponController(CouponQueryService couponQueryService,
-                            CouponClaimUseCase couponClaimUseCase) {
+                            CouponClaimUseCase couponClaimUseCase,
+                            DeleteMyCouponUseCase deleteMyCouponUseCase) {
         this.couponQueryService = couponQueryService;
         this.couponClaimUseCase = couponClaimUseCase;
+        this.deleteMyCouponUseCase = deleteMyCouponUseCase;
     }
 
     @GetMapping("/mine")
@@ -43,6 +48,17 @@ public class CouponController {
             @RequestParam(required = false) List<Long> skuIds,
             @RequestAttribute(value = CurrentUser.ATTR, required = false) CurrentUser user) {
         return R.ok(couponQueryService.listUsable(customerId(user), goodsCent, skuIds));
+    }
+
+    /**
+     * 用户删除自己的券：只接受已使用/已过期，软删不改券状态与订单折扣。
+     * 主体取 JWT，前端不能指定 customerId；重复删除幂等。
+     */
+    @DeleteMapping("/{couponId}")
+    public R<Void> delete(@PathVariable long couponId,
+                          @RequestAttribute(value = CurrentUser.ATTR, required = false) CurrentUser user) {
+        deleteMyCouponUseCase.delete(couponId, customerId(user));
+        return R.ok();
     }
 
     /** 领券中心：可领券列表（企业专属券对个人客户隐藏）。 */

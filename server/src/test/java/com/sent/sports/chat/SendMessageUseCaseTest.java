@@ -5,10 +5,13 @@ import com.sent.sports.chat.domain.ChatMsgType;
 import com.sent.sports.chat.domain.ChatSession;
 import com.sent.sports.chat.domain.ChatSessionStatus;
 import com.sent.sports.chat.domain.SenderType;
+import com.sent.sports.chat.domain.SessionType;
 import com.sent.sports.chat.repository.ChatMessageRepository;
 import com.sent.sports.chat.repository.ChatSessionRepository;
+import com.sent.sports.chat.service.BotConversationUseCase;
 import com.sent.sports.chat.service.ChatNotifier;
 import com.sent.sports.chat.service.SendMessageUseCase;
+import com.sent.sports.chat.service.dto.BotTurnResult;
 import com.sent.sports.chat.service.dto.SendMessageCmd;
 import com.sent.sports.chat.service.dto.SendMessageResult;
 import com.sent.sports.common.error.BizException;
@@ -60,6 +63,8 @@ class SendMessageUseCaseTest extends BaseUseCaseTest {
     @Spy
     private SensitiveWordFilter sensitiveWordFilter = new SensitiveWordFilter(
             List.of("测试违禁词", "傻X", "加V"));
+    @Mock
+    private BotConversationUseCase botConversationUseCase;
     @InjectMocks
     private SendMessageUseCase useCase;
     @Captor
@@ -253,5 +258,57 @@ class SendMessageUseCaseTest extends BaseUseCaseTest {
 
         verify(messageRepository).save(messageCaptor.capture());
         assertEquals(ChatMsgType.TEXT, messageCaptor.getValue().getMsgType());
+    }
+
+    /* ---------------- 机器人接待（2026-11-24） ---------------- */
+
+    @Test
+    void botSessionTextIsHandledByBotNotPersistedAgain() {
+        // REST 兜底链路必须与 WS 同口径：只在 WS 拦，客户端断开长连接就能绕过机器人
+        ChatSession bot = new ChatSession(1L, 100L, false, ChatSessionStatus.WAITING, null, 0L, 0L, 0,
+                SessionType.BOT);
+        when(sessionRepository.findById(1L)).thenReturn(Optional.of(bot));
+        when(messageRepository.findBySessionAndClientMsgId(anyLong(), anyString())).thenReturn(Optional.empty());
+        when(clock.instant()).thenReturn(NOW);
+        when(botConversationUseCase.handle(bot, "什么时候发货", "c-bot"))
+                .thenReturn(new BotTurnResult(true, false, "MSG-C", 1, 2));
+
+        SendMessageResult result = useCase.send(
+                new SendMessageCmd(1L, SenderType.CUSTOMER, "什么时候发货", "c-bot", 1L));
+
+        assertEquals("MSG-C", result.messageId());
+        assertEquals(1, result.seq());
+        // 落库与推送由机器人用例负责，这里不能再存一遍（否则同一条消息两条记录）
+        verify(messageRepository, never()).save(any());
+        verify(notifier, never()).messagePublished(any(), any());
+    }
+
+    @Test
+    void botHandoffPublishesCustomerMessageToStaff() {
+        ChatSession bot = new ChatSession(1L, 100L, false, ChatSessionStatus.WAITING, null, 0L, 0L, 0,
+                SessionType.BOT);
+        when(sessionRepository.findById(1L)).thenReturn(Optional.of(bot));
+        when(messageRepository.findBySessionAndClientMsgId(anyLong(), anyString())).thenReturn(Optional.empty());
+        when(clock.instant()).thenReturn(NOW);
+        when(botConversationUseCase.handle(bot, "你们老板姓什么", "c-hand"))
+                .thenReturn(new BotTurnResult(true, true, "MSG-H", 1, 0));
+
+        useCase.send(new SendMessageCmd(1L, SenderType.CUSTOMER, "你们老板姓什么", "c-hand", 1L));
+
+        verify(notifier).messagePublished(any(ChatSession.class), any(ChatMessage.class));
+    }
+
+    @Test
+    void humanSessionNeverTouchesBot() {
+        ChatSession human = new ChatSession(1L, 100L, ChatSessionStatus.ACTIVE, 5L);
+        when(sessionRepository.findById(1L)).thenReturn(Optional.of(human));
+        when(messageRepository.findBySessionAndClientMsgId(anyLong(), anyString())).thenReturn(Optional.empty());
+        when(idGen.next("CM")).thenReturn("CM-H");
+        when(clock.instant()).thenReturn(NOW);
+
+        useCase.send(new SendMessageCmd(1L, SenderType.CUSTOMER, "在吗", "c-h", 1L));
+
+        verify(botConversationUseCase, never()).handle(any(), anyString(), anyString());
+        verify(messageRepository).save(any());
     }
 }

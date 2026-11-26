@@ -34,6 +34,15 @@
           <span v-if="c.reason" class="coupon-card__reason">{{ c.reason }}</span>
         </div>
         <span class="coupon-card__status">{{ statusLabel(c.status) }}</span>
+        <el-button
+          v-if="c.status !== 'UNUSED'"
+          link
+          type="danger"
+          class="coupon-card__delete"
+          data-testid="coupon-delete-btn"
+          :loading="deleting === String(c.couponId)"
+          @click="removeCoupon(c)"
+        >删除</el-button>
       </article>
     </div>
 
@@ -47,6 +56,7 @@
  * 券数据走 /api/coupons/mine，不在前端判断过期——过期态由服务端按 expire_at 派生。
  */
 import { computed, onMounted, ref } from 'vue';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { fmtCent, fmtDateTime, statusLabel } from '@sent/shared';
 import { unwrap } from '@/utils/http';
 import { couponApi, type CouponVO } from '@/api/coupon';
@@ -60,6 +70,7 @@ const tabs: { key: TabKey; label: string }[] = [
 
 const active = ref<TabKey>('UNUSED');
 const loading = ref(false);
+const deleting = ref('');
 const coupons = ref<CouponVO[]>([]);
 
 const counts = computed<Record<TabKey, number>>(() => ({
@@ -78,6 +89,29 @@ function thresholdText(cent: number | string): string {
 function rateText(c: CouponVO): string {
   const zhe = Number(c.discountRate ?? 100) / 10;
   return `${Number.isInteger(zhe) ? zhe : zhe.toFixed(1)}折`;
+}
+
+/** 只处理已用/过期券；后端再校验一次归属与状态，前端这层只是不给用户点没意义的按钮 */
+async function removeCoupon(c: CouponVO): Promise<void> {
+  try {
+    await ElMessageBox.confirm(
+      '删除后不可恢复，这张券将从「我的优惠券」移除（历史订单的抵扣金额不受影响）。',
+      '删除优惠券',
+      { type: 'warning' },
+    );
+  } catch {
+    return;
+  }
+  deleting.value = String(c.couponId);
+  try {
+    await unwrap(couponApi.remove(c.couponId));
+    coupons.value = coupons.value.filter((x) => Number(x.couponId) !== Number(c.couponId));
+    ElMessage.success('优惠券已删除');
+  } catch (error) {
+    ElMessage.error((error as Error)?.message || '删除失败，请稍后重试');
+  } finally {
+    deleting.value = '';
+  }
 }
 
 onMounted(async () => {
@@ -131,6 +165,8 @@ onMounted(async () => {
 .coupon-card__info b { font-size: 14px; color: var(--sent-text); }
 .coupon-card__threshold, .coupon-card__expire, .coupon-card__reason { font-size: 11px; color: var(--sent-muted); }
 .coupon-card__status { position: absolute; top: 10px; right: 12px; font-size: 11px; color: var(--sent-accent-dark); }
+/* 删除入口只在终态券上出现；和右上角状态错开，避免挤在一行看不清 */
+.coupon-card__delete { position: absolute; right: 10px; bottom: 6px; padding: 0; font-size: 12px; }
 .coupon-empty { padding: 46px 0; text-align: center; color: var(--sent-muted); font-size: 13px; }
 .coupon-go { display: inline-block; margin-top: 20px; font-size: 13px; color: var(--sent-primary); }
 @media (max-width: 900px) { .coupon-grid { grid-template-columns: 1fr; } }

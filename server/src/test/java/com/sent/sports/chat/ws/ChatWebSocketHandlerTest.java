@@ -6,9 +6,12 @@ import com.sent.sports.chat.domain.ChatMessage;
 import com.sent.sports.chat.domain.ChatSession;
 import com.sent.sports.chat.domain.ChatSessionStatus;
 import com.sent.sports.chat.domain.SenderType;
+import com.sent.sports.chat.domain.SessionType;
 import com.sent.sports.chat.repository.ChatMessageRepository;
 import com.sent.sports.chat.repository.ChatSessionRepository;
+import com.sent.sports.chat.service.BotConversationUseCase;
 import com.sent.sports.chat.service.ChatNotifier;
+import com.sent.sports.chat.service.dto.BotTurnResult;
 import com.sent.sports.common.util.IdGen;
 import com.sent.sports.common.util.SensitiveWordFilter;
 import org.junit.jupiter.api.Test;
@@ -55,12 +58,15 @@ class ChatWebSocketHandlerTest {
     @Mock
     private ChatNotifier notifier;
     @Mock
+    private BotConversationUseCase botConversationUseCase;
+    @Mock
     private WebSocketSession wsSession;
 
     private ChatWebSocketHandler handler() {
         return new ChatWebSocketHandler(broadcaster, notifier, tokenService, new ObjectMapper(),
                 chatSessionRepository, chatMessageRepository, idGen, FIXED_CLOCK,
-                new SensitiveWordFilter(List.of("测试违禁词", "傻X", "加V")));
+                new SensitiveWordFilter(List.of("测试违禁词", "傻X", "加V")),
+                botConversationUseCase);
     }
 
     @Test
@@ -365,5 +371,50 @@ class ChatWebSocketHandlerTest {
         verify(broadcaster, never()).broadcast(anyLong(), any());
         verify(broadcaster, never()).broadcastToCustomer(anyLong(), any());
         verify(broadcaster, never()).broadcastAll(any());
+    }
+
+    /* ---------------- 机器人接待（2026-11-24） ---------------- */
+
+    /** BOT 会话：交给机器人，命中知识库时既不投坐席也不由 handler 重复落库，只回 ACK。 */
+    @Test
+    void botSessionMessageIsHandledByBotNotStaff() throws Exception {
+        ChatSession bot = new ChatSession(10L, 100L, false, ChatSessionStatus.WAITING, null, 0L, 0L, 0,
+                SessionType.BOT);
+        when(chatSessionRepository.findById(10L)).thenReturn(Optional.of(bot));
+        when(chatMessageRepository.findBySessionAndClientMsgId(10L, "c-bot")).thenReturn(Optional.empty());
+        when(botConversationUseCase.handle(bot, "什么时候发货", "c-bot"))
+                .thenReturn(new BotTurnResult(true, false, "MSG-C", 1, 2));
+        when(wsSession.isOpen()).thenReturn(true);
+
+        handler().handleChatMessage(wsSession,
+                WsEnvelope.msg(10L, 0L, "{\"clientMsgId\":\"c-bot\",\"content\":\"什么时候发货\"}"), 100L, null);
+
+        verify(chatMessageRepository, never()).save(any());
+        verify(broadcaster, never()).broadcast(anyLong(), any());
+        verify(broadcaster, never()).broadcastAll(any());
+        ArgumentCaptor<TextMessage> ack = ArgumentCaptor.forClass(TextMessage.class);
+        verify(wsSession).sendMessage(ack.capture());
+        assertTrue(ack.getValue().getPayload().contains("ACCEPTED"));
+        assertTrue(ack.getValue().getPayload().contains("\"seq\":1"));
+    }
+
+    /** 转人工：这条客户消息要广播到排队队列，坐席才能看到客户说了什么。 */
+    @Test
+    void botHandoffBroadcastsCustomerMessageToQueue() throws Exception {
+        ChatSession bot = new ChatSession(10L, 100L, false, ChatSessionStatus.WAITING, null, 0L, 0L, 0,
+                SessionType.BOT);
+        when(chatSessionRepository.findById(10L)).thenReturn(Optional.of(bot));
+        when(chatMessageRepository.findBySessionAndClientMsgId(10L, "c-tr")).thenReturn(Optional.empty());
+        when(botConversationUseCase.handle(bot, "转人工", "c-tr"))
+                .thenReturn(new BotTurnResult(true, true, "MSG-T", 1, 2));
+        when(wsSession.isOpen()).thenReturn(true);
+
+        handler().handleChatMessage(wsSession,
+                WsEnvelope.msg(10L, 0L, "{\"clientMsgId\":\"c-tr\",\"content\":\"转人工\"}"), 100L, null);
+
+        ArgumentCaptor<WsEnvelope> out = ArgumentCaptor.forClass(WsEnvelope.class);
+        verify(broadcaster).broadcastAll(out.capture());
+        assertEquals(WsEnvelope.QUEUE, out.getValue().type());
+        assertEquals(1L, out.getValue().seq());
     }
 }

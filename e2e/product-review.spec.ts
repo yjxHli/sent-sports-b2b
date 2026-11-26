@@ -5,14 +5,15 @@
  * 已购买未评价的人能看到「去评价」，点开填星级/文字/晒图/匿名后提交。
  *
  * 断言链（全程真实读写，不 mock）：
+ *   0) 先清掉该商品的历史评价（`clearProductReviews`）——「0 条 / 好评率 100%」是绝对数断言，
+ *      不能依赖「刚灌完种子」的库状态；
  *   1) 库里造一笔 9002 的「已完成」订单（纯 SQL，不动库存，避免污染演示数据）；
  *   2) 详情页出现「去评价」→ 弹窗打分 + 填字 + 传 1 张图 + 勾匿名 → 提交成功；
  *   3) 评价列表出现该条、九宫格 1 张图、好评率 100%、按钮变成「您已评价」；
  *   4) 把订单与评价删掉后刷新：按钮消失、列表回到空态（证明资格与列表都读真库）。
  */
-import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
 import { test, expect, type Page } from '@playwright/test';
+import { sql } from './db';
 import { pickSellableSku } from './pick-product';
 
 const USER_URL = (process.env.E2E_USER_URL ?? 'http://127.0.0.1:5173').replace(/\/+$/, '');
@@ -20,22 +21,9 @@ const API_URL = (process.env.E2E_API_URL ?? 'http://127.0.0.1:8088/api').replace
 const USER_PHONE = process.env.E2E_USER_NAME ?? '13800138000';
 const USER_PASSWORD = process.env.E2E_USER_PASSWORD ?? '123456';
 const CUSTOMER_ID = 9002;
-const LOCAL_MYSQL = 'D:/MySQL/MySQL Server 8.0/bin/mysql.exe';
 const STAMP = Date.now().toString().slice(-6);
 const ORDER_NO = `RV${STAMP}`;
 const NOISE = /Failed to load resource|net::ERR|ERR_NAME_NOT_RESOLVED/i;
-
-function mysqlBin(): string {
-  if (process.env.E2E_MYSQL_BIN) return process.env.E2E_MYSQL_BIN;
-  return existsSync(LOCAL_MYSQL) ? LOCAL_MYSQL : 'mysql';
-}
-
-function sql(statement: string): string {
-  return execFileSync(mysqlBin(), [
-    '-h127.0.0.1', '-P3306', '-uroot', `-p${process.env.E2E_DB_PASSWORD ?? '123456'}`,
-    'sent_dev', '-N', '-B', '-e', statement,
-  ], { encoding: 'utf8' }).trim();
-}
 
 async function loginUser(page: Page): Promise<void> {
   await page.goto(`${USER_URL}/login`);
@@ -63,6 +51,22 @@ DELETE oi FROM order_item oi JOIN orders o ON o.id = oi.order_id WHERE o.order_n
 DELETE FROM orders WHERE order_no = '${ORDER_NO}';`);
 }
 
+/**
+ * 评价总数与好评率都是绝对数断言（`0 条` / `1 条` / `100%`），
+ * 必须先把该商品的历史评价清干净：上一轮中断留下的残留、以及同商品其它用例
+ * 播的种子评价，都会让「0 条」变成「1 条」、「100%」变成别的值。
+ * 演示种子不生成评价（DemoDataGenerator 不写 product_review），所以清掉的一定是 E2E 自建的。
+ */
+function clearProductReviews(productId: string): void {
+  sql(`DELETE FROM product_review WHERE product_id = ${Number(productId)}`);
+}
+
+/** 详情页的「商品详情 / 用户评价」是真切换（2026-11-22）：断言评价区前必须点到评价面板 */
+async function openReviewPanel(page: Page): Promise<void> {
+  await page.locator('[data-testid="detail-tab-review"]').click();
+  await expect(page.locator('[data-testid="detail-panel-review"]')).toBeVisible({ timeout: 10_000 });
+}
+
 test('已购客户在详情页提交图文评价，列表与好评率实时更新', async ({ page }) => {
   test.setTimeout(180_000);
   const errors: string[] = [];
@@ -71,22 +75,26 @@ test('已购客户在详情页提交图文评价，列表与好评率实时更�
   });
 
   const picked = await pickSellableSku(page.request, 1);
+  // 先清场再断言「0 条」：不依赖「刚灌完种子」的库状态
+  clearProductReviews(picked.productId);
   seedCompletedOrder(picked.productId, picked.skuId);
 
   try {
     await loginUser(page);
     await page.goto(`${USER_URL}/product/${picked.productId}`);
 
-    // 评价区块必须渲染（空态也算渲染），入口按钮来自真实资格查询
+    // 先选中一个可售规格：评价会归属到该 SKU（规格按钮在商品详情面板里，切 tab 后就藏起来了）
+    const firstSku = page.locator('.spec-item:not(.disabled)').first();
+    await expect(firstSku, '详情页应有可售规格').toBeVisible({ timeout: 20_000 });
+    await firstSku.click();
+
+    // 评价在独立面板里：先切 tab，否则它本就不在视口内（2026-11-22 起详情/评价互斥）
+    await openReviewPanel(page);
     await expect(page.locator('[data-testid="review-list"]'), '详情页应有用户评价区块')
       .toBeVisible({ timeout: 20_000 });
     const submitBtn = page.locator('[data-testid="review-submit-btn"]');
     await expect(submitBtn, '已完成订单的客户应看到「去评价」').toBeVisible({ timeout: 20_000 });
     await expect(page.locator('[data-testid="review-total"]')).toHaveText('0 条');
-
-    // 选中一个可售规格：评价会归属到该 SKU
-    const firstSku = page.locator('.spec-item:not(.disabled)').first();
-    await firstSku.click();
 
     await submitBtn.click();
     // el-dialog 的 data-testid 会落在 overlay 上，按标题定位更稳（弹窗按钮一律 exact 以免误伤）
@@ -121,12 +129,14 @@ test('已购客户在详情页提交图文评价，列表与好评率实时更�
       .toBeVisible({ timeout: 10_000 });
     await page.keyboard.press('Escape');
 
-    // 删掉订单与评价 → 资格与列表都回到「未购买」：证明读的是真库，不是前端缓存
+    // 删掉本次造的订单与评价 → 列表立刻回空（证明读真库、不是前端缓存）。
+    // 注意：9002 在演示数据里有大量历史已完成订单，删掉本单不代表「没买过」，
+    // 所以这里只能断言「您已评价」消失 + 列表清空；按钮是否重新出现取决于其它订单。
     cleanup();
     await page.reload();
-    await expect(page.locator('[data-testid="review-submit-btn"]'), '订单删除后不再具备评价资格')
-      .toHaveCount(0);
-    await expect(page.locator('[data-testid="review-total"]')).toHaveText('0 条');
+    await openReviewPanel(page);
+    await expect(page.locator('[data-testid="review-total"]'), '评价删除后列表应回到 0 条').toHaveText('0 条');
+    await expect(page.locator('.review__done'), '评价已删，不应再显示「您已评价」').toHaveCount(0);
 
     expect(errors, `控制台不应有业务错误：${errors.join(' | ')}`).toEqual([]);
   } finally {

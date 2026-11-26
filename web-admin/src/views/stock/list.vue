@@ -3,6 +3,7 @@
     <h2 class="sent-page-title">库存列表</h2>
     <div class="sent-panel">
       <SentTable
+        :select-all-rows="fetchAll"
         :columns="columns"
         :rows="rows"
         :total="total"
@@ -82,7 +83,7 @@ const columns: TableColumn[] = [
 ];
 
 const skuKeyword = ref('');
-const { rows, total, loading, page, size, load, onPage, onSize, onSearch } = useTable<any>({
+const { rows, total, loading, page, size, load, onPage, onSize, onSearch, fetchAll } = useTable<any>({
   fetch: (params) => {
     const skuId = skuKeyword.value ? Number(skuKeyword.value) : undefined;
     return unwrap(stockApi.list({

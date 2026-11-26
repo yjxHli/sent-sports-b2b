@@ -31,9 +31,23 @@ public interface SensitiveWordMapper {
     String COLUMNS = "id, word, category, enabled, remark, "
             + "created_at AS createdAt, updated_at AS updatedAt";
 
-    /** 分页列表：按录入时间倒序（最新加的排最前，便于确认刚录的词）。 */
+    /**
+     * 分类展示顺序与管理端下拉一致（辱骂脏话 → 广告导流 → 违法违禁 → 其他）。
+     * 未知分类落到「其他」组，不会插在最前面。
+     */
+    String CATEGORY_ORDER = "CASE category WHEN 'PROFANITY' THEN 1 WHEN 'AD' THEN 2 "
+            + "WHEN 'ILLEGAL' THEN 3 ELSE 4 END";
+
+    /**
+     * 分页列表：先分类、再按词条首个文字的字母/拼音顺序。
+     * <p>首字统一转 utf8mb4 后用 {@code utf8mb4_zh_0900_as_cs} 排：汉字按拼音，
+     * 且与英文/数字落在同一字母序里（GBK 会把 ASCII 全部顶到汉字前面，中英混排时不对）。
+     * 首字相同再用 id 兜底，保证翻页不抖动。</p>
+     */
     @Select("<script>SELECT " + COLUMNS + " FROM sys_sensitive_word " + FILTERS
-            + " ORDER BY id DESC LIMIT #{limit} OFFSET #{offset}</script>")
+            + " ORDER BY " + CATEGORY_ORDER
+            + ", CONVERT(LEFT(word, 1) USING utf8mb4) COLLATE utf8mb4_zh_0900_as_cs ASC, id ASC"
+            + " LIMIT #{limit} OFFSET #{offset}</script>")
     List<SensitiveWordRow> selectPage(@Param("keyword") String keyword,
                                       @Param("category") String category,
                                       @Param("enabled") Integer enabled,

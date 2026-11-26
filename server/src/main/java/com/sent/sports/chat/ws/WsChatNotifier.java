@@ -44,6 +44,47 @@ public class WsChatNotifier implements ChatNotifier {
             payload = "{\"event\":\"ASSIGNED\",\"sessionId\":" + sessionId + "}";
         }
         broadcaster.broadcastToCustomer(customerId, WsEnvelope.assigned(sessionId, payload));
+        // 2026-11-24：除了状态帧，再补一条 SYSTEM 提示——客户要看到「谁在为我服务」，
+        // 光有 ASSIGNED 只能让前端改状态，说不出接待人是谁。
+        // 文案保留「客服已接入」前缀：老用例（chat-realtime）按这句话断言，别为了措辞把它改断。
+        systemMessage(customerId, sessionId, 0, staffId == null
+                ? "客服已接入，请开始沟通"
+                : "客服已接入，人工客服 " + staffId + " 为您服务", SenderType.SYSTEM);
+    }
+
+    @Override
+    public void systemMessage(long customerId, long sessionId, int seq, String content, SenderType senderType) {
+        pushSystem(customerId, sessionId, "SYSTEM_MESSAGE", content, seq, senderType);
+    }
+
+    @Override
+    public void transferStarted(long customerId, long sessionId, int seq, String tip, SenderType senderType) {
+        // event=TRANSFER：前端据此把会话从机器人接待切回「排队中」口径
+        pushSystem(customerId, sessionId, "TRANSFER", tip, seq, senderType);
+    }
+
+    /** SYSTEM 帧的统一下发口：event 决定前端如何处理（提示 / 切人工排队），senderType 决定气泡还是居中提示。 */
+    private void pushSystem(long customerId, long sessionId, String event, String content, int seq,
+                            SenderType senderType) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("event", event);
+        body.put("sessionId", sessionId);
+        body.put("content", content);
+        // 带上消息序号：已落库的提示会随 history 一起回来，客户端按 seq 去重，
+        // 否则「帧 + 刷新」两条路径会让同一句提示在聊天区出现两次。
+        body.put("seq", seq);
+        // 带上发送方：BOT 的回复要长成正常气泡（机器人头像），SYSTEM 才是居中旁白。
+        // 客户端历史记录里拿到的是同一个字段，帧与历史渲染口径必须一致，
+        // 否则同一条回复「实时看是气泡、刷新后变灰字」。
+        body.put("senderType", senderType == null ? SenderType.SYSTEM.name() : senderType.name());
+        String payload;
+        try {
+            payload = objectMapper.writeValueAsString(body);
+        } catch (Exception e) {
+            log.warn("系统提示序列化失败, sessionId={}", sessionId, e);
+            payload = "{\"event\":\"" + event + "\",\"seq\":" + seq + ",\"content\":\"\"}";
+        }
+        broadcaster.broadcastToCustomer(customerId, WsEnvelope.system(sessionId, payload));
     }
 
     @Override

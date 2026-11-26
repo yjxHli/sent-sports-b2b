@@ -14,6 +14,12 @@ export interface MenuEntry {
   path: string;
   title: string;
   perm?: string;
+  /**
+   * 精确匹配权限点：为 true 时只认角色显式持有的权限码，不认通配 '*'。
+   * 与后端 `@RequirePerm(exact = true)` 一一对应——「只有超管和运营可见」这类菜单，
+   * 演示库里持 '*' 的业务角色不能顺带看到。
+   */
+  exact?: boolean;
   /** 菜单分组；空表示一级菜单 */
   group?: string;
   icon?: string;
@@ -38,6 +44,8 @@ export const MENU_ROUTES: MenuEntry[] = [
   { path: '/product/customer-price', title: '一客一价', group: '商品', perm: 'product:update', icon: '价' },
   // 秒杀活动是「活动」而不是商品属性：运营先发布活动，用户端才可能出现秒杀价
   { path: '/product/flash-sale', title: '秒杀活动', group: '商品', perm: 'product:update', icon: '秒' },
+  // 评价治理（V56）：运营下架违规评价。权限点精确匹配，持 '*' 的业务角色看不到也调不通
+  { path: '/product/reviews', title: '评价管理', group: '商品', perm: 'system:review:manage', exact: true, icon: '评' },
 
   { path: '/stock/list', title: '库存列表', group: '库存', perm: 'stock:read', icon: '存' },
   { path: '/stock/inbound', title: '手工入库', group: '库存', perm: 'stock:inbound', icon: '入' },
@@ -55,15 +63,25 @@ export const MENU_ROUTES: MenuEntry[] = [
 
   { path: '/customer/list', title: '客户列表', group: '客户与会员', perm: 'customer:read', icon: '客' },
   { path: '/customer/detail/:id', title: '客户详情', group: '客户与会员', perm: 'customer:read', hidden: true },
-  { path: '/customer/enterprise', title: '企业审核与授信', group: '客户与会员', perm: 'customer:audit', icon: '企' },
-  { path: '/customer/enterprise-audit', title: '企业审核', group: '客户与会员', perm: 'customer:audit', icon: '审' },
-  { path: '/customer/coupon-template', title: '优惠券创建', group: '客户与会员', perm: 'coupon:template:manage', icon: '建' },
-  { path: '/customer/coupon', title: '优惠券管理', group: '客户与会员', perm: 'customer:grant', icon: '券' },
   { path: '/member/index', title: '会员与积分', group: '客户与会员', perm: 'member:config', icon: '会' },
+
+  // 优惠券独立成组（2026-11-26 用户要求）：建券与发放记录是营销动作，不再混在「客户与会员」里
+  { path: '/customer/coupon-template', title: '优惠券创建', group: '优惠券', perm: 'coupon:template:manage', icon: '建' },
+  { path: '/customer/coupon', title: '优惠券管理', group: '优惠券', perm: 'customer:grant', icon: '券' },
+
+  // 企业业务独立成组（2026-11-26 用户要求）：审核与授信是 B 端入口，与零售客户分开看
+  { path: '/customer/enterprise', title: '企业审核与授信', group: '企业', perm: 'customer:audit', icon: '企' },
+  { path: '/customer/enterprise-audit', title: '企业审核', group: '企业', perm: 'customer:audit', icon: '审' },
 
   // 客服工作台已于 2026-11-20 剥离到独立工程 web-cs（:5175），管理端只保留审查与指标两个治理视图
   { path: '/chat/audit', title: '客服审查', group: '客服', perm: 'chat:audit', icon: '查' },
   { path: '/chat/metrics', title: '客服指标', group: '客服', perm: 'chat:audit', icon: '指' },
+  // 话术配置（V60）：机器人自动回复的知识库。改动直接影响客户看到的话，
+  // 权限点精确匹配——持 '*' 的客服 / 销售不能顺带改话术
+  { path: '/chat/faq', title: '话术配置', group: '客服', perm: 'chat:faq:manage', exact: true, icon: '话' },
+  // 客户标签（V63）迁入客服分组（2026-11-26 用户要求）：标签是客服打标工具，不是客户资料维护。
+  // 权限点精确匹配——持 '*' 的销售/财务不能顺带改标签口径
+  { path: '/customer/tags', title: '客户标签', group: '客服', perm: 'customer:tag:manage', exact: true, icon: '标' },
 
   { path: '/finance/refund', title: '退款审核', group: '财务', perm: 'refund:audit', icon: '退' },
   { path: '/finance/refund/:refundNo', title: '退款审核详情', group: '财务', perm: 'refund:audit', hidden: true },
@@ -74,7 +92,7 @@ export const MENU_ROUTES: MenuEntry[] = [
 
   { path: '/system/staff', title: '员工管理', group: '系统', perm: 'system:staff', icon: '员' },
   { path: '/system/role', title: '角色权限矩阵', group: '系统', perm: 'system:role', icon: '角' },
-  { path: '/system/config', title: '业务参数', group: '系统', perm: 'system:config', icon: '参' },
+  { path: '/system/config', title: '系统配置中心', group: '系统', perm: 'system:config', icon: '参' },
   { path: '/system/sensitive-words', title: '违禁词库', group: '系统', perm: 'system:sensitive', icon: '禁' },
   { path: '/system/log', title: '操作日志', group: '系统', perm: 'system:log', icon: '志' },
 ];
@@ -89,6 +107,7 @@ const REAL_PAGES: Record<string, RouteComponentLoader> = {
   '/product/category': () => import('@/views/product/category.vue'),
   '/product/customer-price': () => import('@/views/product/customer-price.vue'),
   '/product/flash-sale': () => import('@/views/product/flash-sale.vue'),
+  '/product/reviews': () => import('@/views/review/list.vue'),
 
   '/stock/list': () => import('@/views/stock/list.vue'),
   '/stock/inbound': () => import('@/views/stock/inbound.vue'),
@@ -108,10 +127,12 @@ const REAL_PAGES: Record<string, RouteComponentLoader> = {
   '/customer/enterprise-audit': () => import('@/views/customer/enterprise-audit.vue'),
   '/customer/coupon-template': () => import('@/views/customer/coupon-template.vue'),
   '/customer/coupon': () => import('@/views/customer/coupon.vue'),
+  '/customer/tags': () => import('@/views/customer/tags.vue'),
   '/member/index': () => import('@/views/member/index.vue'),
 
   '/chat/audit': () => import('@/views/chat/audit.vue'),
   '/chat/metrics': () => import('@/views/chat/metrics.vue'),
+  '/chat/faq': () => import('@/views/chat/faq.vue'),
 
   '/finance/refund': () => import('@/views/finance/refund.vue'),
   '/finance/refund/:refundNo': () => import('@/views/finance/refund-detail.vue'),
@@ -167,6 +188,7 @@ export const businessRoutes: RouteRecordRaw[] = [
       meta: {
         title: entry.title,
         perm: entry.perm,
+        permExact: entry.exact,
         group: entry.group,
         icon: entry.icon,
         hidden: entry.hidden,

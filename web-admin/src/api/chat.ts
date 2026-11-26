@@ -28,6 +28,7 @@ export interface ChatSessionDetailVO {
   closeReason?: string | null;
 }
 
+/** 服务工单记录（V61）：审查页与聊天记录并排展示的完整读模型。 */
 export interface ChatNoteVO {
   sessionId: number;
   summary: string;
@@ -37,6 +38,21 @@ export interface ChatNoteVO {
   solution: string;
   staffId: number;
   updatedAtMillis: number;
+  subCategory?: string | null;
+  customerDemand?: string | null;
+  verifiedInfo?: string | null;
+  needFollowup?: boolean;
+  followupTimeMillis?: number | null;
+  /** 回访联系方式：客服手填（V65），不再回落到客户登录手机号。 */
+  followupContact?: string | null;
+  attachmentsJson?: string | null;
+  /** DRAFT / SUBMITTED；审查列表只收已提交工单（V65）。 */
+  submitStatus?: 'DRAFT' | 'SUBMITTED' | null;
+  submittedAtMillis?: number | null;
+  customerNickname?: string | null;
+  customerPhone?: string | null;
+  customerEmail?: string | null;
+  consultedAtMillis?: number;
 }
 
 export interface ChatMessageLineVO {

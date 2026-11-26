@@ -13,6 +13,8 @@ public class ChatAuditRowPO {
     private LocalDateTime endedAt;
     private String summary;
     private String result;
+    /** 工单提交状态（V65）：审查列表只查 SUBMITTED，字段保留便于前端展示与排查。 */
+    private String submitStatus;
 
     public Long getSessionId() { return sessionId; }
     public void setSessionId(Long sessionId) { this.sessionId = sessionId; }
@@ -30,4 +32,6 @@ public class ChatAuditRowPO {
     public void setSummary(String summary) { this.summary = summary; }
     public String getResult() { return result; }
     public void setResult(String result) { this.result = result; }
+    public String getSubmitStatus() { return submitStatus; }
+    public void setSubmitStatus(String submitStatus) { this.submitStatus = submitStatus; }
 }

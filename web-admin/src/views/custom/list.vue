@@ -3,6 +3,7 @@
     <h2 class="sent-page-title">定制列表</h2>
     <div class="sent-panel">
       <SentTable
+        :select-all-rows="fetchAll"
         :columns="columns"
         :rows="rows"
         :total="total"
@@ -99,7 +100,7 @@ const columns: TableColumn[] = [
 ];
 
 const query = reactive<{ status?: string; customNo?: string }>({});
-const { rows, total, loading, page, size, load, onPage, onSize, onSearch } = useTable<any>({
+const { rows, total, loading, page, size, load, onPage, onSize, onSearch, fetchAll } = useTable<any>({
   fetch: (params) => unwrap(customApi.pending({
     ...params,
     customNo: (query.customNo ?? '').trim() || undefined,

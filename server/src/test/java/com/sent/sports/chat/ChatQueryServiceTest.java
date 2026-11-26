@@ -119,6 +119,34 @@ class ChatQueryServiceTest extends BaseUseCaseTest {
     }
 
     @Test
+    void listSessionsReturnsCustomerHistoryNewestFirstAndHonorsLimit() {
+        ChatSession older = new ChatSession(10L, 9002L, false, ChatSessionStatus.CLOSED, 9001L,
+                1_000L, 2_000L, 3);
+        ChatSession newer = new ChatSession(9L, 9002L, false, ChatSessionStatus.ACTIVE, 9003L,
+                3_000L, 4_000L, 5);
+        // 仓储契约：selectByCustomerId 按 id DESC 返回，最新会话在前
+        when(sessionRepository.findByCustomerId(9002L)).thenReturn(List.of(newer, older));
+
+        List<ChatDtos.SessionSummaryVO> rows = queryService.listSessions(9002L, 1);
+
+        assertEquals(1, rows.size(), "limit 必须下推，不能把全部会话一次性返回给前端");
+        ChatDtos.SessionSummaryVO row = rows.get(0);
+        assertEquals(9L, row.sessionId());
+        assertEquals("ACTIVE", row.status());
+        assertEquals(9003L, row.staffId());
+        assertEquals(3_000L, row.createdAtMillis());
+        assertEquals(4_000L, row.lastActiveAtMillis());
+    }
+
+    @Test
+    void listSessionsClampsLimitAndReturnsEmptyForNoHistory() {
+        when(sessionRepository.findByCustomerId(9002L)).thenReturn(List.of());
+
+        assertTrue(queryService.listSessions(9002L, 0).isEmpty());
+        verify(sessionRepository).findByCustomerId(9002L);
+    }
+
+    @Test
     void currentOpenReturnsExistingUnclosedSession() {
         ChatSession waiting = new ChatSession(7L, 9002L, false, ChatSessionStatus.WAITING, null, 1L, 1L, 0);
         when(sessionRepository.findByCustomerId(9002L)).thenReturn(java.util.List.of(waiting));

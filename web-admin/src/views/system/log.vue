@@ -3,6 +3,7 @@
     <h2 class="sent-page-title">操作日志</h2>
     <div class="sent-panel">
       <SentTable
+        :select-all-rows="exportAll"
         :columns="columns"
         :rows="rows"
         :total="total"

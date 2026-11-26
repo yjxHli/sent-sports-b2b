@@ -20,6 +20,7 @@ import com.sent.sports.order.service.admin.OrderAdminService;
 import com.sent.sports.order.service.dto.CloseOrderCmd;
 import com.sent.sports.order.service.dto.CloseOrderResult;
 import com.sent.sports.order.service.dto.ShipOrderCmd;
+import com.sent.sports.refund.service.RefundQueryService;
 import org.springframework.stereotype.Service;
 import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
@@ -28,6 +29,7 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 订单管理（管理端）：列表/详情走真库，发货委托 {@link ShipOrderUseCase}，
@@ -41,13 +43,20 @@ public class OrderAdminServiceImpl implements OrderAdminService {
     private final OrderQueryService orderQueryService;
     private final OrderMapper orderMapper;
     private final CloseOrderUseCase closeOrderUseCase;
+    /** 退款申请提示跨模块只读门面：order 不直连 refund 的 Mapper（ArchUnit 规则 4）。 */
+    private final RefundQueryService refundQueryService;
+
+    /** 列表只在「有在途退款单」时显示这一个提示，文案在这里统一，前端不复制规则。 */
+    private static final String REFUND_APPLYING_HINT = "退款申请中";
 
     public OrderAdminServiceImpl(ShipOrderUseCase shipOrderUseCase, OrderQueryService orderQueryService,
-                                 OrderMapper orderMapper, CloseOrderUseCase closeOrderUseCase) {
+                                 OrderMapper orderMapper, CloseOrderUseCase closeOrderUseCase,
+                                 RefundQueryService refundQueryService) {
         this.shipOrderUseCase = shipOrderUseCase;
         this.orderQueryService = orderQueryService;
         this.orderMapper = orderMapper;
         this.closeOrderUseCase = closeOrderUseCase;
+        this.refundQueryService = refundQueryService;
     }
 
     @Override
@@ -91,10 +100,14 @@ public class OrderAdminServiceImpl implements OrderAdminService {
     public PageResult<AdminOrderDtos.AdminOrderVO> list(PageQuery page, String status, String keyword) {
         Page<OrderPO> query = new Page<>(page.getPage(), page.getSize());
         IPage<OrderPO> rows = orderMapper.selectAllPage(query, normalizeStatus(status), normalizeKeyword(keyword));
+        // 一次批量查询当前页的在途退款单，避免逐单查 refund_order（N+1）
+        Set<String> refundingOrderNos = refundQueryService.inFlightOrderNos(
+                rows.getRecords().stream().map(OrderPO::getOrderNo).toList());
         List<AdminOrderDtos.AdminOrderVO> list = rows.getRecords().stream().map(o -> {
             long cent = o.getPayableCent() == null ? 0L : o.getPayableCent();
+            String refundHint = refundingOrderNos.contains(o.getOrderNo()) ? REFUND_APPLYING_HINT : null;
             return new AdminOrderDtos.AdminOrderVO(
-                    o.getOrderNo(), o.getStatus(), cent, MoneyUtil.toYuan(cent));
+                    o.getOrderNo(), o.getStatus(), cent, MoneyUtil.toYuan(cent), refundHint);
         }).toList();
         return PageResult.of(list, rows.getTotal(), page.getPage(), page.getSize());
     }

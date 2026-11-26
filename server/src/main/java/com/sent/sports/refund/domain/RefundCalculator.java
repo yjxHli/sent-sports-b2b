@@ -60,14 +60,29 @@ public final class RefundCalculator {
     }
 
     /**
+     * 是否属于「整单退款」：退了商品全额，或退满了用户实付。
+     * <p>为什么要有两条判据：admin 关单 / 迟到支付的仅退款只按实付金额退，拿不到商品行全额；
+     * 只判 {@code refundCent >= goodsPaidCent} 会把这类整单退款误判成部分退。</p>
+     * <p>退券与退积分共用这一口径——两处若各写一套，必然出现「积分退了券没退」的对账差。</p>
+     */
+    public static boolean isFullRefund(long refundCent, long goodsPaidCent, long paidCent) {
+        if (refundCent <= 0L) {
+            return false;
+        }
+        if (goodsPaidCent <= 0L) {
+            return true; // 行数据缺失（历史脏单）：兜底按整单处理，避免把用户权益吞掉
+        }
+        return refundCent >= goodsPaidCent || refundCent >= paidCent;
+    }
+
+    /**
      * 退款应退回的抵扣积分（主流电商口径：整单退全额、部分退按商品金额比例，向下取整）。
      *
      * <p>为什么基数是「商品行实付」而不是「订单实付」：积分抵扣的 30% 上限就是按商品金额算的
      * （见 {@code PointDeduction.maxDeductibleCent}），退回也按同一口径才对称；
      * 若按扣掉积分后的实付算，退一半商品会退走 43% 的积分，多退少补都不对账。</p>
      *
-     * <p>「整单」有两条判定：退了商品全额，或退满了用户实付（admin 关单、迟到支付的仅退款
-     * 只按实付金额退，商品行金额拿不到全额）。任一满足即原额退回，绝不超发。</p>
+     * <p>「整单」判定见 {@link #isFullRefund}：任一条件满足即原额退回，绝不超发。</p>
      *
      * @param deductedPoints 该订单实际扣过的抵扣积分（0 = 没用积分，直接返回 0）
      * @param refundCent     本次退款金额（分）
@@ -79,8 +94,7 @@ public final class RefundCalculator {
         if (deductedPoints <= 0L || refundCent <= 0L) {
             return 0L;
         }
-        // goodsPaidCent <= 0 说明行数据缺失（历史脏单），兜底按整单处理，避免把用户积分吞掉
-        if (goodsPaidCent <= 0L || refundCent >= goodsPaidCent || refundCent >= paidCent) {
+        if (isFullRefund(refundCent, goodsPaidCent, paidCent)) {
             return deductedPoints;
         }
         return Math.min(deductedPoints, deductedPoints * refundCent / goodsPaidCent);

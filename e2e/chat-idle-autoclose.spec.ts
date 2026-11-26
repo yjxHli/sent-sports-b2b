@@ -16,7 +16,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { test, expect, type APIRequestContext } from '@playwright/test';
-import { startConsultation } from './chat-helpers';
+import { startConsultation , closeSessionWithTicket} from './chat-helpers';
 
 const API_URL = process.env.E2E_API_URL ?? 'http://127.0.0.1:8088/api';
 const ADMIN_NAME = process.env.E2E_ADMIN_NAME ?? 'admin';
@@ -101,7 +101,7 @@ test('客户 10 分钟无消息：会话自动结束（TIMEOUT）并从工作台
   const openRows: any[] = [...(queue?.data?.waiting ?? []), ...(queue?.data?.active ?? []), ...(listed?.data?.list ?? [])];
   for (const row of openRows) {
     if (row.status !== 'CLOSED') {
-      await api(request, 'POST', `/admin/chat/sessions/${row.sessionId}/close`, { reason: 'DONE' }, adminToken);
+      await closeSessionWithTicket(request, Number(row.sessionId), adminToken);
     }
   }
   await api(request, 'POST', '/admin/chat/presence', { staffId: 9001, presence: 'ONLINE' }, adminToken);

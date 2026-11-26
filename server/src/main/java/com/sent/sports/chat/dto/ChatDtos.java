@@ -13,10 +13,15 @@ public final class ChatDtos {
     private ChatDtos() {
     }
 
-    /** 发起会话请求：客户、是否 VIP。 */
+    /**
+     * 发起会话请求：客户、是否 VIP、接待模式。
+     * <p>{@code sessionType} 省略时按 HUMAN——人工客服链路是既有接口口径，
+     * 只有商城端客服窗口会显式传 BOT（先由智能助手小森接待）。</p>
+     */
     public record CreateSessionCmdReq(
             @NotNull(message = "客户ID不能为空") Long customerId,
-            boolean vip) {
+            boolean vip,
+            String sessionType) {
     }
 
     /**
@@ -36,12 +41,25 @@ public final class ChatDtos {
             @NotNull(message = "序号不能为空") Integer seq) {
     }
 
-    /** 会话响应：会话号、状态、接待客服、是否复用。 */
-    public record SessionVO(long sessionId, String status, Long staffId, boolean reused) {
+    /**
+     * 会话响应：会话号、状态、接待客服、是否复用、接待模式。
+     * <p>{@code sessionType} = BOT / HUMAN。BOT 时虽然 status 还是 WAITING（等人工接线），
+     * 但客户由机器人接着，前端不能按「排队中」禁用输入框。</p>
+     */
+    public record SessionVO(long sessionId, String status, Long staffId, boolean reused, String sessionType) {
     }
 
     /** 排队状态响应：会话状态、排队位置（1 开始；已接入为 0）、接待客服。 */
     public record QueueVO(long sessionId, String status, int position, Long staffId) {
+    }
+
+    /**
+     * 历史咨询 / 服务进度摘要：只给列表需要的字段，不返回消息正文。
+     * <p>{@code status} = WAITING / ACTIVE / CLOSED；{@code staffId} 为接待客服，
+     * 未接入时为 null。前端据此渲染「进行中 / 排队中 / 已结束」与时间线。</p>
+     */
+    public record SessionSummaryVO(long sessionId, String status, Long staffId,
+                                   long createdAtMillis, long lastActiveAtMillis) {
     }
 
     /** 消息响应：消息号、会话号、发送方、类型（TEXT/IMAGE）、内容、客户端消息号、会话内序号、发送时间（毫秒）。 */

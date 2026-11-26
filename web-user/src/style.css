@@ -315,15 +315,8 @@ a {
 .brand__mark {
   width: 46px;
   height: 46px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, var(--sent-primary), #1a8c6a);
-  color: #fff;
-  font-size: 26px;
-  font-weight: 800;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 12px rgba(18, 102, 79, 0.28);
+  display: block;
+  object-fit: contain;
 }
 .brand__text {
   display: flex;

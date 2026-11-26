@@ -328,4 +328,32 @@ class OrderQueryServiceImplTest extends BaseUnitTest {
                 expireAt.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
                 result.getList().get(0).expireAtMillis());
     }
+
+    @Test
+    @DisplayName("关单结果核对：只有「已关闭 + 已全额退款」才算关成功")
+    void closeStateRequiresClosedAndFullyRefunded() {
+        OrderPO closed = new OrderPO();
+        closed.setStatus("CLOSED");
+        closed.setPayStatus("FULL_REFUNDED");
+        when(orderMapper.selectByOrderNo("SO-CLOSED")).thenReturn(closed);
+
+        // 已关闭但只部分退款：钱没退完，不能按「关成功」处理
+        OrderPO partRefunded = new OrderPO();
+        partRefunded.setStatus("CLOSED");
+        partRefunded.setPayStatus("PART_REFUNDED");
+        when(orderMapper.selectByOrderNo("SO-PART")).thenReturn(partRefunded);
+
+        // 已完成：状态机不允许关单，属于「关不掉」，同样不能按关成功处理
+        OrderPO completed = new OrderPO();
+        completed.setStatus("COMPLETED");
+        completed.setPayStatus("PAID");
+        when(orderMapper.selectByOrderNo("SO-DONE")).thenReturn(completed);
+
+        assertTrue(service.isClosedWithFullRefund("SO-CLOSED"));
+        assertEquals(false, service.isClosedWithFullRefund("SO-PART"));
+        assertEquals(false, service.isClosedWithFullRefund("SO-DONE"));
+        // 订单不存在 / 空单号一律否，不去猜
+        assertEquals(false, service.isClosedWithFullRefund("SO-NONE"));
+        assertEquals(false, service.isClosedWithFullRefund(" "));
+    }
 }

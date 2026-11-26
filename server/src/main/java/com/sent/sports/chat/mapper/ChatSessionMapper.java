@@ -20,7 +20,7 @@ import java.util.List;
 public interface ChatSessionMapper extends BaseMapper<ChatSessionPO> {
 
     /** 待接入队列（坐席工作台轮询）。 */
-    @Select("SELECT * FROM chat_session WHERE status = 'WAITING' "
+    @Select("SELECT * FROM chat_session WHERE status = 'WAITING' AND session_type = 'HUMAN' "
             + "ORDER BY vip DESC, priority DESC, created_at ASC LIMIT #{limit}")
     List<ChatSessionPO> selectWaitingQueue(@Param("limit") int limit);
 
@@ -28,8 +28,10 @@ public interface ChatSessionMapper extends BaseMapper<ChatSessionPO> {
      * 排队队列（严格先来后到）：工作台的排队位置与客户端的排队位置必须同一口径，
      * 因此展示用 FIFO 排序（{@code created_at, id}），与 {@link #countWaitingBefore} 一致。
      * <p>VIP 优先只作用于「人工拉取下一个」（{@link #selectWaitingQueue}），不影响排队位置的展示。
+     * <p>只数 HUMAN：机器人接待中的会话（session_type=BOT）虽然也是 WAITING，
+     * 但客户由小森接着、并不在等坐席，把它算进队列会让真实客户的「前方还有 N 人」虚高。
      */
-    @Select("SELECT * FROM chat_session WHERE status = 'WAITING' "
+    @Select("SELECT * FROM chat_session WHERE status = 'WAITING' AND session_type = 'HUMAN' "
             + "ORDER BY created_at ASC, id ASC LIMIT #{limit}")
     List<ChatSessionPO> selectWaitingFifo(@Param("limit") int limit);
 
@@ -60,7 +62,7 @@ public interface ChatSessionMapper extends BaseMapper<ChatSessionPO> {
     List<ChatSessionPO> selectVisibleActiveByStaff(@Param("staffId") long staffId);
 
     /** 工作台「排队中」：同样只展示客户已发过消息的会话。 */
-    @Select("SELECT s.* FROM chat_session s WHERE s.status = 'WAITING' "
+    @Select("SELECT s.* FROM chat_session s WHERE s.status = 'WAITING' AND s.session_type = 'HUMAN' "
             + "AND EXISTS (SELECT 1 FROM chat_message m WHERE m.session_id = s.id "
             + "AND m.sender_type = 'CUSTOMER') ORDER BY s.created_at ASC, s.id ASC LIMIT #{limit}")
     List<ChatSessionPO> selectVisibleWaitingFifo(@Param("limit") int limit);
@@ -87,8 +89,9 @@ public interface ChatSessionMapper extends BaseMapper<ChatSessionPO> {
     /**
      * 排在指定会话之前的排队会话数（排队位置 = 该值 + 1）。
      * <p>按 {@code created_at} 升序判定先来后到，同一毫秒用主键兜底，避免并列时位置抖动。
+     * <p>口径与 {@link #selectWaitingFifo} 对齐：只数 HUMAN，机器人接待中的会话不占人工队列。
      */
-    @Select("SELECT COUNT(*) FROM chat_session WHERE status = 'WAITING' "
+    @Select("SELECT COUNT(*) FROM chat_session WHERE status = 'WAITING' AND session_type = 'HUMAN' "
             + "AND (created_at < #{createdAt} OR (created_at = #{createdAt} AND id < #{sessionId}))")
     int countWaitingBefore(@Param("sessionId") long sessionId,
                            @Param("createdAt") LocalDateTime createdAt);

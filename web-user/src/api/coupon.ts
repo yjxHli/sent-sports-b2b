@@ -61,4 +61,6 @@ export const couponApi = {
     }),
   claimable: () => http.get<ClaimableVO[]>('/coupons/claimable'),
   claim: (templateId: number) => http.post<{ couponNo: string }>(`/coupons/claim/${templateId}`),
+  /** 用户删除自己的券：后端只接受已使用/已过期，重复删除幂等 */
+  remove: (couponId: number | string) => http.delete<void>(`/coupons/${couponId}`),
 };

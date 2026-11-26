@@ -1,6 +1,7 @@
 package com.sent.sports.chat.controller;
 
 import com.sent.sports.chat.domain.SenderType;
+import com.sent.sports.chat.domain.SessionType;
 import com.sent.sports.chat.dto.ChatDtos;
 import com.sent.sports.chat.service.ChatQueryService;
 import com.sent.sports.chat.service.CreateSessionUseCase;
@@ -60,12 +61,21 @@ public class ChatController {
         return R.ok(chatQueryService.currentOpen(customerId));
     }
 
+    /** 历史咨询 / 服务进度列表：只返回会话摘要，正文按需再用 /sessions/{id}/messages 拉。 */
+    @GetMapping("/sessions")
+    public R<List<ChatDtos.SessionSummaryVO>> sessions(@RequestParam long customerId,
+                                                       @RequestParam(defaultValue = "20") int limit) {
+        return R.ok(chatQueryService.listSessions(customerId, limit));
+    }
+
     @PostMapping("/sessions")
     @RequirePerm("chat:create")
     public R<ChatDtos.SessionVO> createSession(@Valid @RequestBody ChatDtos.CreateSessionCmdReq cmd) {
         CreateSessionResult r = createSessionUseCase.create(
-                new CreateSessionCmd(cmd.customerId(), cmd.vip(), CURRENT_USER_PLACEHOLDER));
-        return R.ok(new ChatDtos.SessionVO(r.sessionId(), r.status().name(), r.staffId(), r.reused()));
+                new CreateSessionCmd(cmd.customerId(), cmd.vip(), CURRENT_USER_PLACEHOLDER,
+                        SessionType.of(cmd.sessionType())));
+        return R.ok(new ChatDtos.SessionVO(r.sessionId(), r.status().name(), r.staffId(), r.reused(),
+                r.sessionType().name()));
     }
 
     @PostMapping("/sessions/{sessionId}/messages")

@@ -12,3 +12,6 @@ export * from './coupon';
 export * from './finance';
 export * from './chat';
 export * from './system';
+export * from './review';
+export * from './faq';
+export * from './customerTag';

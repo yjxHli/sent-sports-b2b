@@ -6,6 +6,7 @@
         <div class="sent-panel">
           <h3 class="section-title">待发货订单</h3>
           <SentTable
+            :select-all-rows="exportAll"
             :columns="columns"
             :rows="rows"
             :total="total"
@@ -38,6 +39,15 @@
                 <el-option label="待发货" :value="OrderStatus.WAIT_SHIP" />
                 <el-option label="部分发货" :value="OrderStatus.PART_SHIPPED" />
               </el-select>
+              <el-input
+                v-model="keyword"
+                placeholder="订单号"
+                clearable
+                style="width: 220px"
+                data-testid="shipment-order-keyword"
+                @keyup.enter="onSearch"
+                @clear="onSearch"
+              />
               <el-button type="primary" @click="onSearch">查询</el-button>
             </template>
             <template #col-status="{ row }"><StatusTag :status="row.status" /></template>
@@ -183,10 +193,16 @@ const columns: TableColumn[] = [
 ];
 
 const status = ref<string>(OrderStatus.WAIT_SHIP);
+/** 订单号搜索下推到 /admin/orders（后端 selectAllPage 已支持 keyword），不在前端切片 */
+const keyword = ref('');
 const { rows, total, loading, page, size, load, onPage, onSize, onSearch,
   fetchAll: exportAll } = useTable<any>({
   // 兜底：状态为空也只查待发货，绝不把全表订单放回工作台
-  fetch: (params) => unwrap(orderApi.list({ ...params, status: status.value || OrderStatus.WAIT_SHIP })),
+  fetch: (params) => unwrap(orderApi.list({
+    ...params,
+    status: status.value || OrderStatus.WAIT_SHIP,
+    keyword: keyword.value.trim() || undefined,
+  })),
   errorMessage: '待发货订单加载失败',
 });
 const { deleteMode, selected, onDeleted } = useBatchDelete(load);

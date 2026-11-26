@@ -16,7 +16,7 @@
  *   3) 客服在 Tab 内直接回复 → 后端自动接管（谁回复谁接待）→ 用户端排队提示消失、输入解锁
  */
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
-import { startConsultation } from './chat-helpers';
+import { startConsultation , closeSessionWithTicket} from './chat-helpers';
 
 const USER_URL = process.env.E2E_USER_URL ?? 'http://127.0.0.1:5173';
 const CS_URL = process.env.E2E_CS_URL ?? 'http://127.0.0.1:5175';
@@ -93,7 +93,7 @@ async function openSessionTab(page: Page, sessionId: number, timeout = 20_000) {
   await expect(item, `工作台左侧未出现会话 ${sessionId}`).toBeVisible({ timeout });
   await item.click();
   await expect(
-    page.locator('.el-tabs__item', { hasText: `#${sessionId}` }).first(),
+    page.locator(`.chat-panel[data-session-id="${sessionId}"]`),
     `会话 ${sessionId} 应打开对应 Tab`,
   ).toBeVisible({ timeout: 10_000 });
 }
@@ -126,7 +126,7 @@ test('未接待会话：排队提示 + 客户消息实时到达客服 + 客服�
   const openRows: any[] = [...(queue?.data?.waiting ?? []), ...(queue?.data?.active ?? []), ...(listed?.data?.list ?? [])];
   for (const row of openRows) {
     if (row.status !== 'CLOSED') {
-      await apiPost(request, `/admin/chat/sessions/${row.sessionId}/close`, { reason: 'DONE' }, adminToken);
+      await closeSessionWithTicket(request, Number(row.sessionId), adminToken);
     }
   }
 

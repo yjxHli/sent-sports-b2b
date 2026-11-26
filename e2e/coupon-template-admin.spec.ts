@@ -110,6 +110,10 @@ const csvRows = (text: string): string[][] =>
 const targetIdOf = (ids: string[]): string =>
   [...new Set(ids.map((s) => s.trim()).filter(Boolean))].sort().join(',');
 
+// 数据强依赖：本文件内的用例共享演示库状态（购物车/库存/券/发票/会话/配置），
+// 必须按书写顺序在同一个 worker 里跑完，禁止拆到多 worker 并行。
+test.describe.configure({ mode: 'serial' });
+
 test('建「指定商品」券：券号/创建人/创建时间进列表，导出整张表，并能去发放给客户', async ({ page, request }) => {
   test.setTimeout(240_000);
   const token = await adminToken(request);

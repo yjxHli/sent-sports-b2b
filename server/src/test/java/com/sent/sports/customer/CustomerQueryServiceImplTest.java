@@ -20,8 +20,10 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -133,5 +135,30 @@ class CustomerQueryServiceImplTest {
         deleted.setDeleted(1);
         when(customerMapper.selectById(9003L)).thenReturn(deleted);
         assertThrows(BizException.class, () -> service.detail(9003L));
+    }
+
+    @Test
+    @DisplayName("批量展示信息：带出昵称与头像 fileId，查不到/已软删的 ID 不出现在结果里")
+    void briefsOfReturnsNicknameAndAvatar() {
+        CustomerPO withAvatar = po(9002L, "林小满", "13800138000", null);
+        withAvatar.setAvatarFileId("f-avatar-1");
+        CustomerPO deleted = po(9004L, "已删客户", "13800138002", null);
+        deleted.setDeleted(1);
+        when(customerMapper.selectBatchIds(ArgumentMatchers.any()))
+                .thenReturn(List.of(withAvatar, deleted));
+
+        var briefs = service.briefsOf(List.of(9002L, 9002L, 9004L, 9999L));
+
+        assertEquals("林小满", briefs.get(9002L).nickname());
+        assertEquals("f-avatar-1", briefs.get(9002L).avatarFileId());
+        assertEquals(1, briefs.size(), "软删与不存在的客户都不应出现在结果里");
+    }
+
+    @Test
+    @DisplayName("批量展示信息：空入参直接返回空 Map，不打库")
+    void briefsOfEmptyInputSkipsQuery() {
+        assertTrue(service.briefsOf(List.of()).isEmpty());
+
+        verify(customerMapper, never()).selectBatchIds(ArgumentMatchers.any());
     }
 }

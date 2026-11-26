@@ -46,7 +46,11 @@ router.beforeEach(async (to) => {
   // 有 token：加载权限后按 meta.perm 过滤；后端仍会二次校验
   const permission = usePermissionStore();
   await permission.load();
-  if (to.meta.perm && !permission.has(to.meta.perm)) {
+  // permExact：只认显式权限码（与后端 @RequirePerm(exact = true) 对齐），持 '*' 不等于命中
+  const allowed = to.meta.permExact
+    ? permission.hasExact(to.meta.perm)
+    : permission.has(to.meta.perm);
+  if (to.meta.perm && !allowed) {
     return { path: FORBIDDEN_PATH, query: { from: to.fullPath } };
   }
   return true;

@@ -12,6 +12,7 @@
         class="list-alert"
       />
       <SentTable
+        :select-all-rows="fetchAllTemplates"
         :columns="columns"
         :rows="rows"
         :total="total"

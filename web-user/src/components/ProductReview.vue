@@ -30,6 +30,19 @@
       <span v-else-if="eligibility.reviewed" class="review__done">您已评价</span>
     </div>
 
+    <!-- 口碑概览：好评/差评条数（3 星中评仅在存在时出现，说明「两边相加 ≠ 总数」的原因） -->
+    <div class="review__pills" data-testid="review-pills">
+      <span class="review-pill review-pill--good">
+        好评 <b data-testid="review-positive-count">{{ positiveCount }}</b> 条
+      </span>
+      <span class="review-pill review-pill--bad">
+        差评 <b data-testid="review-negative-count">{{ negativeCount }}</b> 条
+      </span>
+      <span v-if="neutralCount > 0" class="review-pill review-pill--neutral">
+        中评 {{ neutralCount }} 条
+      </span>
+    </div>
+
     <!-- 列表：极简卡片，头像用昵称首字 -->
     <div v-loading="loading" class="review__body">
       <el-empty
@@ -167,7 +180,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import type { UploadFile, UploadUserFile } from 'element-plus';
 import { fmtDateTime } from '@sent/shared';
-import { unwrap } from '@/utils/http';
+import { HttpError, unwrap } from '@/utils/http';
 import { reviewApi, type ReviewSummaryVO, type ReviewVO } from '@/api/review';
 import { fileApi } from '@/api/file';
 
@@ -186,7 +199,13 @@ const loading = ref(false);
 const list = ref<ReviewVO[]>([]);
 const total = ref(0);
 const page = ref(1);
-const summary = ref<ReviewSummaryVO>({ total: 0, positiveCount: 0, positiveRate: 0, avgRating: '0.0' });
+const summary = ref<ReviewSummaryVO>({
+  total: 0,
+  positiveCount: 0,
+  negativeCount: 0,
+  positiveRate: 0,
+  avgRating: '0.0',
+});
 const eligibility = ref({ eligible: false, reviewed: false });
 
 const dialogVisible = ref(false);
@@ -199,6 +218,14 @@ const files = ref<UploadUserFile[]>([]);
 const uploadedIds = new Map<string, string>();
 
 const avgStars = computed(() => Number(summary.value.avgRating) || 0);
+/** 后端 Long 序列化成字符串，计数必须 `Number()`，否则 1 < "10" 会判错 */
+const positiveCount = computed(() => Number(summary.value.positiveCount) || 0);
+const negativeCount = computed(() => Number(summary.value.negativeCount) || 0);
+/** 3 星中评：好评(≥4)与差评(≤2)之间留出的那部分，不能靠减法算进差评 */
+const neutralCount = computed(() => {
+  const rest = Number(summary.value.total || 0) - positiveCount.value - negativeCount.value;
+  return rest > 0 ? rest : 0;
+});
 const hasMore = computed(() => list.value.length < total.value);
 
 function fmtTime(value: number | string): string {
@@ -224,6 +251,7 @@ async function load(reset = false): Promise<void> {
       summary.value = {
         total: Number(res.summary.total ?? 0),
         positiveCount: Number(res.summary.positiveCount ?? 0),
+        negativeCount: Number(res.summary.negativeCount ?? 0),
         positiveRate: Number(res.summary.positiveRate ?? 0),
         avgRating: String(res.summary.avgRating ?? '0.0'),
       };
@@ -333,7 +361,9 @@ async function submit(): Promise<void> {
     await load(true);
     await loadEligibility();
   } catch (e) {
-    ElMessage.error((e as Error).message || '评价提交失败');
+    ElMessage.error(e instanceof HttpError && e.code === 40003
+      ? '输入包含违禁词，请文明发言'
+      : (e as Error).message || '评价提交失败');
   } finally {
     submitting.value = false;
   }
@@ -343,6 +373,8 @@ watch(() => props.productId, () => {
   list.value = [];
   total.value = 0;
   page.value = 1;
+  // 摘要也要清零：否则切到下一个商品时，头部会短暂显示上一个商品的好评/差评数
+  summary.value = { total: 0, positiveCount: 0, negativeCount: 0, positiveRate: 0, avgRating: '0.0' };
   void load(true);
   void loadEligibility();
 });
@@ -416,6 +448,46 @@ onMounted(() => {
 .review__good b {
   color: var(--sent-primary, #12664f);
   font-variant-numeric: tabular-nums;
+}
+
+/* 口碑概览：胶囊条，视觉上比头部弱一档（只做概览，不抢评分的焦点） */
+.review__pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 14px 0 4px;
+}
+
+.review-pill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.review-pill b {
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.review-pill--good {
+  background: var(--sent-primary-soft, #e7f1ec);
+  color: var(--sent-primary, #12664f);
+}
+
+.review-pill--bad {
+  background: #fdecec;
+  color: #c93644;
+}
+
+.review-pill--neutral {
+  background: var(--sent-bg, #f5f5f5);
+  color: var(--sent-text-2, #4b5563);
 }
 
 .review__cta {

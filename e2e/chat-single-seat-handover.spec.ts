@@ -12,7 +12,7 @@
  *   3) 9001 打开工作台：左侧「进行中」出现该会话，且聊天 Tab 自动弹出。
  */
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test';
-import { startConsultation } from './chat-helpers';
+import { startConsultation , closeSessionWithTicket} from './chat-helpers';
 
 const USER_URL = process.env.E2E_USER_URL ?? 'http://127.0.0.1:5173';
 const CS_URL = process.env.E2E_CS_URL ?? 'http://127.0.0.1:5175';
@@ -88,7 +88,7 @@ test('会话被其他客服占住时，客户再进线应交还 9001 并在工�
   const openRows: any[] = [...(queue?.data?.waiting ?? []), ...(queue?.data?.active ?? []), ...(listed?.data?.list ?? [])];
   for (const row of openRows) {
     if (row.status !== 'CLOSED') {
-      await api(request, 'POST', `/admin/chat/sessions/${row.sessionId}/close`, { reason: 'DONE' }, adminToken);
+      await closeSessionWithTicket(request, Number(row.sessionId), adminToken);
     }
   }
   await api(request, 'POST', '/admin/chat/presence', { staffId: 9003, presence: 'ONLINE' }, adminToken);
@@ -134,11 +134,11 @@ test('会话被其他客服占住时，客户再进线应交还 9001 并在工�
       '交还后 9001 的「进行中」应出现该会话',
     ).toBeVisible({ timeout: 20_000 });
     await expect(
-      adminPage.locator('.el-tabs__item', { hasText: `#${sessionId}` }).first(),
+      adminPage.locator(`.chat-panel[data-session-id="${sessionId}"]`),
       '该会话的聊天框应自动打开',
     ).toBeVisible({ timeout: 20_000 });
   } finally {
-    await api(request, 'POST', `/admin/chat/sessions/${sessionId}/close`, { reason: 'DONE' }, adminToken).catch(() => undefined);
+    await closeSessionWithTicket(request, Number(sessionId), adminToken).catch(() => undefined);
     for (const staffId of STAFF_IDS) {
       await api(request, 'POST', '/admin/chat/presence', { staffId, presence: 'OFFLINE' }, adminToken);
     }

@@ -38,6 +38,12 @@ public final class CustomDtos {
             int rejectCount,
             String rejectReason,
             long reviewDeadlineMillis,
+            /**
+             * 图稿上传截止时刻（毫秒，0 = 不适用）。
+             * <p>仅「待提交图稿 + 一稿未传 + 订单已支付」时非 0：支付后 72 小时未上传，
+             * 系统会自动取消订单并全额退款，详情页据此显示倒计时。</p>
+             */
+            long draftDeadlineMillis,
             /** 关联订单号（可跳订单详情），查不到订单时为 null */
             String orderNo,
             String orderStatus,
@@ -56,7 +62,7 @@ public final class CustomDtos {
         public CustomVO(String customOrderId, String status, int version, int rejectCount,
                         String rejectReason, long reviewDeadlineMillis) {
             this(customOrderId, status, version, rejectCount, rejectReason, reviewDeadlineMillis,
-                    null, null, null, null, 0, 0L, 0L, 0L, List.of(), List.of());
+                    0L, null, null, null, null, 0, 0L, 0L, 0L, List.of(), List.of());
         }
     }
 

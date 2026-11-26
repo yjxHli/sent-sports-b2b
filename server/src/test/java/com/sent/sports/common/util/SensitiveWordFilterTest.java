@@ -24,6 +24,15 @@ class SensitiveWordFilterTest {
     private final SensitiveWordFilter filter = new SensitiveWordFilter(WORDS);
 
     @Test
+    @DisplayName("classpath 词库覆盖搜索违禁词：毒品 / 枪支 / 冰毒 必须命中")
+    void classpathDictionaryCoversSearchTerms() {
+        SensitiveWordFilter dictionary = SensitiveWordFilter.fromClasspath("sensitive_words.txt");
+        assertTrue(dictionary.contains("毒品"));
+        assertTrue(dictionary.contains("枪支"));
+        assertTrue(dictionary.contains("冰毒"));
+    }
+
+    @Test
     @DisplayName("包含敏感词：直接命中词库里的词")
     void detectsSensitiveWord() {
         assertTrue(filter.contains("你这个傻X"));

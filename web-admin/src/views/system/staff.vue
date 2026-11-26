@@ -17,7 +17,30 @@
         @refresh="load"
       >
         <template #toolbar>
-          <el-button type="primary" @click="openCreate">新增员工</el-button>
+          <el-input
+            v-model="query.keyword"
+            data-testid="staff-keyword"
+            placeholder="员工号 / 姓名 / 手机号"
+            clearable
+            style="width: 220px"
+            @keyup.enter="onSearch"
+            @clear="onSearch"
+          />
+          <div data-testid="staff-status-filter">
+            <el-select
+              v-model="query.enabled"
+              placeholder="全部状态"
+              clearable
+              style="width: 120px"
+              @change="onSearch"
+              @clear="query.enabled = undefined"
+            >
+              <el-option label="启用中" :value="true" />
+              <el-option label="已停用" :value="false" />
+            </el-select>
+          </div>
+          <el-button type="primary" @click="onSearch">查询</el-button>
+          <el-button type="primary" plain @click="openCreate">新增员工</el-button>
           <el-button @click="router.push('/system/role')">角色权限矩阵</el-button>
         </template>
         <template #col-enabled="{ row }">
@@ -98,8 +121,16 @@ const columns: TableColumn[] = [
   { prop: 'enabled', label: '状态', width: 110, align: 'center' },
 ];
 
-const { rows, total, loading, page, size, load, onPage, onSize } = useTable<any>({
+/** 搜索条件与列表条件走同一处：空白归一 null，false 不能被 `|| undefined` 吃掉 */
+const query = reactive<{ keyword: string; enabled: boolean | undefined }>({
+  keyword: '', enabled: undefined,
+});
+const { rows, total, loading, page, size, load, onPage, onSize, onSearch } = useTable<any>({
   fetch: (params) => unwrap(systemApi.staffList(params)),
+  query: () => ({
+    keyword: query.keyword.trim() || undefined,
+    enabled: typeof query.enabled === 'boolean' ? query.enabled : undefined,
+  }),
   errorMessage: '员工列表加载失败',
 });
 const submitting = ref(false);
