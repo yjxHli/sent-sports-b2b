@@ -33,8 +33,24 @@ public class CancelOrderUseCase {
 
     @UseCase
     public CancelOrderResult cancel(CancelOrderCmd cmd) {
+        return cancel(cmd, null);
+    }
+
+    /**
+     * 取消订单（带归属校验，2026-11-28 批次 1 / P0-02）。
+     *
+     * @param viewerCustomerId 发起人客户号；{@code null} 表示系统任务/管理端（不校验归属）。
+     *                         非空且与订单归属不一致抛 {@code FORBIDDEN(40301)}，
+     *                         校验放在状态机与库存释放**之前**：越权请求不该产生任何副作用。
+     */
+    @UseCase
+    public CancelOrderResult cancel(CancelOrderCmd cmd, Long viewerCustomerId) {
         Order order = orderRepository.findByOrderNo(cmd.orderNo())
                 .orElseThrow(() -> new BizException(ErrorCode.PARAM_INVALID, "订单不存在"));
+
+        if (viewerCustomerId != null && !order.isOwnedBy(viewerCustomerId)) {
+            throw new BizException(ErrorCode.FORBIDDEN, "无权取消该订单");
+        }
 
         // 仅 WAIT_PAY 允许 USER_CANCEL；其余状态（含已支付 WAIT_SHIP、已取消）一律拒绝
         if (!OrderStateMachine.canTransit(order.getStatus(), OrderAction.USER_CANCEL)) {

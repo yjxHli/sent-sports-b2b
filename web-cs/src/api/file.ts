@@ -1,25 +1,6 @@
 /**
- * 文件服务 API（管理端）：审图 / 退款凭证 / 客服图片读取与上传。
- *
- * 与商城端同一套接口：上传 multipart，返回 fileId；读接口允许匿名，可直接给 `<img src>`。
+ * 兼容层（2026-11-28 P2）：实现已上提到 `@sent/shared/api`，由本端 api/index.ts
+ * 注入本端 http 实例后导出。保留本文件是为了不改动十几处 `from '@/api/file'` 的调用点。
  */
-import { http } from '@/utils/http';
-
-export interface FileVO {
-  fileId: string;
-  url: string;
-  fileName: string;
-  size: number;
-}
-
-export const fileApi = {
-  upload: (file: File) => {
-    const form = new FormData();
-    form.append('file', file, file.name);
-    return http.post<FileVO>('/files', form, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-      timeout: 60_000,
-    });
-  },
-  url: (fileId?: string | null): string => (fileId ? `/api/files/${fileId}` : ''),
-};
+export { authApi, orderApi, fileApi } from '@/api';
+export * from '@sent/shared/api';

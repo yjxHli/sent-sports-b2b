@@ -21,10 +21,8 @@ import org.springframework.web.bind.annotation.RestController;
  * 客户与会员管理控制器（P4-46）：列表 / 详情 / 改派 / 授级 / 积分调整（plan §8.12）。
  *
  * <p>写动作统一走 {@link CustomerOperationService}（真库 customer 表 + 流水）。
- * 此前直连 P3 的 TransferCustomerUseCase / GrantLevelUseCase / AdjustPointUseCase，
- * 它们挂在进程内内存仓储上，真库客户一律查不到 → 40401（浏览器 404），
- * 且授级等级码与 member 枚举不一致会抛 50001。那三个用例仍服务于用户端 /api/member/*，
- * 此处不再调用，避免管理端与用户端互相牵连。</p>
+ * 早期直连的三个 P3 用例（改派/授级/调分）挂在进程内内存仓储上，真库客户一律查不到，
+ * 已于 2026-11-28 P2 批次连同其内存仓储一并删除——管理端写面从此只有真库一条路径。</p>
  */
 @RestController
 @RequestMapping("/api/admin/customers")
@@ -40,6 +38,7 @@ public class AdminCustomerController {
     }
 
     @GetMapping
+    @RequirePerm("customer:view")
     public R<PageResult<?>> list(@ModelAttribute PageQuery page,
                                  @RequestParam(required = false) String keyword,
                                  @RequestParam(required = false) String level,
@@ -48,6 +47,7 @@ public class AdminCustomerController {
     }
 
     @GetMapping("/{id}")
+    @RequirePerm("customer:view")
     public R<Object> detail(@PathVariable long id) {
         return R.ok(customerQueryService.detail(id));
     }

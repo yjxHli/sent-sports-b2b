@@ -3,7 +3,6 @@
  * 结算试算（checkoutPreview）委托取价引擎，返回逐行单价与整单应付。
  */
 import { http } from '@/utils/http';
-import type { SentRequestConfig } from '@sent/shared/http';
 
 export interface CartItemVO {
   itemId: number;
@@ -11,6 +10,15 @@ export interface CartItemVO {
   skuName: string;
   qty: number;
   selected: boolean;
+  /**
+   * 商品主图（2026-11-28 补）：个人中心购物车卡要和收藏 / 足迹统一成
+   * 「商品图片 + 商品名称 + 商品价格」，没图时前端退回占位图。
+   */
+  mainImage?: string | null;
+  /** 加购时的价格快照（分）；后端 Long 序列化成字符串，用前先 Number() */
+  unitPriceCent?: number | string | null;
+  /** 加购时的价格快照（元，两位小数字符串） */
+  unitPriceYuan?: string | null;
 }
 
 export interface PreviewItemCmd {
@@ -66,6 +74,4 @@ export const cartApi = {
     couponId?: number;
     items: PreviewItemCmd[];
   }) => http.post<QuoteVO>('/cart/checkout-preview', cmd),
-  /** 下单幂等键经 config.headers 注入 */
-  _config: (config: SentRequestConfig = {}) => config,
 };

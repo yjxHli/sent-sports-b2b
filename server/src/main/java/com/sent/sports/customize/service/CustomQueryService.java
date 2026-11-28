@@ -19,6 +19,16 @@ public interface CustomQueryService {
     PageResult<CustomDtos.MyCustomOrderVO> myOrders(long customerId, PageQuery pageQuery);
 
     /**
+     * 用户端「我的定制单」分页（2026-11-28）：{@code bucket} 非空时按四类桶收窄
+     * （{@code todo|review|producing|done}，见 {@code CustomStatusBucket}）。
+     * <p>非法 bucket 忽略（当「全部」处理）：分享出去的旧链接多了个参数不该把页面打挂。</p>
+     */
+    PageResult<CustomDtos.MyCustomOrderVO> myOrders(long customerId, String bucket, PageQuery pageQuery);
+
+    /** 四类筛选卡的角标：计数口径与列表筛选同源，且都排除客户侧软删的单。 */
+    CustomDtos.MyCustomSummaryVO mySummary(long customerId);
+
+    /**
      * 按订单号查该订单下的定制单（订单详情页「UV 定制」卡片用）。
      * <p>只返回当前客户自己的订单（越权返回空列表），订单无定制件时返回空列表。</p>
      */

@@ -220,9 +220,11 @@ test('核销与冲销的应收台账支持翻页，且只查未结清', async ({
   expect(total, '未结清应收应多于一页').toBeGreaterThan(10);
 
   await pager.locator('.btn-next').click();
-  await page.waitForTimeout(1500);
-  expect(urls.at(-1)).toContain('page=2');
-  expect(urls.at(-1)).toContain('openOnly=true');
+  // 应收表格有自动适配行数的逻辑，点击后可能再补一次 size/page=1 请求；
+  // 因此只断言「确实请求过第 2 页」，并校验那条请求仍带 openOnly，而不是赌它是最后一条。
+  await expect.poll(() => urls.some((url) => url.includes('page=2')), { timeout: 10_000 })
+          .toBe(true);
+  expect(urls.filter((url) => url.includes('page=2')).at(-1)).toContain('openOnly=true');
 
   expect(errors, 'console 不应有错误').toHaveLength(0);
 });

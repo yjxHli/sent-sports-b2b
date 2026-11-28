@@ -83,6 +83,7 @@ const SESSION_SPECS = [
   'full-flow.spec.ts', // 下单 + 客服接待全链路
   'messages-inbox.spec.ts',
   'message-badge-realtime.spec.ts', // 与上者共用演示账号收件箱
+  'invoice-notifications.spec.ts', // 开票站内信：也会写客户 9002 的收件箱
   'order-timeout-autocancel.spec.ts', // 定时任务释放库存
   'faq-config.spec.ts', // 话术要经「机器人应答」验证，会占用客服会话
 ];

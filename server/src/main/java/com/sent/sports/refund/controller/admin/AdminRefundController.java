@@ -41,6 +41,7 @@ public class AdminRefundController {
 
     /** 审核列表：status 为空时返回全部状态，按申请时间倒序；keyword 同时匹配退款单号与订单号。 */
     @GetMapping
+    @RequirePerm("refund:view")
     public R<PageResult<RefundDtos.RefundAuditVO>> list(
             @ModelAttribute PageQuery page,
             @RequestParam(required = false) String status,
@@ -54,6 +55,7 @@ public class AdminRefundController {
      * 退款单不存在走 NOT_FOUND，响应里不会出现只有 refundNo 的空壳。</p>
      */
     @GetMapping("/{refundNo}")
+    @RequirePerm("refund:view")
     public R<RefundDtos.RefundAuditDetailVO> detail(@PathVariable String refundNo) {
         return R.ok(refundQueryService.getAuditDetail(refundNo));
     }

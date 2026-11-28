@@ -79,7 +79,7 @@
             />
             <span class="order-card__time">{{ fmtDateTime(o.createdAt) }}</span>
             <span class="order-card__no">订单号：{{ o.orderNo }}</span>
-            <span class="order-card__shop">森特体育自营店</span>
+            <!-- 2026-11-28：按参考图不再展示商家/店铺名称（本商城只有自营） -->
             <span class="order-card__status" :class="`order-card__status--${toneOf(o.status)}`">
               {{ label(o.status) }}
             </span>
@@ -207,6 +207,7 @@ import { orderApi, type OrderItemLine, type OrderListItem } from '@/api/order';
 import ProductThumb from '@/components/ProductThumb.vue';
 import InvoiceApplyDialog from '@/components/InvoiceApplyDialog.vue';
 import { canInvoiceOrder } from '@/composables/useOrderActions';
+import { openInNewTab } from '@/utils/link';
 
 const route = useRoute();
 const router = useRouter();
@@ -427,7 +428,7 @@ function openProduct(it: OrderItemLine): void {
     ElMessage.warning('该商品已下架，无法查看详情');
     return;
   }
-  router.push(`/product/${pid}`);
+  openInNewTab(router, { path: `/product/${pid}` });
 }
 
 
@@ -518,7 +519,7 @@ async function buyAgain(o: OrderListItem): Promise<void> {
     ElMessage.warning('缺少商品信息，无法再次购买');
     return;
   }
-  router.push(`/product/${pid}`);
+  openInNewTab(router, { path: `/product/${pid}` });
 }
 
 async function load(): Promise<void> {
@@ -649,9 +650,6 @@ onMounted(load);
 .order-card__no {
   color: var(--sent-text-2);
 }
-.order-card__shop {
-  color: var(--sent-text-2);
-}
 .order-card__status {
   margin-left: auto;
   font-size: 13px;
@@ -725,7 +723,7 @@ onMounted(load);
   width: 92px;
   text-align: right;
   font-size: 13px;
-  color: var(--sent-text-2);
+  color: var(--sent-price);
 }
 .order-item__qty {
   width: 48px;

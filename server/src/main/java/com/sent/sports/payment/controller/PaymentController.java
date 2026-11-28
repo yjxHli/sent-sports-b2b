@@ -1,23 +1,18 @@
 package com.sent.sports.payment.controller;
 
+import com.sent.sports.common.anno.Idempotent;
 import com.sent.sports.common.anno.RequirePerm;
 import com.sent.sports.common.util.MoneyUtil;
-import com.sent.sports.common.web.PageQuery;
-import com.sent.sports.common.web.PageResult;
 import com.sent.sports.common.web.R;
 import com.sent.sports.payment.dto.PaymentDtos;
 import com.sent.sports.payment.gateway.PayGateway;
 import com.sent.sports.payment.service.CreatePaymentUseCase;
 import com.sent.sports.payment.service.PayCallbackUseCase;
-import com.sent.sports.payment.service.PaymentQueryService;
 import com.sent.sports.payment.service.dto.CreatePaymentCmd;
 import com.sent.sports.payment.service.dto.CreatePaymentResult;
 import com.sent.sports.payment.service.dto.PayCallbackCmd;
 import com.sent.sports.payment.service.dto.PayCallbackResult;
 import jakarta.validation.Valid;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.ModelAttribute;
-import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -27,6 +22,9 @@ import java.util.Map;
 
 /**
  * 支付控制器（P4-19）：发起支付 / 支付结果轮询 / 我的流水 / 渠道异步通知（plan §8.5）。
+ *
+ * <p>2026-11-28 P2 批次：下线 {@code GET /orders/{orderNo}/pay-result} 与 {@code GET /payments} 两个桩端点
+ * （恒返回 PENDING / 空列表，前端零调用）。
  *
  * <p><b>回调入口只做透传</b>：整张渠道参数表（含 {@code sign}）原样交给
  * {@link PayCallbackUseCase#handle}，验签在用例最前面完成。接口层不构造、也不补签任何参数——
@@ -42,21 +40,19 @@ public class PaymentController {
 
     private final CreatePaymentUseCase createPaymentUseCase;
     private final PayCallbackUseCase payCallbackUseCase;
-    private final PaymentQueryService paymentQueryService;
     private final PayGateway payGateway;
 
     public PaymentController(CreatePaymentUseCase createPaymentUseCase,
                              PayCallbackUseCase payCallbackUseCase,
-                             PaymentQueryService paymentQueryService,
                              PayGateway payGateway) {
         this.createPaymentUseCase = createPaymentUseCase;
         this.payCallbackUseCase = payCallbackUseCase;
-        this.paymentQueryService = paymentQueryService;
         this.payGateway = payGateway;
     }
 
     @PostMapping("/payments")
     @RequirePerm("payment:create")
+    @Idempotent(scene = "PAY_CREATE")
     public R<PaymentDtos.PayResultVO> create(@Valid @RequestBody PaymentDtos.PayCmd cmd) {
         CreatePaymentResult r = createPaymentUseCase.create(
                 new CreatePaymentCmd(cmd.orderNo(), cmd.amountCent(), cmd.channel(), cmd.idemKey()));
@@ -64,16 +60,6 @@ public class PaymentController {
         return R.ok(new PaymentDtos.PayResultVO(r.orderNo(), r.status(), r.txnNo(),
                 r.amountCent(), MoneyUtil.toYuan(r.amountCent()),
                 ticket.sign(), ticket.notifyParams()));
-    }
-
-    @GetMapping("/orders/{orderNo}/pay-result")
-    public R<PaymentDtos.PayResultVO> payResult(@PathVariable String orderNo) {
-        return R.ok(paymentQueryService.getPayResult(orderNo));
-    }
-
-    @GetMapping("/payments")
-    public R<PageResult<PaymentDtos.PayResultVO>> list(@ModelAttribute PageQuery page) {
-        return R.ok(paymentQueryService.listMyPayments(page));
     }
 
     /**

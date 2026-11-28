@@ -15,6 +15,10 @@ test('未注册手机号登录被拦截，跳注册页并回填手机号', async
   await page.goto(join(USER_URL, '/login'));
   await page.getByTestId('auth-phone').fill(phone);
   await page.getByTestId('auth-password').fill('AnyPassword1');
+  // 2026-11-28：登录页新增协议勾选（默认未勾选），E2E 必须先确认协议
+  if (await page.getByTestId('auth-agree').count()) {
+    await page.getByTestId('auth-agree').locator('.el-checkbox__inner').click();
+  }
   await page.getByTestId('auth-login-submit').click();
 
   await expect(page.locator('.el-message', { hasText: '该手机号尚未注册，请先注册' }))

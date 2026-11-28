@@ -36,6 +36,25 @@ public class StockCheck {
         this.createdAtMillis = createdAtMillis;
     }
 
+    /**
+     * 从持久层重建聚合（2026-11-28 引入）。
+     *
+     * <p>为什么需要它：{@link #record} / {@link #approve} 带状态校验，无法用来还原
+     * 「已经是 APPROVED」的快照（会抛 {@code STATE_CONFLICT}）。重建只还原数据、不做任何校验，
+     * 状态机的约束仍然只发生在业务动作里——这样领域对象既守得住约束，又能从库里读回来。
+     */
+    public static StockCheck rehydrate(String checkNo, long skuId, long bookQty, long actualQty, long diffQty,
+                                       String status, long operatorId, long createdAtMillis,
+                                       long recordedAtMillis, long approvedAtMillis) {
+        StockCheck check = new StockCheck(checkNo, skuId, bookQty, operatorId, createdAtMillis);
+        check.actualQty = actualQty;
+        check.diffQty = diffQty;
+        check.status = status;
+        check.recordedAtMillis = recordedAtMillis;
+        check.approvedAtMillis = approvedAtMillis;
+        return check;
+    }
+
     /** 录入实盘数：仅 DRAFT 可录，差值 = 实盘 - 账面，置 COUNTED。 */
     public void record(long actualQty, long nowMillis) {
         if (!DRAFT.equals(status)) {

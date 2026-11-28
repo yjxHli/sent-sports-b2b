@@ -3,7 +3,7 @@
  * 报表数据用于工作台六个指标卡与菜单角标；菜单本身仍由静态路由表 + permissions[] 生成。
  */
 import { http, type SentRequestConfig } from '@/utils/http';
-import type { PageQuery, PageResult, StaffVO, RoleVO, SalesReportVO } from '@sent/shared';
+import type { PageQuery, PageResult, StaffVO, RoleVO } from '@sent/shared';
 
 export interface StaffForm {
   username: string;
@@ -317,9 +317,6 @@ export const systemApi = {
   updateRolePerms: (id: string, form: RolePermForm) =>
     http.put<RoleVO>(`/admin/roles/${id}/permissions`, form),
 
-  params: () => http.get<ParamVO[]>('/admin/params'),
-  upsertParam: (form: ParamForm) => http.put<ParamVO>('/admin/params', form),
-
   /* 系统配置中心（2026-11-25）：在键值对之上补中文名 / 说明 / 单位 / 展示值 */
   configs: () => http.get<ConfigVO[]>('/admin/configs'),
   /** 单项更新：键名走路径，值是纯字符串，类型校验由后端字典负责 */
@@ -342,11 +339,8 @@ export const systemApi = {
   batchDeleteLogs: (ids: string[], config?: SentRequestConfig) =>
     http.post<{ deleted: number }>('/admin/logs/batch-delete', { ids }, config),
 
-  salesReport: () => http.get<SalesReportVO>('/admin/reports/sales'),
   /** 销售趋势（真查 orders.paid_at + paid_cent，剔除全额退款订单）。 */
   salesTrend: (days = 30) => http.get<SalesTrendVO>('/admin/reports/sales-trend', { days }),
-  /** 销售业绩排行：多行真实数据，统计区间由后端 SQL 下推。 */
-  salesRanking: (days = 30) => http.get<SalesRankVO[]>('/admin/reports/sales-ranking', { days }),
   /**
    * 热销商品：按 sku_id 聚合成交数量与金额，数据范围由后端 @DataScope 下推
    * （主管看团队、财务/超管看全部）。

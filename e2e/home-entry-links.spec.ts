@@ -28,6 +28,7 @@ async function loginUser(page: Page): Promise<void> {
   await page.goto(`${USER_URL.replace(/\/+$/, '')}/login`);
   await page.getByPlaceholder('请输入11位手机号').fill(CUSTOMER_PHONE);
   await page.getByPlaceholder('请输入密码').fill(CUSTOMER_PASSWORD);
+  await page.getByTestId('auth-agree').locator('.el-checkbox__inner').click();
   const resp = page.waitForResponse(
     (r) => r.url().includes('/api/auth/login') && r.request().method() === 'POST',
     { timeout: 20_000 },
@@ -171,13 +172,14 @@ test('首页顶部各模块点击都跳到对应页面', async ({ page, context 
   await expectGoodsLanded(bannerPage);
   await bannerPage.close();
 
-  // 8) 企业采购「查看团购专区」→ 独立的团购专区页（不是训练关键词列表），新标签页打开
+  // 8) 首页底部企业采购「查看团购专区」保留，新标签页打开（落地页也有侧边栏）
   await backHome(page);
   const groupBuyPage = await clickAndCatchNewPage(context, page, () =>
     page.locator('.side-tip__btn').first().click(),
   );
   expect(pathOf(groupBuyPage), '新标签页应落在团购专区').toBe('/group-buy');
   expect(groupBuyPage.url(), '团购专区不应再落到训练关键词').not.toContain('keyword=');
+  await expect(groupBuyPage.getByTestId('mine-sidebar'), '团购专区应有我的森特侧边栏').toBeVisible();
   await expect(groupBuyPage.locator('.group-buy .good-card').first()).toBeVisible({
     timeout: 20_000,
   });

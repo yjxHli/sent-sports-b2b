@@ -2,7 +2,7 @@
   <div class="fp-page">
     <div class="fp-bar">
       <h1 class="fp-bar__title">我的足迹</h1>
-      <span class="fp-bar__count">共 {{ total }} 件商品</span>
+      <span class="fp-bar__count">近一个月浏览 {{ total }} 件商品</span>
       <button
         v-if="total > 0"
         type="button"
@@ -20,19 +20,46 @@
       <router-link to="/products" class="fp-empty__btn">去逛逛</router-link>
     </div>
 
-    <template v-else>
-      <!-- 按浏览日期分组，和淘宝「今天 / 昨天 / 更早」一致 -->
-      <section v-for="group in groups" :key="group.label" class="fp-group">
-        <header class="fp-group__head">
-          <h3>{{ group.label }}</h3>
-          <span>{{ group.items.length }} 件</span>
+    <!-- 2026-11-28 用户要求：改成「几号看了什么」的时间轴，只保留一个月（后端同样只回近 30 天） -->
+    <div v-else class="fp-timeline">
+      <section v-for="group in dayGroups" :key="group.key" class="fp-day" data-testid="footprint-day">
+        <header class="fp-day__head">
+          <span class="fp-day__date">{{ group.dateLabel }}</span>
+          <span class="fp-day__week">{{ group.weekLabel }}</span>
+          <span class="fp-day__count">{{ group.items.length }} 件</span>
         </header>
-        <div class="goods-grid">
-          <div v-for="f in group.items" :key="f.productId" class="fp-card" :class="{ 'fp-card--off': !f.onShelf }">
+
+        <ul class="fp-day__items">
+          <li v-for="f in group.items" :key="f.productId" class="fp-line" data-testid="footprint-item">
+            <span class="fp-line__time">{{ timeOf(f) }}</span>
+            <span class="fp-line__dot" aria-hidden="true" />
+
             <button
               type="button"
-              class="fp-card__heart"
-              :class="{ 'fp-card__heart--on': f.favorited }"
+              class="fp-line__thumb"
+              :class="{ 'fp-line__thumb--off': !f.onShelf }"
+              :title="f.onShelf ? `查看「${f.productName}」` : '商品已失效'"
+              @click="goDetail(f)"
+            >
+              <ProductThumb :src="f.mainImage" :name="f.productName" :seed="f.productId" />
+            </button>
+
+            <div class="fp-line__info">
+              <button type="button" class="fp-line__name" @click="goDetail(f)">
+                {{ f.productName }}
+              </button>
+              <span class="fp-line__meta">
+                <b class="fp-line__price">¥{{ money(f) }}</b>
+                <span class="fp-line__sep">·</span>
+                <span>{{ viewText(f) }}</span>
+                <span v-if="!f.onShelf" class="fp-line__off">已失效</span>
+              </span>
+            </div>
+
+            <button
+              type="button"
+              class="fp-line__heart"
+              :class="{ 'fp-line__heart--on': f.favorited }"
               :title="f.favorited ? '取消收藏' : '加入收藏'"
               @click.stop="toggleFavorite(f)"
             >
@@ -41,21 +68,8 @@
                       :fill="f.favorited ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="1.2" />
               </svg>
             </button>
-
-            <div class="fp-card__thumb" @click="goDetail(f)">
-              <ProductThumb :src="f.mainImage" :name="f.productName" :seed="f.productId" />
-              <span v-if="!f.onShelf" class="fp-card__mask">已失效</span>
-            </div>
-            <div class="fp-card__body" @click="goDetail(f)">
-              <div class="fp-card__name">{{ f.productName }}</div>
-              <div class="fp-card__price"><span class="sym">¥</span>{{ money(f) }}</div>
-              <div class="fp-card__meta">
-                <span>{{ viewText(f) }}</span>
-                <span v-if="f.favorited" class="fp-card__tag">已收藏</span>
-              </div>
-            </div>
-          </div>
-        </div>
+          </li>
+        </ul>
       </section>
 
       <div v-if="list.length < total" class="fp-more">
@@ -63,28 +77,30 @@
           {{ loading ? '加载中…' : '加载更多' }}
         </button>
       </div>
-    </template>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 /**
- * 我的足迹（2026-11-16）。
+ * 我的足迹（2026-11-16；2026-11-28 改为时间轴）。
  *
- * 与收藏夹的区别：足迹是「被动记录」的浏览历史，所以重点展示「什么时候看的、看了几次」，
- * 并按日期分组（今天 / 昨天 / 更早），和淘宝一致。
+ * 与收藏夹的区别：足迹是「被动记录」的浏览历史，所以这页回答的是「几号看了什么」——
+ * 按天分组，每行左边是时间（HH:mm），右边是商品，行尾可以就地补收藏。
  *
- * 卡片右上角的心形可以直接收藏/取消收藏——足迹里看到想买却漏收藏的商品，就地补上，
- * 不必先点进详情页。`favorited` 由后端一次批量查回，不是逐条请求。
+ * 只保留一个月：后端读接口按 `last_viewed_at >= now - 30 天` 过滤，
+ * 并由 `FootprintCleanupJob` 每天物理删除过期记录；前端不再做时间过滤，
+ * 免得「页面藏了但库里还在」和「库里删了页面还算着」两套口径打架。
  */
 import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { fmtCent, fmtDate } from '@sent/shared';
+import { fmtCent } from '@sent/shared';
 import { unwrap } from '@/utils/http';
 import { footprintApi, type FootprintVO } from '@/api/footprint';
 import { favoriteApi } from '@/api/favorite';
 import ProductThumb from '@/components/ProductThumb.vue';
+import { openInNewTab } from '@/utils/link';
 
 const router = useRouter();
 
@@ -95,6 +111,8 @@ const total = ref(0);
 const page = ref(1);
 const loading = ref(false);
 
+const WEEK = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
 function money(f: FootprintVO): string {
   return f.priceYuan ? String(f.priceYuan) : fmtCent(Number(f.priceCent ?? 0));
 }
@@ -104,29 +122,44 @@ function viewText(f: FootprintVO): string {
   return times > 1 ? `浏览 ${times} 次` : '浏览过';
 }
 
-/** 日期分组：先按毫秒时间戳的「天」聚合，保持后端返回的倒序（组内不再重排） */
-const groups = computed(() => {
-  const today = startOfDay(Date.now());
-  const yesterday = today - 24 * 60 * 60 * 1000;
-  const buckets: { label: string; items: FootprintVO[] }[] = [];
-  const push = (label: string, item: FootprintVO): void => {
-    const found = buckets.find((b) => b.label === label);
-    if (found) found.items.push(item);
-    else buckets.push({ label, items: [item] });
-  };
+/** 一行右侧的时间：HH:mm（同一天看过多件时，按时间排下来才像「时间轴」） */
+function timeOf(f: FootprintVO): string {
+  const t = Number(f.lastViewedAt ?? 0);
+  if (!t) return '--:--';
+  const d = new Date(t);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+/**
+ * 按「天」分组：组头是「今天 / 昨天 / 11-26 + 周三」，组内保持后端倒序。
+ * 用本地日期串做 key（不用时间戳除法），避免跨时区/夏令时把两天并成一天。
+ */
+const dayGroups = computed(() => {
+  const buckets: { key: string; dateLabel: string; weekLabel: string; items: FootprintVO[] }[] = [];
+  const todayKey = dateKey(Date.now());
+  const yesterdayKey = dateKey(Date.now() - 24 * 60 * 60 * 1000);
   for (const item of list.value) {
-    const t = Number(item.lastViewedAt ?? 0);
-    if (t >= today) push('今天', item);
-    else if (t >= yesterday) push('昨天', item);
-    else push(t > 0 ? fmtDate(t) : '更早', item);
+    const t = Number(item.lastViewedAt ?? 0) || Date.now();
+    const key = dateKey(t);
+    let bucket = buckets.find((b) => b.key === key);
+    if (!bucket) {
+      const d = new Date(t);
+      bucket = {
+        key,
+        dateLabel: key === todayKey ? '今天' : key === yesterdayKey ? '昨天' : `${d.getMonth() + 1}-${d.getDate()}`,
+        weekLabel: WEEK[d.getDay()] ?? '',
+        items: [],
+      };
+      buckets.push(bucket);
+    }
+    bucket.items.push(item);
   }
   return buckets;
 });
 
-function startOfDay(ms: number): number {
+function dateKey(ms: number): string {
   const d = new Date(ms);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
+  return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
 }
 
 function goDetail(f: FootprintVO): void {
@@ -134,7 +167,7 @@ function goDetail(f: FootprintVO): void {
     ElMessage.warning('该商品已下架，无法查看详情');
     return;
   }
-  router.push(`/product/${f.productId}`);
+  openInNewTab(router, { path: `/product/${f.productId}` });
 }
 
 /** 就地收藏 / 取消收藏：先改本地状态，失败回滚 */
@@ -203,10 +236,7 @@ onMounted(() => {
 
 <style scoped>
 .fp-page {
-  width: var(--sent-container);
-  max-width: calc(100% - 32px);
-  margin: 0 auto;
-  padding: 14px 0 36px;
+  width: 100%;
 }
 
 .fp-bar {
@@ -214,9 +244,8 @@ onMounted(() => {
   align-items: baseline;
   gap: 12px;
   background: #fff;
-  border-radius: 10px;
-  padding: 16px 18px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  border-radius: 8px;
+  padding: 6px 0 14px;
 }
 .fp-bar__title {
   margin: 0;
@@ -249,126 +278,165 @@ onMounted(() => {
   color: var(--sent-accent);
 }
 
-.fp-group {
-  margin-top: 16px;
-}
-.fp-group__head {
+/* ---------- 时间轴 ---------- */
+.fp-timeline {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin-bottom: 10px;
-  padding-left: 2px;
+  flex-direction: column;
 }
-.fp-group__head h3 {
-  margin: 0;
+.fp-day {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 0 10px;
+  padding-bottom: 8px;
+}
+.fp-day__head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 10px;
+  text-align: right;
+}
+.fp-day__date {
   font-size: 15px;
-  color: var(--sent-text);
-}
-.fp-group__head span {
-  font-size: 12px;
-  color: var(--sent-muted);
-}
-
-/* ---------- 网格：统一走全局 .goods-grid（auto-fill，1440 版心 → 6 列） ---------- */
-.fp-card {
-  position: relative;
-  background: #fff;
-  border-radius: 10px;
-  overflow: hidden;
-  border: 1px solid transparent;
-  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
-}
-.fp-card:hover {
-  border-color: var(--sent-primary);
-  box-shadow: 0 8px 20px rgba(18, 102, 79, 0.12);
-  transform: translateY(-2px);
-}
-.fp-card--off {
-  opacity: 0.82;
-}
-.fp-card__thumb {
-  position: relative;
-  height: 148px;
-  cursor: pointer;
-}
-.fp-card__thumb :deep(.thumb) {
-  height: 148px;
-  border-radius: 10px 10px 0 0;
-}
-.fp-card__mask {
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.42);
-  color: #fff;
-  font-size: 13px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.fp-card__body {
-  padding: 10px 12px 12px;
-  cursor: pointer;
-}
-.fp-card__name {
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--sent-text);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  min-height: 39px;
-}
-.fp-card__price {
-  margin-top: 6px;
-  font-size: 18px;
   font-weight: 700;
-  color: var(--sent-accent-dark);
+  color: var(--sent-text);
+  font-variant-numeric: tabular-nums;
 }
-.fp-card__price .sym {
+.fp-day__week {
   font-size: 12px;
-  margin-right: 1px;
-}
-.fp-card__meta {
-  margin-top: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 11px;
   color: var(--sent-muted);
 }
-.fp-card__tag {
-  color: var(--sent-primary);
-  flex: none;
-  white-space: nowrap;
+.fp-day__count {
+  font-size: 11px;
+  color: #b3b9c2;
 }
 
-.fp-card__heart {
+/* 竖线画在商品列左侧，按天连续，视觉上是一条不断的时间线 */
+.fp-day__items {
+  position: relative;
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 20px;
+  border-left: 1px solid var(--sent-border);
+}
+.fp-line {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+}
+.fp-line + .fp-line {
+  border-top: 1px dashed #f2f3f5;
+}
+.fp-line__time {
+  flex: none;
+  width: 42px;
+  font-size: 12px;
+  color: var(--sent-muted);
+  font-variant-numeric: tabular-nums;
+}
+/* 时间轴节点：压在竖线上 */
+.fp-line__dot {
   position: absolute;
-  top: 8px;
-  right: 8px;
-  z-index: 2;
-  width: 30px;
-  height: 30px;
-  border: none;
+  left: -25px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.9);
+  background: #fff;
+  border: 2px solid var(--sent-primary);
+}
+.fp-line:first-child .fp-line__dot {
+  border-color: var(--sent-accent);
+}
+.fp-line__thumb {
+  flex: none;
+  width: 64px;
+  height: 64px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #f5f6f7;
+  cursor: pointer;
+}
+.fp-line__thumb :deep(.thumb) {
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+}
+.fp-line__thumb--off {
+  opacity: 0.6;
+}
+.fp-line__info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.fp-line__name {
+  border: none;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--sent-text);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.fp-line__name:hover {
+  color: var(--sent-primary);
+}
+.fp-line__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--sent-muted);
+}
+.fp-line__price {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--sent-price);
+}
+.fp-line__sep {
+  color: #d7dbe0;
+}
+.fp-line__off {
+  color: #e34d59;
+}
+.fp-line__heart {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--sent-border);
+  border-radius: 50%;
+  background: #fff;
   color: #b9bfc4;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: transform 0.15s, color 0.15s;
+  transition: color 0.15s, border-color 0.15s;
 }
-.fp-card__heart svg {
+.fp-line__heart svg {
   width: 16px;
   height: 16px;
 }
-.fp-card__heart--on {
+.fp-line__heart:hover {
+  border-color: #e34d59;
   color: #e34d59;
 }
-.fp-card__heart:hover {
-  transform: scale(1.1);
+.fp-line__heart--on {
+  border-color: #f7d3d7;
+  color: #e34d59;
 }
 
 .fp-hint {
@@ -379,7 +447,7 @@ onMounted(() => {
 }
 .fp-empty {
   background: #fff;
-  border-radius: 10px;
+  border-radius: 8px;
   padding: 56px 0;
   text-align: center;
   color: var(--sent-muted);
@@ -405,7 +473,7 @@ onMounted(() => {
 
 .fp-more {
   text-align: center;
-  padding: 22px 0 0;
+  padding: 18px 0 0 86px;
 }
 .fp-more__btn {
   border: 1px solid var(--sent-border);
@@ -421,5 +489,28 @@ onMounted(() => {
   color: var(--sent-primary);
 }
 
-/* 窄屏列数由全局 .goods-grid 的 auto-fill 自动降列，原 1080px 三列断点已冗余，删除 */
+/* 窄屏：日期列收窄、时间与竖线一起隐藏，保证商品名有足够宽度 */
+@media (max-width: 720px) {
+  .fp-day {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .fp-day__head {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 8px;
+    padding: 8px 0 4px;
+    text-align: left;
+  }
+  .fp-day__items {
+    padding-left: 0;
+    border-left: none;
+  }
+  .fp-line__time,
+  .fp-line__dot {
+    display: none;
+  }
+  .fp-more {
+    padding-left: 0;
+  }
+}
 </style>

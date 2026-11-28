@@ -69,6 +69,7 @@ async function loginUser(page: Page): Promise<void> {
     (r) => r.url().includes('/api/auth/login') && r.request().method() === 'POST',
     { timeout: 20_000 },
   );
+  await page.getByTestId('auth-agree').locator('.el-checkbox__inner').click();
   await page.getByRole('button', { name: '登录' }).click();
   const body: any = await (await resp).json().catch(() => null);
   expect(body?.code, `用户端登录失败：${JSON.stringify(body)}`).toBe(0);
@@ -79,7 +80,7 @@ async function loginUser(page: Page): Promise<void> {
 // 必须按书写顺序在同一个 worker 里跑完，禁止拆到多 worker 并行。
 test.describe.configure({ mode: 'serial' });
 
-test('顶栏有首页与收藏夹，商品可收藏并在收藏夹管理中生效', async ({ page }) => {
+test('顶栏有首页，商品可收藏并在收藏夹管理中生效', async ({ page }) => {
   test.setTimeout(180_000);
   const consoleErrors: string[] = [];
   page.on('console', (m) => {
@@ -91,13 +92,19 @@ test('顶栏有首页与收藏夹，商品可收藏并在收藏夹管理中生�
   await page.goto(`${USER_URL.replace(/\/+$/, '')}/home`);
   await expect(page.locator('.topbar'), '顶栏应渲染完成').toBeVisible({ timeout: 20_000 });
 
-  // 1) 顶栏：第一个入口必须是「首页」，且存在「收藏夹」
+  // 1) 顶栏：第一个入口必须是「首页」；
+  //    2026-11-28 起「收藏夹 / 会员中心」从顶栏移除（改挂个人中心侧栏），这里反向守住不回归
   const links = page.locator('.topbar__links .topbar__link');
   await expect(links.first(), '顶栏最前面应是「首页」').toHaveText('首页');
   await expect(links.first(), '「首页」应指向 /home').toHaveAttribute('href', /\/home$/);
-  const favLink = page.locator('.topbar__links .topbar__link', { hasText: '收藏夹' }).first();
-  await expect(favLink, '顶栏应有「收藏夹」入口').toBeVisible();
-  await expect(favLink, '「收藏夹」应指向 /favorites').toHaveAttribute('href', /\/favorites$/);
+  await expect(
+    page.locator('.topbar__links .topbar__link', { hasText: '收藏夹' }),
+    '顶栏不应再有「收藏夹」（已挪到个人中心侧栏）',
+  ).toHaveCount(0);
+  await expect(
+    page.locator('.topbar__links .topbar__link', { hasText: '会员中心' }),
+    '顶栏不应再有「会员中心」（已挪到个人中心侧栏）',
+  ).toHaveCount(0);
 
   // 2) 详情页收藏：点一下变「已收藏」
   await page.goto(`${USER_URL.replace(/\/+$/, '')}/product/${FAV_NEW_PRODUCT}`);
@@ -114,8 +121,9 @@ test('顶栏有首页与收藏夹，商品可收藏并在收藏夹管理中生�
   expect(added?.code, `收藏失败：${JSON.stringify(added)}`).toBe(0);
   await expect(favBtn, '收藏成功后按钮应变成「已收藏」').toContainText('已收藏');
 
-  // 3) 收藏夹：种子的 1 条 + 刚收藏的 1 条
-  await favLink.click();
+  // 3) 收藏夹：种子的 1 条 + 刚收藏的 1 条。
+  //    2026-11-28 起顶栏不再有「收藏夹」入口，改由个人中心侧栏「足迹收藏 → 商品收藏」进入
+  await page.goto(`${USER_URL.replace(/\/+$/, '')}/favorites`);
   await expect.poll(() => pathOf(page), { timeout: 20_000 }).toBe('/favorites');
   const cards = page.locator('.fav-card');
   await expect(cards, '收藏夹应有 2 件商品').toHaveCount(2, { timeout: 20_000 });
@@ -157,9 +165,9 @@ test('个人中心：收藏卡与足迹卡有真实商品，退款/售后角标�
   });
   await expect(favPanel.locator('.panel-more'), '收藏卡应给出「全部 N 件」入口').toContainText('全部 1 件');
 
-  // 2) 足迹卡：刚才浏览的商品会进足迹（种子 1 条 + 新浏览 1 件 = 2）
+  // 2) 足迹卡：2026-11-28 起只展示最新 1 件（种子 1 条 + 新浏览 1 件，卡片仍只露 1 件）
   const fpPanel = page.locator('.mini-panel').filter({ hasText: '我的足迹' });
-  await expect(fpPanel.locator('.mini-item'), '足迹卡应展示浏览过的商品').toHaveCount(2, {
+  await expect(fpPanel.locator('.mini-item'), '足迹卡只展示最新 1 件').toHaveCount(1, {
     timeout: 20_000,
   });
 

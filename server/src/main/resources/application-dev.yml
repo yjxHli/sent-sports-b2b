@@ -32,10 +32,6 @@ spring:
     # 换机请用 DB_PASSWORD 环境变量覆盖，切勿把真密码提交到仓库。
     username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD:123456}
-  data:
-    redis:
-      host: 127.0.0.1
-      port: 6379
 
 mybatis-plus:
   configuration:

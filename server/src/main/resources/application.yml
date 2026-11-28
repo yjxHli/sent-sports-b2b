@@ -4,9 +4,10 @@ spring:
   profiles:
     active: ${APP_PROFILE:dev}
   # 时区：统一 Asia/Shanghai
+  # 注意：不写 date-format —— 它只作用于 java.util.Date，对 LocalDateTime 无效；
+  # 时间统一由 JacksonConfig 的 JavaTimeModule 输出 ISO-8601，Long 序列化成字符串。
   jackson:
     time-zone: Asia/Shanghai
-    date-format: yyyy-MM-dd HH:mm:ss
   # 文件上传：上限 50MB
   servlet:
     multipart:
@@ -25,14 +26,8 @@ spring:
     enabled: ${FLYWAY_ENABLED:true}
     baseline-on-migrate: true
     locations: classpath:db/migration
-  # Redis：本地默认无口令；若部署带鉴权的 Redis，请用 REDIS_PASSWORD 注入，勿写入仓库
-  data:
-    redis:
-      host: ${REDIS_HOST:127.0.0.1}
-      port: ${REDIS_PORT:6379}
-      database: ${REDIS_DB:0}
-      password: ${REDIS_PASSWORD:}
-      timeout: 3000ms
+  # 2026-11-28：删除 spring.data.redis（连同 pom 依赖与 docker-compose 容器一起清理）。
+  # 代码里没有任何 Redis 调用，留着配置只会让部署环境误以为需要起 Redis。
 
 # Web 容器端口
 # 默认 8088：8080 在本机常年被 Steam 的 steamwebhelper.exe 抢占（会导致
@@ -118,8 +113,8 @@ app:
     ws-idle-timeout-ms: ${WS_IDLE_TIMEOUT_MS:300000}
 
 # MyBatis-Plus
+# 本项目全部使用注解 SQL（无 mapper XML），因此不配置 mapper-locations。
 mybatis-plus:
-  mapper-locations: classpath*:mapper/**/*.xml
   type-aliases-package: com.sent.sports
   configuration:
     map-underscore-to-camel-case: true
@@ -151,10 +146,6 @@ management:
   endpoint:
     health:
       show-details: when-authorized
-  # Redis 在本项目为可选进程内桩（未启独立实例），不应因缓存不可用而判定应用不健康
-  health:
-    redis:
-      enabled: false
   info:
     env:
       enabled: false

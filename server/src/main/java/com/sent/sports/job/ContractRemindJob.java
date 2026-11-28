@@ -1,37 +1,41 @@
 package com.sent.sports.job;
 
 import com.sent.sports.common.error.BizException;
+import com.sent.sports.finance.service.ContractJobService;
+import com.sent.sports.finance.service.dto.ContractReminder;
+import com.sent.sports.notify.service.MessageSendService;
+import com.sent.sports.notify.service.dto.InboxMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import java.sql.Date;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
+import java.util.List;
+import java.util.Locale;
 
 /**
- * 合同到期提醒（P5-43）：用 {@link JdbcTemplate} 扫描 V7 {@code contract} 表未来 30 天内到期的合同，
- * 返回条数并打日志，只引用真实列 {@code expire_date}（DATE）。
- * <p>窗口口径 {@code DATEDIFF(expire_date, 今天) BETWEEN 0 AND 30}，即今天起 30 天内到期；
- * 纯只读统计、不写数据，天然幂等、无需分布式锁。
- * <p>单轮查询若抛 {@link BizException} 只记录并跳过本轮，不冒泡到调度器，保证「不中断整轮」。
+ * 合同到期提醒（P5-43）：扫描未来 30 天内到期的合同，按「30 天 / 7 天 / 当天」三级发站内信。
+ * <p><b>幂等</b>：先条件更新 {@code expire_remind_level}（V67），只有影响行数 &gt; 0 才发信；
+ * 并发下被别的任务抢先不会重复打扰客户，无需分布式锁。</p>
+ * <p><b>不中断整轮</b>：单笔更新抛 {@link BizException} 只跳过该笔，继续处理其余合同。</p>
  */
 @Component
 public class ContractRemindJob {
 
     private static final Logger log = LoggerFactory.getLogger(ContractRemindJob.class);
-    private static final int REMIND_DAYS = 30;
-    private static final String COUNT_EXPIRING_SQL =
-            "SELECT COUNT(*) FROM contract WHERE expire_date IS NOT NULL "
-                    + "AND DATEDIFF(expire_date, ?) BETWEEN 0 AND " + REMIND_DAYS;
 
-    private final JdbcTemplate jdbcTemplate;
+    private final ContractJobService contractJobService;
+    private final MessageSendService messageSendService;
     private final Clock clock;
 
-    public ContractRemindJob(JdbcTemplate jdbcTemplate, Clock clock) {
-        this.jdbcTemplate = jdbcTemplate;
+    public ContractRemindJob(ContractJobService contractJobService,
+                             MessageSendService messageSendService,
+                             Clock clock) {
+        this.contractJobService = contractJobService;
+        this.messageSendService = messageSendService;
         this.clock = clock;
     }
 
@@ -41,18 +45,40 @@ public class ContractRemindJob {
         runOnce();
     }
 
-    /** 统计 30 天内到期合同数并写日志，返回统计条数（便于单测断言）。 */
+    /** 执行一轮提醒，返回成功投递的合同数（便于单测断言）。 */
     public int runOnce() {
+        LocalDate today = LocalDate.now(clock);
         try {
-            Date today = Date.valueOf(LocalDate.now(clock));
-            int count = jdbcTemplate.queryForObject(COUNT_EXPIRING_SQL, Integer.class, today);
-            if (count > 0) {
-                log.info("合同到期提醒：未来 {} 天内共 {} 份合同到期", REMIND_DAYS, count);
+            List<ContractReminder> expiring = contractJobService.findExpiring(today);
+            int notified = 0;
+            for (ContractReminder item : expiring) {
+                try {
+                    if (contractJobService.markReminded(item.contractId(), item.remindLevel()) > 0) {
+                        notifyCustomer(item, today);
+                        notified++;
+                    }
+                } catch (BizException e) {
+                    log.debug("跳过合同 {}：{}", item.contractId(), e.getMessage());
+                }
             }
-            return count;
+            if (notified > 0) {
+                log.info("合同到期提醒：本轮通知 {} 份合同", notified);
+            }
+            return notified;
         } catch (BizException e) {
             log.debug("合同到期提醒被业务异常打断，跳过本轮：{}", e.getMessage());
             return 0;
         }
+    }
+
+    /** 站内信必须跟条件更新绑定：写入失败就绝不发信。 */
+    private void notifyCustomer(ContractReminder item, LocalDate today) {
+        long days = ChronoUnit.DAYS.between(today, item.expireDate());
+        String deadline = days <= 0 ? "今天到期" : "还有 " + days + " 天到期";
+        String amount = String.format(Locale.CHINA, "%,.2f", item.amountCent() / 100.0);
+        String content = "合同 " + item.contractNo() + " 将于 " + item.expireDate()
+                + " 到期（" + deadline + "），合同金额 ¥" + amount + "，请尽快续签。";
+        messageSendService.send(new InboxMessage(item.customerId(), "SYSTEM", "合同到期提醒",
+                content, "ORDER", item.contractNo()));
     }
 }

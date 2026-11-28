@@ -77,12 +77,6 @@ export function maskPhone(phone: string | null | undefined): string {
   return phone.length < 7 ? phone : `${phone.slice(0, 3)}****${phone.slice(-4)}`;
 }
 
-/** 姓名脱敏：保留姓氏 */
-export function maskName(name: string | null | undefined): string {
-  if (!name) return '-';
-  return name.length <= 1 ? name : `${name.slice(0, 1)}${'*'.repeat(name.length - 1)}`;
-}
-
 /**
  * 聊天消息时间分隔阈值：相邻两条消息相隔 5 分钟就重新显示一次当前时间（微信口径）。
  * 两端共用同一份规则，避免客服端与客户看到一个显、一个不显。

@@ -78,6 +78,18 @@ public interface ReceivableMapper extends BaseMapper<ReceivablePO> {
             + "AND due_date < #{today} ORDER BY due_date, id")
     List<ReceivablePO> selectOverdue(@Param("today") LocalDate today);
 
+    /**
+     * 逾期提醒明细：与 {@link #selectOverdue} 同口径，额外联查订单号供站内信正文使用。
+     * <p>只扫「已到期未结清」的行；是否已是 OVERDUE 由服务层过滤，成功置位才发信，避免重复提醒。</p>
+     */
+    @Select("SELECT r.id, r.customer_id AS customerId, r.amount_cent AS amountCent, "
+            + "r.due_date AS dueDate, r.status, o.order_no AS orderNo "
+            + "FROM receivable r LEFT JOIN orders o ON o.id = r.order_id "
+            + "WHERE r.status <> 'CLOSED' AND r.due_date IS NOT NULL AND r.due_date < #{today} "
+            + "ORDER BY r.due_date, r.id")
+    List<com.sent.sports.finance.mapper.po.OverdueReceivableRow> selectOverdueDetails(
+            @Param("today") LocalDate today);
+
     /** 核销并发场景的行锁读取。 */
     @Select("SELECT * FROM receivable WHERE id = #{id} FOR UPDATE")
     ReceivablePO selectByIdForUpdate(@Param("id") long id);

@@ -1,5 +1,6 @@
 package com.sent.sports.file.controller;
 
+import com.sent.sports.common.anno.RateLimit;
 import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
 import com.sent.sports.common.storage.Storage;
@@ -46,6 +47,7 @@ public class FileController {
     }
 
     @PostMapping
+    @RateLimit(limit = 60, windowSeconds = 60)
     public R<FileDtos.FileVO> upload(@RequestParam("file") MultipartFile file,
                                      @RequestAttribute(value = CurrentUser.ATTR, required = false) CurrentUser user)
             throws IOException {

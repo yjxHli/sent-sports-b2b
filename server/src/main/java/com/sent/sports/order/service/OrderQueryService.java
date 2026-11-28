@@ -22,8 +22,14 @@ public interface OrderQueryService {
     PageResult<OrderDtos.OrderListItem> listMyOrders(Long customerId, String status, String keyword,
                                                      PageQuery pageQuery);
 
-    /** 订单详情：四维度状态 + 金额（P4 桩，P5 接入仓储后替换）。 */
-    OrderDtos.OrderVO getDetail(String orderNo);
+    /**
+     * 订单详情：四维度状态 + 金额。
+     *
+     * @param viewerCustomerId 查看人客户号；{@code null} 表示管理端（不做归属校验）。
+     *                         非空且与订单归属不一致时抛 {@code FORBIDDEN(40301)}。
+     *                         2026-11-28 批次 1 / P0-02：此前不校验归属，任何人凭单号可读他人订单。
+     */
+    OrderDtos.OrderVO getDetail(String orderNo, Long viewerCustomerId);
 
     /**
      * 评价资格校验（V55）：该客户是否存在「含此商品（可限定 SKU）且已完成」的订单。

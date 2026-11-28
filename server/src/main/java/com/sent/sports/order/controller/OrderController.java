@@ -1,5 +1,7 @@
 package com.sent.sports.order.controller;
 
+import com.sent.sports.common.anno.Idempotent;
+import com.sent.sports.common.anno.RateLimit;
 import com.sent.sports.common.anno.RequirePerm;
 import com.sent.sports.common.dto.admin.BatchDeleteDtos;
 import com.sent.sports.common.web.PageQuery;
@@ -66,6 +68,8 @@ public class OrderController {
 
     @PostMapping
     @RequirePerm("order:create")
+    @Idempotent(scene = "ORDER_CREATE")
+    @RateLimit(limit = 30, windowSeconds = 60)
     public R<OrderDtos.OrderVO> create(@Valid @RequestBody OrderDtos.CreateOrderCmd cmd) {
         CreateOrderResult r = createOrderUseCase.create(toCmd(cmd));
         return R.ok(toVo(r));
@@ -83,24 +87,32 @@ public class OrderController {
     }
 
     @GetMapping("/{orderNo}")
-    public R<OrderDtos.OrderVO> detail(@PathVariable String orderNo) {
-        return R.ok(orderQueryService.getDetail(orderNo));
+    @RequirePerm("order:read")
+    public R<OrderDtos.OrderVO> detail(@PathVariable String orderNo,
+                                      @RequestAttribute(value = CurrentUser.ATTR, required = false) CurrentUser user) {
+        // 2026-11-28 批次 1 / P0-02：主体来自令牌，客户只可能读到自己的单（管理端令牌传 null 跳过归属校验）
+        Long viewerCustomerId = user == null || user.isAdmin() ? null : user.userId();
+        return R.ok(orderQueryService.getDetail(orderNo, viewerCustomerId));
     }
 
     @PostMapping("/{orderNo}/cancel")
     @RequirePerm("order:cancel")
-    public R<Void> cancel(@PathVariable String orderNo) {
-        cancelOrderUseCase.cancel(new CancelOrderCmd(orderNo));
+    public R<Void> cancel(@PathVariable String orderNo,
+                          @RequestAttribute(value = CurrentUser.ATTR, required = false) CurrentUser user) {
+        Long viewerCustomerId = user == null || user.isAdmin() ? null : user.userId();
+        cancelOrderUseCase.cancel(new CancelOrderCmd(orderNo), viewerCustomerId);
         return R.ok();
     }
 
     @PostMapping("/{orderNo}/confirm")
     @RequirePerm("order:confirm")
     public R<OrderDtos.OrderVO> confirm(@PathVariable String orderNo,
-                                        @Valid @RequestBody OrderDtos.ConfirmCmd cmd) {
+                                        @Valid @RequestBody OrderDtos.ConfirmCmd cmd,
+                                        @RequestAttribute(value = CurrentUser.ATTR, required = false) CurrentUser user) {
         ConfirmReceiptCmd c = new ConfirmReceiptCmd(orderNo,
                 cmd.lines().stream().map(l -> new ReceiveLineCmd(l.skuId(), l.qty())).toList());
-        ConfirmReceiptResult r = confirmReceiptUseCase.confirm(c);
+        Long viewerCustomerId = user == null || user.isAdmin() ? null : user.userId();
+        ConfirmReceiptResult r = confirmReceiptUseCase.confirm(c, viewerCustomerId);
         return R.ok(OrderVOAssembler.builder()
                 .orderNo(r.orderNo())
                 .status(r.status())

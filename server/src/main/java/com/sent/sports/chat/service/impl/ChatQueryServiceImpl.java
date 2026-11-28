@@ -34,7 +34,16 @@ public class ChatQueryServiceImpl implements ChatQueryService {
     }
 
     @Override
-    public List<ChatDtos.MessageVO> history(long sessionId, int afterSeq) {
+    public List<ChatDtos.MessageVO> history(long sessionId, int afterSeq, Long viewerCustomerId) {
+        // P0-04：客户只能拉自己会话的消息。校验在读取消息之前——越权请求连 SQL 都不跑，
+        // 避免「先查出内容再判权」这种把数据带进内存的写法。
+        if (viewerCustomerId != null) {
+            ChatSession session = chatSessionRepository.findById(sessionId)
+                    .orElseThrow(() -> new BizException(ErrorCode.NOT_FOUND, "会话不存在"));
+            if (session.getCustomerId() != viewerCustomerId) {
+                throw new BizException(ErrorCode.FORBIDDEN, "无权查看该会话");
+            }
+        }
         List<ChatMessage> all = chatMessageRepository.findBySessionId(sessionId);
         List<ChatDtos.MessageVO> result = new ArrayList<>(all.size());
         for (ChatMessage m : all) {

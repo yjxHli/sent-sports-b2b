@@ -1,6 +1,7 @@
 package com.sent.sports.order.controller.admin;
 
 import com.sent.sports.common.anno.Confirm;
+import com.sent.sports.common.anno.Idempotent;
 import com.sent.sports.common.anno.RequirePerm;
 import com.sent.sports.common.domain.ConfirmAction;
 import com.sent.sports.common.web.PageQuery;
@@ -37,6 +38,7 @@ public class AdminOrderController {
     }
 
     @GetMapping("/orders")
+    @RequirePerm("order:view")
     public R<PageResult<AdminOrderDtos.AdminOrderVO>> list(
             @ModelAttribute PageQuery page,
             @RequestParam(required = false) String status,
@@ -45,6 +47,7 @@ public class AdminOrderController {
     }
 
     @GetMapping("/orders/{id}")
+    @RequirePerm("order:view")
     public R<AdminOrderDtos.AdminOrderDetailVO> detail(@PathVariable String id) {
         return R.ok(orderAdminService.detail(id));
     }
@@ -55,6 +58,7 @@ public class AdminOrderController {
      * 走订单列表那套分页会让侧栏拿不到最新一页的语义，而这里只要「最近几笔」。</p>
      */
     @GetMapping("/customers/{customerId}/orders")
+    @RequirePerm("order:view")
     public R<List<AdminOrderDtos.AdminCustomerOrderVO>> customerOrders(
             @PathVariable long customerId,
             @RequestParam(defaultValue = "10") int limit) {
@@ -76,6 +80,7 @@ public class AdminOrderController {
 
     @PostMapping("/orders/{id}/ship")
     @RequirePerm("order:ship")
+    @Idempotent(scene = "ORDER_SHIP")
     public R<ShipOrderResult> ship(@PathVariable String id, @Valid @RequestBody AdminOrderDtos.ShipCmd cmd) {
         return R.ok(orderAdminService.ship(id, cmd));
     }

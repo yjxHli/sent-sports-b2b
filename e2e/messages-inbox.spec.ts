@@ -58,6 +58,10 @@ async function loginUser(page: Page): Promise<void> {
     (r) => r.url().includes('/api/auth/login') && r.request().method() === 'POST',
     { timeout: 20_000 },
   );
+  // 2026-11-28：登录页新增协议勾选（默认未勾选），E2E 必须先确认协议
+  if (await page.getByTestId('auth-agree').count()) {
+    await page.getByTestId('auth-agree').locator('.el-checkbox__inner').click();
+  }
   await page.getByRole('button', { name: '登录' }).click();
   const body: any = await (await resp).json().catch(() => null);
   expect(body?.code, `用户端登录失败：${JSON.stringify(body)}`).toBe(0);
@@ -84,7 +88,9 @@ test('消息中心是站内信，与在线客服入口分离', async ({ page }) 
   await expect(chatLink, '「在线客服」应指向 /chat').toHaveAttribute('href', /\/chat/);
 
   // 2) 进入消息中心
-  await msgLink.click();
+  // 2026-11-28：顶栏「消息」改为新标签打开（new-tab-navigation.spec.ts 覆盖 popup 行为），
+  // 这里已经用 href 断言过入口指向，故直接同页进入，继续验证站内信内容本身。
+  await page.goto(`${(process.env.E2E_USER_URL ?? 'http://127.0.0.1:5173').replace(/\/+$/, '')}/messages`);
   await expect(page).toHaveURL(/\/messages/, { timeout: 15_000 });
 
   const tabs = page.locator('.msg-tab');

@@ -250,7 +250,7 @@
 import { computed, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
-import { fmtCent, fmtDateTime } from '@sent/shared';
+import { fmtCent, fmtDateTime, yuanToCent } from '@sent/shared';
 import { unwrap } from '@/utils/http';
 import { useTable } from '@/composables/useTable';
 import { useBatchDelete } from '@/composables/useBatchDelete';
@@ -432,8 +432,8 @@ async function submit(): Promise<void> {
       name: form.name.trim(),
       couponType: form.couponType,
       discountType: form.discountType,
-      amountCent: form.discountType === 'AMOUNT' ? Math.round(form.amountYuan * 100) : 0,
-      thresholdCent: form.couponType === 'NO_THRESHOLD' ? 0 : Math.round(form.thresholdYuan * 100),
+      amountCent: form.discountType === 'AMOUNT' ? (yuanToCent(form.amountYuan) ?? 0) : 0,
+      thresholdCent: form.couponType === 'NO_THRESHOLD' ? 0 : (yuanToCent(form.thresholdYuan) ?? 0),
       discountRate: form.discountType === 'PERCENT' ? form.discountRate : 100,
       scopeType: form.scopeType,
       scopeIds: scopeIds.value,

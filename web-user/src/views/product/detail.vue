@@ -318,6 +318,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { unwrap } from '@/utils/http';
 import { resolveImageUrl } from '@/utils/image';
+import { openInNewTab } from '@/utils/link';
 import { productApi, type CatalogProductVO, type CatalogSkuVO } from '@/api/product';
 import { cartApi } from '@/api/cart';
 import { fileApi } from '@/api/file';
@@ -499,10 +500,10 @@ function switchTab(id: DetailTab): void {
   document.querySelector('.detail-tabs')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-/** 迷你搜索：与整站搜索同一跳转口径（空词回全部商品，不写死商品 id） */
+/** 迷你搜索：与整站搜索同一口径（新开标签，空词回全部商品，不写死商品 id） */
 function onMiniSearch(): void {
   const kw = miniKeyword.value.trim();
-  void router.push({ path: '/products', query: kw ? { keyword: kw } : {} });
+  openInNewTab(router, { path: '/products', query: kw ? { keyword: kw } : {} });
 }
 
 watch(uvCustom, (on) => {
@@ -967,7 +968,7 @@ watch(() => product.value?.name, (name) => {
 .buy__price {
   display: flex;
   align-items: baseline;
-  color: var(--sent-accent);
+  color: var(--sent-price);
   font-weight: 800;
 }
 .buy__sym {

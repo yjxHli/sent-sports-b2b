@@ -18,28 +18,32 @@
       </svg>
     </div>
 
-    <!-- 状态概览：当前页统计，纯展示，不改变查询口径 -->
+    <!-- 状态概览（2026-11-28 用户要求：这四个卡片同时是筛选，点一下只看这一类） -->
     <div class="custom-stats">
-      <div class="stat-card stat-card--todo">
-        <div class="stat-card__top"><span class="stat-card__label">待我处理</span><i class="stat-card__dot" /></div>
-        <div class="stat-card__num">{{ stats.todo }}</div>
-        <div class="stat-card__hint">提交图稿 / 修改图稿</div>
-      </div>
-      <div class="stat-card stat-card--review">
-        <div class="stat-card__top"><span class="stat-card__label">审核中</span><i class="stat-card__dot" /></div>
-        <div class="stat-card__num">{{ stats.review }}</div>
-        <div class="stat-card__hint">等待审图结果</div>
-      </div>
-      <div class="stat-card stat-card--producing">
-        <div class="stat-card__top"><span class="stat-card__label">制作中</span><i class="stat-card__dot" /></div>
-        <div class="stat-card__num">{{ stats.producing }}</div>
-        <div class="stat-card__hint">已通过 / 生产中</div>
-      </div>
-      <div class="stat-card stat-card--done">
-        <div class="stat-card__top"><span class="stat-card__label">已完成</span><i class="stat-card__dot" /></div>
-        <div class="stat-card__num">{{ stats.done }}</div>
-        <div class="stat-card__hint">已完工 / 已发货</div>
-      </div>
+      <button
+        v-for="card in statCards"
+        :key="card.key"
+        type="button"
+        class="stat-card"
+        :class="[`stat-card--${card.key.toLowerCase()}`, { 'stat-card--active': activeBucket === card.key }]"
+        :data-testid="`custom-stat-${card.key.toLowerCase()}`"
+        :aria-pressed="activeBucket === card.key"
+        @click="setBucket(card.key)"
+      >
+        <div class="stat-card__top"><span class="stat-card__label">{{ card.label }}</span><i class="stat-card__dot" /></div>
+        <div class="stat-card__num">{{ card.value }}</div>
+        <div class="stat-card__hint">{{ card.hint }}</div>
+      </button>
+    </div>
+
+    <!-- 筛选提示条：让用户清楚「现在只看一类」，随时能回到全部 -->
+    <div v-if="activeBucket" class="custom-filter-bar" data-testid="custom-filter-bar">
+      <span>
+        正在筛选：<b>{{ activeBucketLabel }}</b> · {{ total }} 单
+      </span>
+      <button type="button" class="custom-filter-bar__clear" data-testid="custom-filter-clear" @click="setBucket(null)">
+        查看全部定制单
+      </button>
     </div>
 
     <!-- 单号查询 -->
@@ -243,7 +247,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { unwrap } from '@/utils/http';
-import { customApi, type MyCustomOrderVO } from '@/api/custom';
+import { customApi, type CustomBucket, type MyCustomOrderVO } from '@/api/custom';
 import { fmtDateTime, statusLabel, statusTone, type StatusTone } from '@sent/shared';
 
 const router = useRouter();
@@ -297,16 +301,58 @@ function actionHint(status: string): string {
     : '图稿还未提交，上传后即可进入审核流程';
 }
 
-/** 当前页状态概览（纯展示统计，不改变查询口径） */
-const stats = computed(() => {
-  const list = rows.value;
-  return {
-    todo: list.filter((r) => r.status === 'WAIT_DRAFT' || r.status === 'REJECTED').length,
-    review: list.filter((r) => r.status === 'WAIT_REVIEW' || r.status === 'ESCALATED').length,
-    producing: list.filter((r) => r.status === 'APPROVED' || r.status === 'IN_PRODUCTION').length,
-    done: list.filter((r) => r.status === 'FINISHED' || r.status === 'SHIPPED').length,
-  };
-});
+/**
+ * 四类筛选卡（2026-11-28 用户要求）：数字来自后端 `GET /api/custom-orders/my/summary`，
+ * 与列表筛选用的是同一份桶定义（后端 `CustomStatusBucket`），点哪张卡就筛哪一类，
+ * 再点一次或点「查看全部」回到全部。
+ */
+const BUCKET_LABELS: Record<CustomBucket, string> = {
+  TODO: '待我处理',
+  REVIEW: '审核中',
+  PRODUCING: '制作中',
+  DONE: '已完成',
+};
+const BUCKET_HINTS: Record<CustomBucket, string> = {
+  TODO: '提交图稿 / 修改图稿',
+  REVIEW: '等待审图结果',
+  PRODUCING: '已通过 / 生产中',
+  DONE: '已完工 / 已发货',
+};
+const activeBucket = ref<CustomBucket | null>(null);
+const summary = ref({ todo: 0, review: 0, producing: 0, done: 0, total: 0 });
+
+const statCards = computed(() => (Object.keys(BUCKET_LABELS) as CustomBucket[]).map((key) => ({
+  key,
+  label: BUCKET_LABELS[key],
+  hint: BUCKET_HINTS[key],
+  value: summary.value[key.toLowerCase() as 'todo' | 'review' | 'producing' | 'done'],
+})));
+
+const activeBucketLabel = computed(() => (activeBucket.value ? BUCKET_LABELS[activeBucket.value] : ''));
+
+/** 点同一张卡 = 取消筛选；点另一张 = 切过去（并回到第 1 页） */
+function setBucket(bucket: CustomBucket | null): void {
+  const next = bucket && bucket === activeBucket.value ? null : bucket;
+  if (next === activeBucket.value) return;
+  activeBucket.value = next;
+  page.value = 1;
+  void load();
+}
+
+async function loadSummary(): Promise<void> {
+  try {
+    const data = await unwrap(customApi.mySummary());
+    summary.value = {
+      todo: Number(data?.todo ?? 0),
+      review: Number(data?.review ?? 0),
+      producing: Number(data?.producing ?? 0),
+      done: Number(data?.done ?? 0),
+      total: Number(data?.total ?? 0),
+    };
+  } catch {
+    summary.value = { todo: 0, review: 0, producing: 0, done: 0, total: 0 };
+  }
+}
 
 function label(s: string): string {
   return statusLabel(s);
@@ -318,7 +364,11 @@ function tone(s: string): StatusTone {
 async function load(): Promise<void> {
   loading.value = true;
   try {
-    const data = await unwrap(customApi.my({ page: page.value, size: size.value }));
+    const data = await unwrap(customApi.my({
+      page: page.value,
+      size: size.value,
+      bucket: activeBucket.value ?? '',
+    }));
     rows.value = data?.list ?? [];
     total.value = Number(data?.total ?? 0);
     // 翻页/删完重新取数后重置勾选集，避免把上一页的单号带进「删除所选」
@@ -417,6 +467,8 @@ async function removeSelected(): Promise<void> {
     if (deleted === 0 && skipped.length === 0) ElMessage.info('所选定制单已删除，无需重复操作');
     selected.value = [];
     await load();
+    // 删完刷新角标，否则卡片还挂在删除前的数字上
+    void loadSummary();
   } catch (e) {
     ElMessage.error((e as Error).message || '删除失败');
   } finally {
@@ -446,6 +498,7 @@ function onSize(s: number): void {
 
 onMounted(() => {
   void load();
+  void loadSummary();
 });
 </script>
 
@@ -526,6 +579,24 @@ onMounted(() => {
   border: 1px solid var(--sent-border);
   border-radius: var(--sent-radius);
   padding: 14px 18px;
+  /* 2026-11-28：卡片改成按钮（点一下即筛选），清掉按钮默认样式 */
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+.stat-card:hover {
+  border-color: var(--stat-color);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+}
+/* 选中态：整卡描边 + 浅色底，和「正在筛选」提示条呼应 */
+.stat-card--active {
+  border-color: var(--stat-color);
+  background: #fbfdfc;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--stat-color) 18%, transparent);
+}
+.stat-card--active .stat-card__label {
+  color: var(--stat-color);
 }
 .stat-card::after {
   content: '';
@@ -577,6 +648,34 @@ onMounted(() => {
   font-size: 11px;
   color: var(--sent-muted);
   margin-top: 2px;
+}
+
+/* 筛选提示条（2026-11-28）：点卡片进入某一类后，明确告知「现在只看这类」并给一键回全部 */
+.custom-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: -4px 0 16px;
+  padding: 10px 16px;
+  background: var(--sent-primary-soft);
+  border-radius: var(--sent-radius);
+  font-size: 13px;
+  color: var(--sent-text-2);
+}
+.custom-filter-bar b {
+  color: var(--sent-primary);
+}
+.custom-filter-bar__clear {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-size: 13px;
+  color: var(--sent-primary);
+  cursor: pointer;
+}
+.custom-filter-bar__clear:hover {
+  text-decoration: underline;
 }
 
 /* ============ 单号查询 ============ */

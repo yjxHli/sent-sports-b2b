@@ -198,8 +198,6 @@ export const chatApi = {
     http.post<PresenceVO>('/admin/chat/presence', { staffId, presence }),
   accept: (id: number, staffId: number) =>
     http.post<SessionActionVO>(`/admin/chat/sessions/${id}/accept`, { staffId }),
-  transfer: (id: number, toStaffId: number, reason: string) =>
-    http.post<SessionActionVO>(`/admin/chat/sessions/${id}/transfer`, { toStaffId, reason }),
   close: (id: number, reason: string) =>
     http.post<CloseVO>(`/admin/chat/sessions/${id}/close`, { reason }),
   /** 客服主动发「请评价本次服务」卡片；同会话幂等 */

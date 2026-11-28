@@ -15,6 +15,7 @@ import com.sent.sports.refund.domain.RefundStatus;
 import com.sent.sports.refund.mapper.RefundOrderMapper;
 import com.sent.sports.refund.repository.RefundRepository;
 import com.sent.sports.refund.service.RefundService;
+import com.sent.sports.refund.service.RefundSuccessNotifier;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
@@ -33,6 +34,7 @@ public class RefundServiceImpl implements RefundService {
     private final OrderRefundViewService orderRefundViewService;
     private final MemberRefundGateway memberRefundGateway;
     private final CouponDeduction couponDeduction;
+    private final RefundSuccessNotifier refundSuccessNotifier;
     private final IdGen idGen;
     private final Clock clock;
 
@@ -41,7 +43,8 @@ public class RefundServiceImpl implements RefundService {
                              PaymentRefundGateway paymentRefundGateway,
                              OrderRefundViewService orderRefundViewService,
                              MemberRefundGateway memberRefundGateway,
-                             CouponDeduction couponDeduction) {
+                             CouponDeduction couponDeduction,
+                             RefundSuccessNotifier refundSuccessNotifier) {
         this.refundRepository = refundRepository;
         this.idGen = idGen;
         this.clock = clock;
@@ -50,6 +53,7 @@ public class RefundServiceImpl implements RefundService {
         this.orderRefundViewService = orderRefundViewService;
         this.memberRefundGateway = memberRefundGateway;
         this.couponDeduction = couponDeduction;
+        this.refundSuccessNotifier = refundSuccessNotifier;
     }
 
     @Override
@@ -67,6 +71,8 @@ public class RefundServiceImpl implements RefundService {
     public String createCloseRefund(String orderNo, long orderId, long amountCent, String reason) {
         String refundNo = idGen.next("RF");
         // 网关先于落库：网关拒绝时抛 BIZ_REJECT，@UseCase 事务整体回滚，不留脏退款单。
+        // TODO(2026-11-28 批次 2 / P1-07)：网关目前是进程内模拟实现（无网络 IO）。接真实渠道后，
+        // 这一调用必须提到 @UseCase 之外——先拿渠道受理结果，再开事务落 refund_order 与积分/券返还。
         paymentRefundGateway.refund(orderNo, amountCent);
 
         // 管理端关单同样是「整单退款」：用户支付时被扣掉的抵扣积分必须还回去，
@@ -77,6 +83,9 @@ public class RefundServiceImpl implements RefundService {
         // 只有整单退才退券——部分退款不退券，否则半退之后还能拿同一张券再抵一次。
         couponDeduction.returnCoupon(orderNo);
         refundOrderMapper.insertCloseRefund(refundNo, orderId, amountCent, reason, pointRefund);
+        // 关单/定制超时自动退款同样落 REFUNDED，统一发「退款成功」站内信
+        refundSuccessNotifier.notify(new RefundOrder(refundNo, orderNo, orderId, amountCent,
+                "ADMIN_CLOSE", reason, RefundStatus.REFUNDED, clock.millis()));
         return refundNo;
     }
 

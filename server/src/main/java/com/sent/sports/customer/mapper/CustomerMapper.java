@@ -3,6 +3,7 @@ package com.sent.sports.customer.mapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.sent.sports.common.anno.DataScope;
 import com.sent.sports.customer.mapper.po.CustomerPO;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
@@ -44,6 +45,7 @@ public interface CustomerMapper extends BaseMapper<CustomerPO> {
      * <p>客户 ID 也参与匹配：企业审核与授信页经常只拿到一个 91xxx 的客户号，
      * 手动翻页找太慢，把 BIGINT 转字符串参与 LIKE 即可。</p>
      */
+    @DataScope(alias = "c", column = "owner_staff_id")
     @Select("<script>"
             + "SELECT c.*, e.credit_limit_cent, e.credit_used_cent, e.status AS enterprise_status, "
             + "e.company_name, e.license_no, e.license_url "

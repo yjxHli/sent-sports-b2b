@@ -8,6 +8,7 @@ import com.sent.sports.customize.mapper.CustomDraftMapper;
 import com.sent.sports.customize.mapper.CustomOrderMapper;
 import com.sent.sports.customize.mapper.po.CustomDraftPO;
 import com.sent.sports.customize.mapper.po.CustomOrderPO;
+import com.sent.sports.finance.domain.CreditLine;
 import com.sent.sports.finance.mapper.EnterpriseProfileMapper;
 import com.sent.sports.finance.mapper.InvoiceMapper;
 import com.sent.sports.finance.mapper.ContractMapper;
@@ -275,7 +276,7 @@ public class DemoDataGenerator implements CommandLineRunner {
                 .findFirst()
                 .orElseGet(() -> candidates.get(candidates.size() - 1));
         int target = Math.max(0, row.getSafetyQty() - 2);
-        if (stockMapper.updateLedger(row.getSkuId(), target, 0, 0, 0) > 0) {
+        if (stockMapper.updateLedger(row.getSkuId(), target, 0, 0, 0, versionOf(row)) > 0) {
             log.info("[DemoData] 库存预警展示：SKU {} 压到 {}（安全库存 {}）。",
                     row.getSkuId(), target, row.getSafetyQty());
         }
@@ -462,7 +463,7 @@ public class DemoDataGenerator implements CommandLineRunner {
         for (int i = 0; i < candidates.size(); i++) {
             SkuStockPO row = candidates.get(i);
             int target = Math.max(0, row.getSafetyQty() - gaps[i]);
-            if (stockMapper.updateLedger(row.getSkuId(), target, 0, 0, 0) > 0) {
+            if (stockMapper.updateLedger(row.getSkuId(), target, 0, 0, 0, versionOf(row)) > 0) {
                 made++;
             }
         }
@@ -791,7 +792,8 @@ public class DemoDataGenerator implements CommandLineRunner {
                         "91440300" + String.format("%010d", counter),
                         "演示企业" + counter + "有限公司",
                         "91440300" + String.format("%010d", counter),
-                        (long) (2_000_000 + random.nextInt(48) * 1_000_000),
+                        // 2026-11-27 起最高只能授信 2000 元；演示数据 1000~2000 元分档
+                        CreditLine.MAX_TOTAL_CENT - (long) random.nextInt(11) * 10_000L,
                         0L,
                         pick(new int[]{30, 60, 90}),
                         "NORMAL");
@@ -841,7 +843,7 @@ public class DemoDataGenerator implements CommandLineRunner {
                     "91440300" + String.format("%010d", seq),
                     "演示企业" + seq + "有限公司",
                     "91440300" + String.format("%010d", seq),
-                    3_000_000L,
+                    CreditLine.MAX_TOTAL_CENT,
                     0L,
                     30,
                     "ACTIVE");
@@ -1443,5 +1445,10 @@ public class DemoDataGenerator implements CommandLineRunner {
     private String randomAddress() {
         return "{\"receiver\":\"演示收货人\",\"phone\":\"13800000000\",\"province\":\"广东省\",\"city\":\"深圳市\","
                 + "\"district\":\"南山区\",\"detail\":\"科技园路 " + randInt(1, 99) + " 号\"}";
+    }
+
+    /** 台账版本号（V69 起 updateLedger 带乐观锁）：演示数据都来自刚读出的行，null 按 0 处理。 */
+    private static long versionOf(SkuStockPO row) {
+        return row.getVersion() == null ? 0L : row.getVersion();
     }
 }

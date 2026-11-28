@@ -90,11 +90,15 @@ public class IdempotentInterceptor implements HandlerInterceptor {
             Object snapshot = request.getAttribute(RESULT_ATTR);
             if (snapshot instanceof String json) {
                 store.complete(key, json, ttl);
+            } else {
+                // 没有快照 = 本次没有可回放的「成功结果」（业务异常被全局异常处理器接住时 ex 为 null）。
+                // 释放键让调用方修正后重试；否则一次 40002 会被当成 DONE 卡满整个 TTL。
+                store.release(key);
             }
         } else if (ex instanceof BizException) {
             store.release(key); // 参数/业务校验失败：允许改后重试
         }
-        // 系统异常/超时：保留键，重试走重放而非重复副作用
+        // 系统异常：保留键，重试走重放而非重复副作用
     }
 
     private long ttlOf(HttpServletRequest request) {

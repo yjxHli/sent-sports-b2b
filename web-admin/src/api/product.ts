@@ -4,7 +4,7 @@
  */
 import { http, type SentRequestConfig } from '@/utils/http';
 import type {
-  PageQuery, PageResult, ProductVO, SkuVO, CategoryVO, CustomerPriceVO,
+  PageQuery, PageResult, ProductVO, CategoryVO, CustomerPriceVO,
 } from '@sent/shared';
 
 export interface SkuForm {
@@ -190,9 +190,6 @@ export const productApi = {
   publish: (id: number, onShelf: boolean) =>
     http.post<ProductVO>(`/admin/products/${id}/publish`, { onShelf }),
 
-  addSku: (form: SkuForm) => http.post<SkuVO>('/admin/skus', form),
-  updateSku: (id: number, form: SkuForm) => http.put<SkuVO>(`/admin/skus/${id}`, form),
-  removeSku: (id: number) => http.delete<void>(`/admin/skus/${id}`),
   configLadder: (id: number, form: LadderForm) =>
     http.put<void>(`/admin/skus/${id}/ladder-prices`, form),
   /** 读取既有阶梯价（折扣率），供编辑页回显与删除折扣 */

@@ -2,13 +2,11 @@ package com.sent.sports.web;
 
 import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
-import com.sent.sports.common.web.PageResult;
 import com.sent.sports.payment.controller.PaymentController;
 import com.sent.sports.payment.dto.PaymentDtos;
 import com.sent.sports.payment.gateway.PayGateway;
 import com.sent.sports.payment.service.CreatePaymentUseCase;
 import com.sent.sports.payment.service.PayCallbackUseCase;
-import com.sent.sports.payment.service.PaymentQueryService;
 import com.sent.sports.payment.service.dto.CreatePaymentResult;
 import com.sent.sports.payment.service.dto.PayCallbackCmd;
 import com.sent.sports.payment.service.dto.PayCallbackResult;
@@ -21,14 +19,12 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -46,9 +42,6 @@ class PaymentApiTest extends BaseApiTest {
 
     @MockBean
     private PayCallbackUseCase payCallbackUseCase;
-
-    @MockBean
-    private PaymentQueryService paymentQueryService;
 
     @MockBean
     private PayGateway payGateway;
@@ -118,27 +111,6 @@ class PaymentApiTest extends BaseApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value("ALREADY_PAID"));
         verify(payCallbackUseCase, times(2)).handle(any());
-    }
-
-    @Test
-    @DisplayName("支付结果轮询返回 PENDING 200")
-    void payResultReturnsPending200() throws Exception {
-        when(paymentQueryService.getPayResult("O1"))
-                .thenReturn(new PaymentDtos.PayResultVO("O1", "PENDING", null, null, null));
-        mvc.perform(get("/api/orders/O1/pay-result"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(0))
-                .andExpect(jsonPath("$.data.status").value("PENDING"));
-    }
-
-    @Test
-    @DisplayName("我的支付流水返回空分页 200")
-    void listMyPaymentsReturnsEmptyPage() throws Exception {
-        when(paymentQueryService.listMyPayments(any())).thenReturn(PageResult.of(List.of(), 0L, 1, 10));
-        mvc.perform(get("/api/payments").param("page", "1").param("size", "10"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(0))
-                .andExpect(jsonPath("$.data.total").value(0));
     }
 
     /** 渠道通知报文：一组键值 + 签名（缺签名/签名错时用例抛 PARAM_INVALID）。 */

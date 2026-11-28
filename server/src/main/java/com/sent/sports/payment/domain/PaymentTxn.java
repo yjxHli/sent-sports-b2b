@@ -72,14 +72,6 @@ public class PaymentTxn {
         this.payChannelTradeNo = payChannelTradeNo;
     }
 
-    public void markFailed() {
-        this.status = PaymentTxnStatus.FAILED;
-    }
-
-    public void markClosed() {
-        this.status = PaymentTxnStatus.CLOSED;
-    }
-
     public void markRefunded() {
         this.status = PaymentTxnStatus.REFUNDED;
     }

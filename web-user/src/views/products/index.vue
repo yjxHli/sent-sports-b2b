@@ -195,6 +195,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { HttpError, unwrap } from '@/utils/http';
+import { yuanToCent } from '@sent/shared';
 import {
   productApi,
   type CatalogProductVO,
@@ -453,9 +454,9 @@ function togglePrice(): void {
 /** 价格区间（元 → 分）：空值按未设置，非法输入忽略 */
 function applyPrice(): void {
   const toCent = (raw: string): number | null => {
-    const n = Number(raw.trim());
-    if (!raw.trim() || !Number.isFinite(n) || n < 0) return null;
-    return Math.round(n * 100);
+    // 换算逻辑走 shared；这里只保留「不允许负价格」的业务约束
+    const n = yuanToCent(raw);
+    return n === null || n < 0 ? null : n;
   };
   const lo = toCent(minYuan.value);
   const hi = toCent(maxYuan.value);

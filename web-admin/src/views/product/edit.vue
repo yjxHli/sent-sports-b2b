@@ -243,6 +243,7 @@ import { unwrap } from '@/utils/http';
 import { useIdempotencyKey } from '@/utils/idempotent';
 import { productApi, type LadderTier, type ParamItem, type SkuForm } from '@/api';
 import { fileApi } from '@/api/file';
+import { yuanToCent } from '@sent/shared';
 import type { CategoryVO } from '@sent/shared';
 import ImageListField from '@/components/ImageListField.vue';
 
@@ -322,7 +323,7 @@ function toSkuForms(): SkuForm[] {
     skuCode: row.skuCode,
     spec: row.spec,
     categoryId: form.categoryId,
-    retailPriceCent: Math.round(row.retailYuan * 100),
+    retailPriceCent: yuanToCent(row.retailYuan) ?? 0,
     stock: row.stock,
     imageFileId: row.imageFileId || null,
   }));

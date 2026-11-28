@@ -39,8 +39,12 @@ public class RateSatisfactionUseCase {
         this.notifier = notifier;
     }
 
+    /**
+     * @param viewerCustomerId 当前登录客户 ID；null 仅用于员工/系统内部口径（如客服代查、系统任务）。
+     *                         客户令牌必须传入自己的 ID，入口处强制校验会话归属，杜绝给他人会话打分。
+     */
     @UseCase
-    public RateResult rate(long sessionId, String rawScore) {
+    public RateResult rate(long sessionId, String rawScore, Long viewerCustomerId) {
         SatisfactionScore score;
         try {
             score = SatisfactionScore.of(rawScore);
@@ -50,6 +54,11 @@ public class RateSatisfactionUseCase {
 
         ChatSession session = sessionRepository.findById(sessionId)
                 .orElseThrow(() -> new BizException(ErrorCode.NOT_FOUND));
+        // P0-补漏：水平越权必须在使用会话做任何写操作之前拦截。
+        // 不能信任前端传来的 customerId；调用方（Controller）从 CurrentUser 注入，这里再按库里的真实归属复核。
+        if (viewerCustomerId != null && session.getCustomerId() != viewerCustomerId.longValue()) {
+            throw new BizException(ErrorCode.FORBIDDEN, "无权评价该会话");
+        }
         if (session.getStaffId() == null) {
             throw new BizException(ErrorCode.STATE_CONFLICT, "该会话尚未有客服接待，无需评价");
         }

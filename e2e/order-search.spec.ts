@@ -25,6 +25,10 @@ async function loginUser(page: Page): Promise<void> {
     (r) => r.url().includes('/api/auth/login') && r.request().method() === 'POST',
     { timeout: 20_000 },
   );
+  // 2026-11-28：登录页新增协议勾选（默认未勾选），E2E 必须先确认协议
+  if (await page.getByTestId('auth-agree').count()) {
+    await page.getByTestId('auth-agree').locator('.el-checkbox__inner').click();
+  }
   await page.getByRole('button', { name: '登录' }).click();
   const body: any = await (await resp).json().catch(() => null);
   expect(body?.code, `用户端登录失败：${JSON.stringify(body)}`).toBe(0);

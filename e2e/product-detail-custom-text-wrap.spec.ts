@@ -40,6 +40,10 @@ async function login(page: Page): Promise<void> {
   if (await page.locator('input[type="password"]').count()) {
     await page.locator('input').first().fill(USER_NAME);
     await page.locator('input[type="password"]').fill(USER_PASSWORD);
+    // 2026-11-28：登录页新增协议勾选（默认未勾选），E2E 必须先确认协议
+    if (await page.getByTestId('auth-agree').count()) {
+      await page.getByTestId('auth-agree').locator('.el-checkbox__inner').click();
+  }
     await page.getByRole('button', { name: '登录' }).click();
     // 等登录态落地：登录成功会跳走，密码框消失；不要只等 networkidle（登录接口返回后还有跳转）
     await expect(page.locator('input[type="password"]')).toHaveCount(0, { timeout: 15000 });

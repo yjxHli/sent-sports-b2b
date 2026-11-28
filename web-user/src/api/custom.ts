@@ -89,13 +89,27 @@ export interface CustomBatchDeleteResult {
   skipped: { id: string; reason: string }[];
 }
 
+/** 定制四类筛选桶（2026-11-28）：与后端 `CustomStatusBucket` 同名，列表与角标共用一份口径 */
+export type CustomBucket = 'TODO' | 'REVIEW' | 'PRODUCING' | 'DONE';
+
+/** 「我的定制」四类筛选卡角标：total 含「已取消」，所以可能大于四桶之和 */
+export interface MyCustomSummaryVO {
+  todo: number | string;
+  review: number | string;
+  producing: number | string;
+  done: number | string;
+  total: number | string;
+}
+
 export const customApi = {
   detail: (customOrderId: string) =>
     http.get<CustomVO>(`/customize/orders/${customOrderId}`),
   uploadDraft: (customOrderId: string, cmd: { fileId: string; fileName: string; fileSize: number }) =>
     http.post<DraftVO>(`/customize/orders/${customOrderId}/drafts`, cmd),
-  my: (query: PageQuery) =>
+  my: (query: PageQuery & { bucket?: CustomBucket | '' }) =>
     http.get<PageResult<MyCustomOrderVO>>('/custom-orders/my', query),
+  /** 四类角标：计数与列表筛选同源（后端同一份桶定义），点卡片筛出的单数 = 卡片上的数字 */
+  mySummary: () => http.get<MyCustomSummaryVO>('/custom-orders/my/summary'),
   /**
    * 多选删除定制单：只有终态（已发货 / 已取消）会真的删，
    * 待提交图稿 / 待审核 / 生产中的单后端逐条回「还在进行中」。

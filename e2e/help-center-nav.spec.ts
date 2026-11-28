@@ -8,7 +8,7 @@
  * 断言口径：
  *   1) 顶栏购物车旁有「帮助中心」入口；
  *   2) hover 弹出下拉，含 4 个分类项；
- *   3) 点每类 → /help/category/<key>，页面分多个模块，每模块有标题与正文；
+ *   3) 点每类 → 新标签页 /help/category/<key>，页面分多个模块，每模块有标题与正文；
  *   4) 配送方式也可点（本需求下 4 类全部可进）；
  *   5) 全程无 console error。
  */
@@ -27,6 +27,7 @@ async function loginUser(page: Page): Promise<void> {
     (r) => r.url().includes('/api/auth/login') && r.request().method() === 'POST',
     { timeout: 20_000 },
   );
+  await page.getByTestId('auth-agree').locator('.el-checkbox__inner').click();
   await page.getByRole('button', { name: '登录' }).click();
   const body: any = await (await resp).json().catch(() => null);
   expect(body?.code, `用户端登录失败：${JSON.stringify(body)}`).toBe(0);
@@ -65,17 +66,20 @@ test('顶栏帮助中心 hover 弹出 4 分类，点每类进分模块内容页'
     await expect(menu.locator(`.topbar__help-item[data-category="${cat.key}"]`)).toHaveText(cat.title);
   }
 
-  // 3) 点每类 → 各自分类页，内容分模块
+  // 3) 点每类 → 新标签页各自分类页，内容分模块
   for (const cat of CATS) {
     await page.goto(`${USER_URL.replace(/\/+$/, '')}/home`);
     const h = page.locator('.topbar__help');
     await h.hover();
+    const popup = page.waitForEvent('popup', { timeout: 15_000 });
     await h.locator(`.topbar__help-item[data-category="${cat.key}"]`).click();
+    const catTab = await popup;
     await expect
-      .poll(() => pathOf(page), { timeout: 15_000, message: `${cat.title} 应跳到 /help/category/${cat.key}` })
+      .poll(() => pathOf(catTab), { timeout: 15_000, message: `${cat.title} 应跳到 /help/category/${cat.key}` })
       .toBe(`/help/category/${cat.key}`);
+    expect(page.url(), '点帮助中心分类后原首页不应导航走').toContain('/home');
 
-    const catPage = page.locator('.help-category');
+    const catPage = catTab.locator('.help-category');
     await expect(catPage).toBeVisible({ timeout: 15_000 });
     await expect(catPage.locator('.help-category__title')).toHaveText(cat.title);
     const modules = catPage.locator('.help-module');
@@ -87,6 +91,7 @@ test('顶栏帮助中心 hover 弹出 4 分类，点每类进分模块内容页'
       const body = (await m.locator('.help-module__body').innerText()).trim();
       expect(body.length, `${cat.title} 模块 ${i + 1} 正文不应为空`).toBeGreaterThanOrEqual(20);
     }
+    await catTab.close();
   }
 
   expect(errors, `console errors: ${errors.join(' | ')}`).toHaveLength(0);

@@ -99,10 +99,15 @@ public class OrderQueryServiceImpl implements OrderQueryService {
     }
 
     @Override
-    public OrderDtos.OrderVO getDetail(String orderNo) {
+    public OrderDtos.OrderVO getDetail(String orderNo, Long viewerCustomerId) {
         OrderPO o = orderMapper.selectByOrderNo(orderNo);
         if (o == null) {
             throw new BizException(ErrorCode.NOT_FOUND);
+        }
+        // P0-02：非管理端（viewer 非空）必须归属一致。放在「查到之后、取明细之前」：
+        // 越权请求不会再去读商品行/物流/支付，避免白跑三条查询，也避免错误响应里夹带任何订单信息。
+        if (viewerCustomerId != null && !viewerCustomerId.equals(o.getCustomerId())) {
+            throw new BizException(ErrorCode.FORBIDDEN, "无权查看该订单");
         }
         // 退款必须逐行（skuId + 行实付），详情与列表同口径带回商品行
         List<OrderItemListRow> itemRows = o.getId() == null

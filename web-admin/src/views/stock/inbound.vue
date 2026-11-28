@@ -2,12 +2,21 @@
   <div>
     <h2 class="sent-page-title">手工入库</h2>
     <div class="sent-panel">
-      <el-form :model="form" label-width="100px" style="max-width: 560px">
+      <div class="sent-panel__head">
+        <h3 class="section-title">入库登记</h3>
+        <span class="sent-panel__meta">幂等键：{{ idem.current() || '提交时生成' }}</span>
+      </div>
+      <el-form :model="form" label-width="110px" style="max-width: 560px">
         <el-form-item label="SKU ID">
-          <el-input-number v-model="form.skuId" :min="1" style="width: 220px" />
+          <SkuPicker v-model="form.skuId" data-testid="stock-sku-picker" />
         </el-form-item>
         <el-form-item label="入库数量">
-          <el-input-number v-model="form.qty" :min="1" style="width: 220px" />
+          <el-input-number
+            v-model="form.qty"
+            :min="1"
+            controls-position="right"
+            style="width: 220px"
+          />
         </el-form-item>
         <el-form-item label="入库原因">
           <el-input v-model="form.reason" placeholder="如：采购到货 / 退货入库" />
@@ -17,9 +26,6 @@
         </el-form-item>
         <el-form-item>
           <el-button type="primary" :loading="saving" @click="submit">提交入库</el-button>
-          <span class="sent-hint" style="margin-left: 12px">
-            幂等键：{{ idem.current() || '提交时生成' }}
-          </span>
         </el-form-item>
       </el-form>
       <el-alert
@@ -78,6 +84,7 @@ import { stockApi, type InboundVO } from '@/api';
 import type { StockFlowVO } from '@sent/shared';
 import SentTable from '@/components/SentTable.vue';
 import BatchDeleteButton from '@/components/BatchDeleteButton.vue';
+import SkuPicker from '@/components/SkuPicker.vue';
 import { useBatchDelete } from '@/composables/useBatchDelete';
 import { useTable } from '@/composables/useTable';
 import type { TableColumn } from '@/components/types';

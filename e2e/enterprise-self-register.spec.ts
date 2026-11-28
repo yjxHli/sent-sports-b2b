@@ -93,6 +93,10 @@ test('企业注册后待审核不可登录，管理端通过后可登录', async
   await page.goto(join(ADMIN_URL, '/login'));
   await page.getByPlaceholder('用户名').fill(ADMIN_NAME);
   await page.getByPlaceholder('密码').fill(ADMIN_PASSWORD);
+  // 2026-11-28：登录页新增协议勾选（默认未勾选），E2E 必须先确认协议
+  if (await page.getByTestId('auth-agree').count()) {
+    await page.getByTestId('auth-agree').locator('.el-checkbox__inner').click();
+  }
   await page.getByRole('button', { name: '登录' }).click();
   await expect(page).toHaveURL(/\/admin\/dashboard/, { timeout: 20_000 });
   await page.goto(join(ADMIN_URL, '/customer/enterprise'));

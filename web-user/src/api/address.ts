@@ -31,7 +31,6 @@ export interface AddressCmd {
 export const addressApi = {
   list: () => http.get<AddressVO[]>('/addresses'),
   create: (cmd: AddressCmd) => http.post<AddressVO>('/addresses', cmd),
-  update: (id: number, cmd: AddressCmd) => http.put<AddressVO>(`/addresses/${id}`, cmd),
   remove: (id: number) => http.delete<void>(`/addresses/${id}`),
   setDefault: (id: number) => http.put<void>(`/addresses/${id}/default`),
 };

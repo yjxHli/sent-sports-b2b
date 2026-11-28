@@ -61,8 +61,6 @@ export const chatApi = {
   ) => http.post<MessageVO>(`/chat/sessions/${sessionId}/messages`, cmd),
   history: (sessionId: number, afterSeq = 0) =>
     http.get<MessageVO[]>(`/chat/sessions/${sessionId}/messages`, { afterSeq }),
-  reportRead: (sessionId: number, seq: number) =>
-    http.post<void>(`/chat/sessions/${sessionId}/read`, { seq }),
   /** 排队位置（WAITING 时轮询）：前方人数 +1，已接入返回 position=0 */
   queue: (sessionId: number) =>
     http.get<QueueVO>(`/chat/sessions/${sessionId}/queue`),

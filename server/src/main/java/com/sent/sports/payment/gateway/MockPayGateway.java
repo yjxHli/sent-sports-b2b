@@ -22,6 +22,15 @@ import java.util.TreeMap;
  *   <li>HMAC-SHA256(secret) 后转大写十六进制。</li>
  * </ol>
  * 校验用 {@link java.security.MessageDigest#isEqual} 等价的常数时间比较，避免计时侧信道。
+ *
+ * <h3>TODO（2026-11-28 批次 2 / P1-06）：接真实支付通道时必须一起改的三件事</h3>
+ * <ol>
+ *   <li>{@link #create} / {@link #refund} 改成真实 HTTP 调用（带超时、重试与幂等键）；</li>
+ *   <li><b>调用点必须移出 {@code @UseCase} 事务</b>：{@code POST /api/payments} 已经把
+ *       {@code create()} 放在接口层、事务外（见 {@code PaymentController#create} 的注释），
+ *       退款侧目前仍在 {@code RefundServiceImpl#createCloseRefund} 的事务里，接真通道前必须拆开；</li>
+ *   <li>失败要区分「可重试（超时/网络）」与「不可重试（渠道拒付）」，前者不能直接回滚业务状态。</li>
+ * </ol>
  */
 public class MockPayGateway implements PayGateway {
 

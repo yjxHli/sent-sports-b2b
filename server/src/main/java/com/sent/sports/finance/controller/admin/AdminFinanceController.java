@@ -1,5 +1,6 @@
 package com.sent.sports.finance.controller.admin;
 
+import com.sent.sports.common.anno.Idempotent;
 import com.sent.sports.common.anno.RequirePerm;
 import com.sent.sports.common.web.PageQuery;
 import com.sent.sports.common.web.PageResult;
@@ -8,6 +9,7 @@ import com.sent.sports.finance.dto.admin.AdminFinanceDtos;
 import com.sent.sports.finance.service.CreditGrantUseCase;
 import com.sent.sports.finance.service.EnterpriseAuditUseCase;
 import com.sent.sports.finance.service.FinanceQueryService;
+import com.sent.sports.finance.service.InvoiceAuditUseCase;
 import com.sent.sports.finance.service.InvoicePdfService;
 import com.sent.sports.finance.service.PaymentRecordUseCase;
 import com.sent.sports.finance.service.ReverseRecordUseCase;
@@ -38,7 +40,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 财务控制器（P4-49）：应收台账 / 登记回款 / 核销 / 冲销 / 授信 / 发票（plan §8.12）。
@@ -57,6 +61,7 @@ public class AdminFinanceController {
     private final EnterpriseAuditUseCase enterpriseAuditUseCase;
     private final FinanceQueryService financeQueryService;
     private final InvoicePdfService invoicePdfService;
+    private final InvoiceAuditUseCase invoiceAuditUseCase;
 
     /** P5 绑定当前用户：阶段占位操作人 ID。 */
     private static final long OPERATOR_PLACEHOLDER = 0L;
@@ -67,7 +72,8 @@ public class AdminFinanceController {
                                  CreditGrantUseCase creditGrantUseCase,
                                  EnterpriseAuditUseCase enterpriseAuditUseCase,
                                  FinanceQueryService financeQueryService,
-                                 InvoicePdfService invoicePdfService) {
+                                 InvoicePdfService invoicePdfService,
+                                 InvoiceAuditUseCase invoiceAuditUseCase) {
         this.paymentRecordUseCase = paymentRecordUseCase;
         this.writeOffUseCase = writeOffUseCase;
         this.reverseRecordUseCase = reverseRecordUseCase;
@@ -75,9 +81,11 @@ public class AdminFinanceController {
         this.enterpriseAuditUseCase = enterpriseAuditUseCase;
         this.financeQueryService = financeQueryService;
         this.invoicePdfService = invoicePdfService;
+        this.invoiceAuditUseCase = invoiceAuditUseCase;
     }
 
     @GetMapping("/receivables")
+    @RequirePerm("finance:view")
     public R<PageResult<AdminFinanceDtos.ReceivableVO>> receivables(
             @ModelAttribute PageQuery page,
             @RequestParam(required = false) Long customerId,
@@ -89,6 +97,7 @@ public class AdminFinanceController {
 
     /** 发票申请列表（收口阶段）：真实分页，票面金额联查订单应付金额；keyword 支持发票 ID / 发票号 / 客户 ID。 */
     @GetMapping("/invoices")
+    @RequirePerm("finance:view")
     public R<PageResult<AdminFinanceDtos.InvoiceVO>> invoices(
             @ModelAttribute PageQuery page,
             @RequestParam(required = false) String status,
@@ -116,6 +125,7 @@ public class AdminFinanceController {
      * 真正的中文名放在 RFC 5987 的 {@code filename*=UTF-8''...} 里。</p>
      */
     @GetMapping("/invoices/{invoiceId}/pdf")
+    @RequirePerm("finance:view")
     public ResponseEntity<byte[]> invoicePdf(
             @PathVariable long invoiceId,
             @RequestParam(required = false, defaultValue = "false") boolean download) {
@@ -137,6 +147,7 @@ public class AdminFinanceController {
 
     /** 合同列表（收口阶段）：真实分页，到期日换算成毫秒供前端计算剩余天数；keyword 同时匹配合同 ID / 合同号 / 客户 ID。 */
     @GetMapping("/contracts")
+    @RequirePerm("finance:view")
     public R<PageResult<AdminFinanceDtos.ContractVO>> contracts(
             @ModelAttribute PageQuery page,
             @RequestParam(required = false) String status,
@@ -147,6 +158,7 @@ public class AdminFinanceController {
 
     /** 回款列表（收口阶段）：真分页，可按客户 / 状态过滤，页面不再只显示本次登记结果。 */
     @GetMapping("/payment-records")
+    @RequirePerm("finance:view")
     public R<PageResult<AdminFinanceDtos.PaymentRecordVO>> paymentRecords(
             @ModelAttribute PageQuery page,
             @RequestParam(required = false) Long customerId,
@@ -156,6 +168,7 @@ public class AdminFinanceController {
 
     @PostMapping("/payment-records")
     @RequirePerm("finance:record")
+    @Idempotent(scene = "PAYMENT_RECORD")
     public R<AdminFinanceDtos.RecordVO> record(@Valid @RequestBody AdminFinanceDtos.RecordCmd cmd) {
         PaymentRecordResult r = paymentRecordUseCase.record(new PaymentRecordCmd(
                 cmd.customerId(), cmd.amountCent(), cmd.serialNo(), OPERATOR_PLACEHOLDER, cmd.remark()));
@@ -229,5 +242,28 @@ public class AdminFinanceController {
     public R<Object> issueInvoice(@PathVariable long invoiceId,
                                  @RequestBody AdminFinanceDtos.InvoiceCmd cmd) {
         return R.ok(financeQueryService.issueInvoice(invoiceId, cmd.pdfUrl(), cmd.remark()));
+    }
+
+    /** 驳回开票申请：状态改 REJECTED，并把原因投递到客户站内信。 */
+    @PostMapping("/invoices/{invoiceId}/reject")
+    @RequirePerm("finance:invoice")
+    public R<Map<String, Object>> rejectInvoice(@PathVariable long invoiceId,
+                                                @Valid @RequestBody AdminFinanceDtos.InvoiceAuditCmd cmd) {
+        return R.ok(auditResult(invoiceId, invoiceAuditUseCase.markRejected(invoiceId, cmd.reason())));
+    }
+
+    /** 标记开票异常 / 失败：状态改 EXCEPTION，并把原因投递到客户站内信。 */
+    @PostMapping("/invoices/{invoiceId}/exception")
+    @RequirePerm("finance:invoice")
+    public R<Map<String, Object>> markInvoiceException(@PathVariable long invoiceId,
+                                                       @Valid @RequestBody AdminFinanceDtos.InvoiceAuditCmd cmd) {
+        return R.ok(auditResult(invoiceId, invoiceAuditUseCase.markException(invoiceId, cmd.reason())));
+    }
+
+    private static Map<String, Object> auditResult(long invoiceId, String status) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("invoiceId", invoiceId);
+        result.put("status", status);
+        return result;
     }
 }

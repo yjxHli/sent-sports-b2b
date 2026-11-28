@@ -13,6 +13,7 @@ import com.sent.sports.auth.service.dto.LoginCmd;
 import com.sent.sports.auth.service.dto.LogoutCmd;
 import com.sent.sports.auth.service.dto.RefreshCmd;
 import com.sent.sports.auth.service.dto.TokenPair;
+import com.sent.sports.common.anno.RateLimit;
 import com.sent.sports.common.web.R;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Value;
@@ -98,6 +99,7 @@ public class AuthController {
     }
 
     @PostMapping("/login")
+    @RateLimit(limit = 60, windowSeconds = 60)
     public R<AuthDtos.TokenVO> login(@Valid @RequestBody AuthDtos.LoginCmd cmd) {
         TokenPair pair = loginUseCase.login(new LoginCmd(cmd.username(), cmd.password(),
                 cmd.aud(), cmd.deviceId()));
@@ -106,6 +108,7 @@ public class AuthController {
 
     /** 演示环境：发送验证码——存进程内、打印后端控制台；开关开启时回显给前端打印浏览器控制台。 */
     @PostMapping("/sms-code")
+    @RateLimit(limit = 10, windowSeconds = 60)
     public R<AuthDtos.SendCodeVO> sendSmsCode(@Valid @RequestBody AuthDtos.SendCodeCmd cmd) {
         String code = sendSmsCodeUseCase.send(cmd.phone());
         return R.ok(new AuthDtos.SendCodeVO(exposeDemoCode ? code : null));
@@ -119,6 +122,7 @@ public class AuthController {
 
     /** 找回密码发送验证码：与登录验证码同机制，但 scope 独立、互不覆盖。 */
     @PostMapping("/reset/sms-code")
+    @RateLimit(limit = 10, windowSeconds = 60)
     public R<AuthDtos.SendCodeVO> sendResetCode(@Valid @RequestBody AuthDtos.SendResetCodeCmd cmd) {
         String code = sendSmsCodeUseCase.sendForReset(cmd.phone());
         return R.ok(new AuthDtos.SendCodeVO(exposeDemoCode ? code : null));

@@ -1,10 +1,15 @@
 package com.sent.sports.customize;
 
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
+import com.sent.sports.common.web.PageQuery;
+import com.sent.sports.common.web.PageResult;
 import com.sent.sports.customize.dto.CustomDtos;
 import com.sent.sports.customize.mapper.CustomOrderMapper;
+import com.sent.sports.customize.mapper.po.CustomOrderListItemPO;
 import com.sent.sports.customize.mapper.po.CustomOrderPO;
+import com.sent.sports.customize.mapper.po.CustomStatusCountRow;
 import com.sent.sports.customize.service.impl.CustomQueryServiceImpl;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -22,6 +27,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 
 /**
@@ -254,5 +262,89 @@ class CustomQueryServiceImplTest {
     void ordersOfOrderReturnsEmptyForPlainOrder() {
         when(mapper.selectByOrderNo(9002L, "SO20261121000003")).thenReturn(List.of());
         assertTrue(service.ordersOfOrder(9002L, "SO20261121000003").isEmpty());
+    }
+
+    // ---------- 四类筛选桶（2026-11-28） ----------
+
+    private CustomOrderListItemPO listItem(String no, String status) {
+        CustomOrderListItemPO po = new CustomOrderListItemPO();
+        po.setCustomOrderId(no);
+        po.setStatus(status);
+        po.setOrderStatus("COMPLETED");
+        po.setVersion(1);
+        po.setRejectCount(0);
+        return po;
+    }
+
+    @Test
+    @DisplayName("bucket=todo：查询条件落到 status IN (WAIT_DRAFT, REJECTED)，列表与总数同源")
+    void myOrdersFiltersByBucketStatuses() {
+        List<String> todo = List.of("WAIT_DRAFT", "REJECTED");
+        when(mapper.selectMyPage(any(), eq(9002L), eq(todo))).thenAnswer(inv -> {
+            Page<CustomOrderListItemPO> page = inv.getArgument(0);
+            page.setRecords(List.of(listItem(NO, "WAIT_DRAFT")));
+            return page;
+        });
+        when(mapper.countMy(9002L, todo)).thenReturn(1L);
+
+        PageResult<CustomDtos.MyCustomOrderVO> result =
+                service.myOrders(9002L, "TODO", new PageQuery());
+
+        assertEquals(1L, result.getTotal(), "总数必须与列表同条件，否则分页会翻出空白页");
+        assertEquals(1, result.getList().size());
+        assertEquals(NO, result.getList().get(0).customOrderId());
+    }
+
+    @Test
+    @DisplayName("非法 / 空 bucket 退回「全部」：statusNames 传 null，不带 IN 条件")
+    void myOrdersFallsBackToAllForUnknownBucket() {
+        when(mapper.selectMyPage(any(), eq(9002L), isNull())).thenAnswer(inv -> {
+            Page<CustomOrderListItemPO> page = inv.getArgument(0);
+            page.setRecords(List.of());
+            return page;
+        });
+        when(mapper.countMy(eq(9002L), isNull())).thenReturn(0L);
+
+        assertEquals(0L, service.myOrders(9002L, "bogus", new PageQuery()).getTotal());
+        assertEquals(0L, service.myOrders(9002L, "  ", new PageQuery()).getTotal());
+        assertEquals(0L, service.myOrders(9002L, null, new PageQuery()).getTotal());
+    }
+
+    @Test
+    @DisplayName("四类角标：按 status 分组计数归到桶里，已取消不属于任何桶但计入 total")
+    void mySummaryGroupsStatusesIntoBuckets() {
+        when(mapper.countMyByStatus(9002L)).thenReturn(List.of(
+                countRow("WAIT_DRAFT", 2L),
+                countRow("REJECTED", 1L),
+                countRow("WAIT_REVIEW", 4L)));
+
+        CustomDtos.MyCustomSummaryVO onlyTodo = service.mySummary(9002L);
+        assertEquals(3L, onlyTodo.todo(), "待提交图稿 + 审核驳回 = 3");
+        assertEquals(4L, onlyTodo.review());
+        assertEquals(0L, onlyTodo.producing());
+        assertEquals(0L, onlyTodo.done());
+
+        when(mapper.countMyByStatus(9002L)).thenReturn(List.of(
+                countRow("APPROVED", 1L),
+                countRow("IN_PRODUCTION", 2L),
+                countRow("FINISHED", 3L),
+                countRow("SHIPPED", 4L),
+                countRow("CANCELLED", 5L),
+                countRow("ESCALATED", 1L)));
+
+        CustomDtos.MyCustomSummaryVO all = service.mySummary(9002L);
+
+        assertEquals(0L, all.todo());
+        assertEquals(1L, all.review(), "待主管处理也算「审核中」");
+        assertEquals(3L, all.producing(), "审核通过 + 生产中 = 3");
+        assertEquals(7L, all.done(), "已完工 + 已发货 = 7");
+        assertEquals(16L, all.total(), "total 含已取消（5 单），所以可能大于四桶之和");
+    }
+
+    private CustomStatusCountRow countRow(String status, long total) {
+        CustomStatusCountRow row = new CustomStatusCountRow();
+        row.setStatus(status);
+        row.setTotal(total);
+        return row;
     }
 }

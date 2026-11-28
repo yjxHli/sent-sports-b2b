@@ -25,6 +25,7 @@ async function loginUser(page: Page): Promise<void> {
     (r) => r.url().includes('/api/auth/login') && r.request().method() === 'POST',
     { timeout: 20_000 },
   );
+  await page.getByTestId('auth-agree').locator('.el-checkbox__inner').click();
   await page.getByRole('button', { name: '登录' }).click();
   const body: any = await (await resp).json().catch(() => null);
   expect(body?.code, `用户端登录失败：${JSON.stringify(body)}`).toBe(0);
@@ -47,26 +48,23 @@ test('会员数据丢失时，用户卡必须给出登录 / 注册入口', async
   await expect(cta, '会员数据缺失时，用户卡内必须有「登录 / 注册」入口，不能只显示一句「未登录」').toBeVisible();
 });
 
-test('登录态用户卡：四个快捷入口齐全，企业采购标题不带问号', async ({ page }) => {
+test('登录态用户卡：四个快捷入口齐全且都新开标签，企业采购卡保留', async ({ page }) => {
   await loginUser(page);
   await page.goto(`${USER_URL.replace(/\/+$/, '')}/home`);
 
   const card = page.locator('.side-card');
   await expect(card).toBeVisible({ timeout: 20_000 });
 
-  // 四个快捷入口 + 在线客服 = 5 个链接
+  // 四个快捷入口 + 在线客服 = 5 个链接，且全部新开标签
   await expect(card.locator('.side-links .side-link')).toHaveCount(5);
   for (const label of ['我的订单', '我的定制', '我的收藏', '我的足迹', '在线客服']) {
-    await expect(
-      card.locator('.side-link', { hasText: label }).first(),
-      `快捷入口「${label}」必须存在`,
-    ).toBeVisible();
+    const link = card.locator('.side-link', { hasText: label }).first();
+    await expect(link, `快捷入口「${label}」必须存在`).toBeVisible();
+    await expect(link, `快捷入口「${label}」必须新开标签`).toHaveAttribute('target', '_blank');
   }
 
-  // 企业采购不该用疑问语气弱化（B2B 主营场景）
+  // 首页底部的企业采购卡保留；企业工具里另外也加了一份
   await expect(card.locator('.side-tip b'), '企业采购标题不应带问号').toHaveText('企业采购');
-
-  // 团购入口保留实心 CTA 语义（文案不变，避免其它用例失效）
   await expect(card.locator('.side-tip__btn')).toHaveText(/查看团购/);
 });
 

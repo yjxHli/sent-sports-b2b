@@ -37,6 +37,7 @@ public class RefundCallbackUseCase implements RefundCallbackService {
     private final CouponDeduction couponDeduction;
     private final StockRefundGateway stockRefundGateway;
     private final OrderRefundGateway orderRefundGateway;
+    private final RefundSuccessNotifier refundSuccessNotifier;
 
     public RefundCallbackUseCase(RefundRepository refundRepository,
                                  PaymentRefundGateway paymentRefundGateway,
@@ -44,7 +45,8 @@ public class RefundCallbackUseCase implements RefundCallbackService {
                                  MemberRefundGateway memberRefundGateway,
                                  CouponDeduction couponDeduction,
                                  StockRefundGateway stockRefundGateway,
-                                 OrderRefundGateway orderRefundGateway) {
+                                 OrderRefundGateway orderRefundGateway,
+                                 RefundSuccessNotifier refundSuccessNotifier) {
         this.refundRepository = refundRepository;
         this.paymentRefundGateway = paymentRefundGateway;
         this.orderRefundViewService = orderRefundViewService;
@@ -52,6 +54,7 @@ public class RefundCallbackUseCase implements RefundCallbackService {
         this.couponDeduction = couponDeduction;
         this.stockRefundGateway = stockRefundGateway;
         this.orderRefundGateway = orderRefundGateway;
+        this.refundSuccessNotifier = refundSuccessNotifier;
     }
 
     @UseCase
@@ -130,5 +133,6 @@ public class RefundCallbackUseCase implements RefundCallbackService {
         // 7) 成功：置 REFUNDED 并落库（point_refund 随本次 save 一并写入）
         refundOrder.transit(RefundAction.REFUND_SUCCESS);
         refundRepository.save(refundOrder);
+        refundSuccessNotifier.notify(refundOrder);
     }
 }

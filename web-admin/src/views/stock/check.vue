@@ -2,6 +2,12 @@
   <div>
     <h2 class="sent-page-title">库存盘点</h2>
     <div class="sent-panel">
+      <div class="sent-panel__head">
+        <h3 class="section-title">盘点单</h3>
+        <span class="sent-panel__meta">
+          {{ checkNo ? `盘点单 ${checkNo} · SKU 已锁定` : '建单后锁定 SKU，再录入实盘数并审批' }}
+        </span>
+      </div>
       <el-steps :active="step" finish-status="success" align-center style="margin-bottom: 24px">
         <el-step title="创建盘点单" />
         <el-step title="录入实盘数" />
@@ -10,13 +16,23 @@
 
       <el-form :model="form" label-width="110px" style="max-width: 560px">
         <el-form-item label="SKU ID">
-          <el-input-number v-model="form.skuId" :min="1" :disabled="step > 0" style="width: 220px" />
+          <SkuPicker
+            v-model="form.skuId"
+            :disabled="step > 0"
+            data-testid="stock-sku-picker"
+          />
         </el-form-item>
         <el-form-item label="账面数量">
-          <span>{{ bookQty }}</span>
+          <span class="stock-form__static">{{ bookQty }}</span>
         </el-form-item>
         <el-form-item label="实盘数量">
-          <el-input-number v-model="form.actualQty" :min="0" :disabled="step < 1" style="width: 220px" />
+          <el-input-number
+            v-model="form.actualQty"
+            :min="0"
+            :disabled="step < 1"
+            controls-position="right"
+            style="width: 200px"
+          />
         </el-form-item>
         <el-form-item v-if="diffQty !== null" label="差异">
           <span :class="{ 'check-diff': diffQty !== 0 }">
@@ -52,6 +68,7 @@ import { ElMessage } from 'element-plus';
 import { unwrap } from '@/utils/http';
 import { openConfirm } from '@/utils/confirm';
 import { stockApi } from '@/api';
+import SkuPicker from '@/components/SkuPicker.vue';
 
 const route = useRoute();
 const form = reactive({ skuId: 0, actualQty: 0 });
@@ -131,6 +148,11 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.stock-form__static {
+  color: var(--sent-ink);
+  font-variant-numeric: tabular-nums;
+}
+
 .check-diff {
   color: var(--sent-danger);
   font-weight: 500;

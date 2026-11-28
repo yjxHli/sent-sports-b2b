@@ -47,12 +47,14 @@ public class AdminCustomController {
 
     /** 审核台列表：customNo 支持按定制单号模糊搜索，空白表示不限。 */
     @GetMapping
+    @RequirePerm("custom:view")
     public R<PageResult<?>> pending(@ModelAttribute PageQuery page,
                                     @RequestParam(required = false) String customNo) {
         return R.ok(customAdminQueryService.pendingList(page, customNo));
     }
 
     @GetMapping("/{id}")
+    @RequirePerm("custom:view")
     public R<Object> detail(@PathVariable String id) {
         return R.ok(customAdminQueryService.detail(id));
     }

@@ -78,8 +78,10 @@ class DbRefundRepositoryIT extends BaseIntegrationTest {
         assertThat(detail.getAppealCount()).isZero();
 
         // 审核 / 回调推进状态：UPDATE 分支（不重复 INSERT）
-        o.setStatus(RefundStatus.REFUNDING);
-        refundRepository.save(o);
+        // P2 批次：RefundOrder.setStatus 已删除（防止绕过状态机），这里直接构造目标态实例。
+        RefundOrder refunding = new RefundOrder("RF-IT-1", "IT-RF-ORDER", orderId, 5000L, "REFUND", "质量原因",
+                RefundStatus.REFUNDING, o.getCreatedAtMillis());
+        refundRepository.save(refunding);
         RefundOrder updated = refundRepository.findByRefundNo("RF-IT-1").orElseThrow();
         assertThat(updated.getStatus()).isEqualTo(RefundStatus.REFUNDING);
     }

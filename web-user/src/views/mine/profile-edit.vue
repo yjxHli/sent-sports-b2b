@@ -110,8 +110,8 @@ async function save(): Promise<void> {
 .profile-edit { padding: 24px 0 60px; }
 .profile-edit__title { font-size: 22px; margin: 0 0 18px; color: var(--sent-text); }
 .profile-edit__card {
-  max-width: 560px; background: #fff; border: 1px solid var(--sent-border, #e6eaf0);
-  border-radius: 10px; padding: 24px;
+  max-width: 560px; background: #fafbfc; border: none;
+  border-radius: 8px; padding: 24px;
 }
 .profile-edit__field { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 22px; }
 .profile-edit__field label { width: 56px; flex: none; line-height: 36px; color: #606b7a; font-size: 14px; }

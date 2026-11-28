@@ -34,6 +34,7 @@ public class AdminProductController {
     }
 
     @GetMapping("/products")
+    @RequirePerm("product:view")
     public R<PageResult<AdminProductDtos.ProductVO>> list(
             @ModelAttribute PageQuery page,
             @RequestParam(required = false) String keyword,

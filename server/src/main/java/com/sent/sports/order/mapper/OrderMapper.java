@@ -135,6 +135,7 @@ public interface OrderMapper extends BaseMapper<OrderPO> {
      * <p>关键字必须走 SQL 而不是前端过滤——订单表 2000+ 行且分页只回 10 条，
      * 前端过滤的结果是「明明有这单，但当前页里没有」。</p>
      */
+    @DataScope
     @Select("SELECT * FROM orders "
             + "WHERE admin_deleted_at IS NULL AND (#{status} IS NULL OR #{status} = '' OR status = #{status}) "
             + "AND (#{keyword} IS NULL OR order_no LIKE CONCAT('%', #{keyword}, '%')) "
@@ -284,14 +285,4 @@ public interface OrderMapper extends BaseMapper<OrderPO> {
     @Update("UPDATE order_item SET shipped_qty = shipped_qty + #{qty} "
             + "WHERE id = #{itemId} AND shipped_qty + #{qty} <= qty")
     int increaseShippedQty(@Param("itemId") long itemId, @Param("qty") int qty);
-
-    /** 记录状态迁移流水（审计与客服追溯）。 */
-    @Insert("INSERT INTO order_status_log (order_id, from_status, to_status, dimension, operator_id, remark) "
-            + "VALUES (#{orderId}, #{from}, #{to}, #{dimension}, #{operatorId}, #{remark})")
-    int insertStatusLog(@Param("orderId") long orderId,
-                        @Param("from") String from,
-                        @Param("to") String to,
-                        @Param("dimension") String dimension,
-                        @Param("operatorId") Long operatorId,
-                        @Param("remark") String remark);
 }

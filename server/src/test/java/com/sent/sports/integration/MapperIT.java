@@ -15,6 +15,8 @@ import com.sent.sports.coupon.mapper.CouponTemplateMapper;
 import com.sent.sports.coupon.mapper.po.CouponTemplatePO;
 import com.sent.sports.coupon.mapper.po.CustomerCouponPO;
 import com.sent.sports.finance.mapper.InvoiceMapper;
+import com.sent.sports.finance.mapper.ContractMapper;
+import com.sent.sports.finance.mapper.EnterpriseProfileMapper;
 import com.sent.sports.finance.mapper.PaymentRecordMapper;
 import com.sent.sports.finance.mapper.ReceivableMapper;
 import com.sent.sports.finance.mapper.po.PaymentRecordPO;
@@ -92,6 +94,10 @@ class MapperIT extends BaseIntegrationTest {
     @Autowired
     private InvoiceMapper invoiceMapper;
     @Autowired
+    private ContractMapper contractMapper;
+    @Autowired
+    private EnterpriseProfileMapper enterpriseProfileMapper;
+    @Autowired
     private PaymentRecordMapper paymentRecordMapper;
     @Autowired
     private OperationLogMapper operationLogMapper;
@@ -105,17 +111,41 @@ class MapperIT extends BaseIntegrationTest {
     private CouponMapper couponMapper;
 
     @Test
-    @DisplayName("V1~V65：六十四次迁移全部应用（V64 为纯代码发券无迁移），69 张表就位（V56/V57/V60/V61/V62/V65 只加列、V58 只加词、V59 加知识库表与接待模式列、V63 加标签两表）")
+    @DisplayName("V1~V70：六十九次迁移全部应用（V64 为纯代码发券无迁移、V69 删 14 张废表、V70 补 view 权限点），55 张表就位（V56/V57/V60/V61/V62/V65/V67/V68 只加列、V58 只加词、V59 加知识库表与接待模式列、V63 加标签两表、V66 只下调授信）")
     void migrationsApplyAllThirteenVersions() {
         Integer versions = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM flyway_schema_history WHERE success = 1", Integer.class);
-        assertThat(versions).isEqualTo(64);
+        // 69 = V1~V70 共 70 个版本号 − V64（纯代码发券，无迁移脚本）
+        assertThat(versions).isEqualTo(69);
 
         Integer tables = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM information_schema.tables "
                         + "WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE' "
                         + "AND table_name <> 'flyway_schema_history'", Integer.class);
-        assertThat(tables).isEqualTo(69);
+        // 55 = V68 时的 69 张业务表 − V69 删掉的 14 张
+        assertThat(tables).isEqualTo(55);
+
+        // V69：逐张确认 14 张废表真的消失了。
+        // 只断言总数会被「删了 A 又建了 B」蒙混过关，所以按名单逐项查。
+        List<String> droppedTables = List.of(
+                "arrival_subscription", "chat_quick_reply", "chat_read_cursor", "chat_session_tag",
+                "custom_change_request", "customer_follow_log", "file_object", "member_level",
+                "notification", "notify_template", "refund_txn", "stock_inbound", "stock_loss",
+                "order_status_log");
+        for (String table : droppedTables) {
+            assertThat(jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM information_schema.tables "
+                            + "WHERE table_schema = DATABASE() AND table_name = ?", Integer.class, table))
+                    .as("V69 应删除废表 " + table).isZero();
+        }
+
+        // 反向断言：P0 接回真库的三张表不能被误删（V69 注释里已声明保留）
+        for (String kept : List.of("stock_check", "stock_check_item", "customer_owner_log")) {
+            assertThat(jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM information_schema.tables "
+                            + "WHERE table_schema = DATABASE() AND table_name = ?", Integer.class, kept))
+                    .as("P0 已接回真库，表必须保留：" + kept).isEqualTo(1);
+        }
 
         // V59：机器人知识库表 + 会话接待模式列。
         // 老会话必须默认 HUMAN——默认值写错（比如 BOT）会让历史会话突然被机器人接管。
@@ -208,6 +238,36 @@ class MapperIT extends BaseIntegrationTest {
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '65' AND success = 1",
                 Integer.class)).as("V65 工单提交与客服补偿券迁移必须成功").isEqualTo(1);
+
+        // V66：企业授信上限统一压到 2000 元，只改存量数据与业务参数默认值，不加表不加列。
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '66' AND success = 1",
+                Integer.class)).as("V66 企业授信封顶迁移必须成功").isEqualTo(1);
+
+        // V67：合同到期提醒痕迹。没有标记列时定时任务每轮都会重复给同一份合同发站内信。
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() "
+                        + "AND table_name = 'contract' AND column_name = 'expire_remind_level' "
+                        + "AND column_default = '0' AND is_nullable = 'NO'",
+                Integer.class)).as("contract.expire_remind_level 必须 NOT NULL 且默认 0（V67）").isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() "
+                        + "AND table_name = 'contract' AND column_name = 'expire_reminded_at'",
+                Integer.class)).as("contract 必须有 expire_reminded_at（V67）").isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '67' AND success = 1",
+                Integer.class)).as("V67 合同到期提醒标记迁移必须成功").isEqualTo(1);
+
+        // V68：评价中心的三项统计里「浏览数/获赞数」来自单条评价的累积列。
+        // 两列必须 NOT NULL 默认 0：老数据不造假，NULL 会让 SUM 变成 null 而前端显示 NaN。
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = DATABASE() "
+                        + "AND table_name = 'product_review' AND column_name IN ('view_count', 'like_count') "
+                        + "AND column_default = '0' AND is_nullable = 'NO'",
+                Integer.class)).as("product_review 必须有 view_count/like_count 且 NOT NULL 默认 0（V68）").isEqualTo(2);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '68' AND success = 1",
+                Integer.class)).as("V68 评价中心指标迁移必须成功").isEqualTo(1);
 
         // V57：定制图稿上传超时需要「提醒痕迹」，否则每轮定时任务都会重复发同一条站内信
         assertThat(jdbc.queryForObject(
@@ -714,6 +774,107 @@ class MapperIT extends BaseIntegrationTest {
     }
 
     @Test
+    @DisplayName("我的发票：只返回本人票据，OPEN 页签含待开 / 驳回，关键字按订单号与票号匹配")
+    void myInvoicesScopedToCustomer() {
+        OrderPO order = new OrderPO();
+        order.setOrderNo("SO-MY-INV-1");
+        order.setCustomerId(9002L);
+        order.setIdemKey("idem-my-inv-1");
+        order.setStatus("COMPLETED");
+        order.setPayStatus("PAID");
+        order.setPayableCent(25_800L);
+        order.setPaidCent(25_800L);
+        order.setCompletedAt(LocalDateTime.of(2026, 11, 20, 18, 0, 0));
+        assertThat(orderMapper.insert(order)).isEqualTo(1);
+        assertThat(invoiceMapper.insertUserApplication("SO-MY-INV-1", 9002L,
+                "森特体育用品有限公司", null, "NORMAL", null)).isEqualTo(1);
+
+        var mine = invoiceMapper.selectMyInvoicePage(new Page<>(1, 10), 9002L, "OPEN", null);
+        assertThat(mine.getRecords()).hasSize(1);
+        assertThat(mine.getRecords().get(0).getOrderNo()).isEqualTo("SO-MY-INV-1");
+        assertThat(mine.getRecords().get(0).getStatus()).isEqualTo("APPLIED");
+        assertThat(mine.getRecords().get(0).getAmountCent()).isEqualTo(25_800L);
+        assertThat(invoiceMapper.countMyInvoices(9002L, "OPEN", null)).isEqualTo(1L);
+
+        // 已开具页签此时为空；他人查不到这张票
+        assertThat(invoiceMapper.countMyInvoices(9002L, "ISSUED", null)).isZero();
+        assertThat(invoiceMapper.countMyInvoices(9003L, null, null)).isZero();
+
+        // 关键字：订单号 / 发票号都能命中；无关词为 0
+        assertThat(invoiceMapper.countMyInvoices(9002L, null, "SO-MY-INV")).isEqualTo(1L);
+        assertThat(invoiceMapper.countMyInvoices(9002L, null, "NO-SUCH-INVOICE")).isZero();
+    }
+
+    @Test
+    @DisplayName("未申请开票：已完成可开票订单才入列，已有申请的不重复出现，驳回后回到列表")
+    void pendingInvoicesExcludeAppliedOrders() {
+        for (String no : new String[]{"SO-PENDING-1", "SO-PENDING-2"}) {
+            OrderPO order = new OrderPO();
+            order.setOrderNo(no);
+            order.setCustomerId(9002L);
+            order.setIdemKey("idem-" + no);
+            order.setStatus("COMPLETED");
+            order.setPayStatus("PAID");
+            order.setPayableCent(12_800L);
+            order.setPaidCent(12_800L);
+            order.setCompletedAt(LocalDateTime.of(2026, 11, 21, 10, 0, 0));
+            assertThat(orderMapper.insert(order)).isEqualTo(1);
+        }
+        // 在途订单不可开票，不能出现在「未申请」里
+        OrderPO shipped = new OrderPO();
+        shipped.setOrderNo("SO-PENDING-3");
+        shipped.setCustomerId(9002L);
+        shipped.setIdemKey("idem-SO-PENDING-3");
+        shipped.setStatus("WAIT_SHIP");
+        shipped.setPayStatus("PAID");
+        shipped.setPayableCent(9_900L);
+        assertThat(orderMapper.insert(shipped)).isEqualTo(1);
+
+        assertThat(invoiceMapper.insertUserApplication("SO-PENDING-1", 9002L,
+                "抬头", null, "NORMAL", null)).isEqualTo(1);
+
+        var pending = invoiceMapper.selectPendingInvoicePage(new Page<>(1, 10), 9002L);
+        assertThat(pending.getRecords()).extracting(r -> r.getOrderNo())
+                .containsExactly("SO-PENDING-2");
+        assertThat(invoiceMapper.countPendingInvoices(9002L)).isEqualTo(1L);
+
+        // 驳回后这张单重新回到「未申请」，用户可以改抬头重开
+        Long invoiceId = invoiceMapper.selectLatestIdByOrderNo("SO-PENDING-1");
+        assertThat(invoiceMapper.markRejected(invoiceId)).isEqualTo(1);
+        assertThat(invoiceMapper.countPendingInvoices(9002L)).isEqualTo(2L);
+        assertThat(invoiceMapper.countMyInvoices(9002L, "OPEN", null)).isEqualTo(1L);
+    }
+
+    @Test
+    @DisplayName("企业工具：本人企业档案与合同按客户收口，软删合同不返回")
+    void myEnterpriseProfileAndContractsScopedToCustomer() {
+        jdbc.update("INSERT INTO enterprise_profile (customer_id, company_name, license_no, status, "
+                + "credit_limit_cent, credit_used_cent, payment_term_days, audit_remark) "
+                + "VALUES (9002, '森特体育用品有限公司', '91320000MA1XXXXX0A', 'ACTIVE', "
+                + "200000, 50000, 30, '')");
+        jdbc.update("INSERT INTO enterprise_profile (customer_id, company_name, status) "
+                + "VALUES (9003, '别家公司', 'ACTIVE')");
+
+        var profile = enterpriseProfileMapper.selectMyProfile(9002L);
+        assertThat(profile).isNotNull();
+        assertThat(profile.getCompanyName()).isEqualTo("森特体育用品有限公司");
+        assertThat(profile.getCreditLimitCent()).isEqualTo(200_000L);
+        assertThat(profile.getPaymentTermDays()).isEqualTo(30);
+
+        jdbc.update("INSERT INTO contract (contract_no, customer_id, amount_cent, status, "
+                + "sign_date, expire_date, discount_rate, deleted) "
+                + "VALUES ('CT-MY-1', 9002, 500000, 'ACTIVE', '2026-01-01', '2027-01-01', 95, 0)");
+        jdbc.update("INSERT INTO contract (contract_no, customer_id, amount_cent, status, deleted) "
+                + "VALUES ('CT-MY-2', 9002, 100000, 'ACTIVE', 1)");
+        jdbc.update("INSERT INTO contract (contract_no, customer_id, amount_cent, status) "
+                + "VALUES ('CT-OTHER-1', 9003, 300000, 'ACTIVE')");
+
+        var contracts = contractMapper.selectMyContracts(9002L);
+        assertThat(contracts).extracting(c -> c.getContractNo()).containsExactly("CT-MY-1");
+        assertThat(contracts.get(0).getDiscountRate()).isEqualTo(95);
+    }
+
+    @Test
     @DisplayName("管理端订单分页：status 只返回该状态，null 返回全量（发货工作台 409 根因）")
     void adminOrderListFiltersByStatus() {
         insertOrderForList("SO-LIST-WAIT-1", "WAIT_SHIP");
@@ -856,14 +1017,21 @@ class MapperIT extends BaseIntegrationTest {
 
         insertCustomFor("CC-CB-1", "SHIPPED", 9002L);
         insertCustomFor("CC-CB-2", "IN_PRODUCTION", 9002L);
-        long before = customOrderMapper.countMy(9002L);
+        long before = customOrderMapper.countMy(9002L, null);
         assertThat(customOrderMapper.batchMarkCustomerDeleted(9002L, List.of("CC-CB-1", "CC-CB-2"),
                 BatchDeleteCustomOrdersUseCase.DELETABLE_STATUSES))
                 .as("定制单只删终态（已发货），生产中的不受影响").isEqualTo(1);
-        assertThat(customOrderMapper.countMy(9002L)).isEqualTo(before - 1);
-        assertThat(customOrderMapper.selectMyPage(new Page<>(1, 50), 9002L).getRecords())
+        assertThat(customOrderMapper.countMy(9002L, null)).isEqualTo(before - 1);
+        assertThat(customOrderMapper.selectMyPage(new Page<>(1, 50), 9002L, null).getRecords())
                 .extracting(CustomOrderListItemPO::getCustomOrderId)
                 .doesNotContain("CC-CB-1").contains("CC-CB-2");
+        // V68 同期新增的四类筛选桶：SQL 必须真的把 status IN (...) 落到 WHERE 上，
+        // 否则「制作中」的单会混进「已完成」里（前端只是传了个 bucket 参数）
+        assertThat(customOrderMapper.selectMyPage(new Page<>(1, 50), 9002L,
+                com.sent.sports.customize.domain.CustomStatusBucket.DONE.statusNames()).getRecords())
+                .extracting(CustomOrderListItemPO::getCustomOrderId)
+                .as("已完成桶不应包含「生产中」的单")
+                .doesNotContain("CC-CB-2");
         assertThat(customOrderMapper.selectByCustomNosForCustomer(1234L, List.of("CC-CB-2")))
                 .as("他人定制单号查不出来").isEmpty();
     }

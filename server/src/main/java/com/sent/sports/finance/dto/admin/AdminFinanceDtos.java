@@ -1,5 +1,6 @@
 package com.sent.sports.finance.dto.admin;
 
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
@@ -42,6 +43,7 @@ public final class AdminFinanceDtos {
 
     /** 企业授信请求：总额（分）+ 账期天数 + 有效期 + 备注。 */
     public record CreditCmd(
+            @Max(value = 200000, message = "授信总额不得超过 2000 元")
             @Positive(message = "授信总额必须大于0") long totalCent,
             @NotNull(message = "账期天数不能为空") Long accountPeriodDays,
             @NotNull(message = "有效期起不能为空") Long validFromMillis,
@@ -51,6 +53,10 @@ public final class AdminFinanceDtos {
 
     /** 发票开具请求：PDF 地址 + 备注（对已存在的开票申请开票 / 换开）。 */
     public record InvoiceCmd(String pdfUrl, String remark) {
+    }
+
+    /** 开票申请处置（驳回 / 标记异常）：原因必填，站内信原文带给客户。 */
+    public record InvoiceAuditCmd(@NotBlank(message = "必须填写原因") String reason) {
     }
 
     /**

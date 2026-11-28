@@ -65,6 +65,10 @@ async function loginUser(page: Page): Promise<void> {
   await page.goto(`${USER_URL}/login`);
   await page.getByPlaceholder('请输入11位手机号').fill(USER_PHONE);
   await page.getByPlaceholder('请输入密码').fill(USER_PASSWORD);
+  // 2026-11-28：登录页新增协议勾选（默认未勾选），E2E 必须先确认协议
+  if (await page.getByTestId('auth-agree').count()) {
+    await page.getByTestId('auth-agree').locator('.el-checkbox__inner').click();
+  }
   await page.getByRole('button', { name: '登录' }).first().click();
   await expect(page, '未登录成功，详情页会被路由守卫拦到登录页').not.toHaveURL(/\/login/, { timeout: 20_000 });
 }

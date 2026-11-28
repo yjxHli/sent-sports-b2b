@@ -9,6 +9,7 @@ import com.sent.sports.finance.dto.admin.AdminFinanceDtos;
 import com.sent.sports.finance.service.CreditGrantUseCase;
 import com.sent.sports.finance.service.EnterpriseAuditUseCase;
 import com.sent.sports.finance.service.FinanceQueryService;
+import com.sent.sports.finance.service.InvoiceAuditUseCase;
 import com.sent.sports.finance.service.InvoicePdfService;
 import com.sent.sports.finance.service.PaymentRecordUseCase;
 import com.sent.sports.finance.service.ReverseRecordUseCase;
@@ -74,6 +75,9 @@ class AdminFinanceApiTest extends BaseApiTest {
     @MockBean
     private InvoicePdfService invoicePdfService;
 
+    @MockBean
+    private InvoiceAuditUseCase invoiceAuditUseCase;
+
     @Test
     @DisplayName("发票 PDF：inline 预览返回 application/pdf，attachemnt 下载带文件名")
     void invoicePdfReturnsPdfBytes() throws Exception {
@@ -121,6 +125,38 @@ class AdminFinanceApiTest extends BaseApiTest {
                 .andExpect(jsonPath("$.code").value(40401))
                 .andExpect(jsonPath("$.message").value(
                         org.hamcrest.Matchers.containsString("开票申请不存在")));
+    }
+
+    @Test
+    @DisplayName("发票驳回 / 标记异常：原因必填，接口回新状态供前端刷新")
+    void invoiceAuditEndpointsReturnStatus() throws Exception {
+        when(invoiceAuditUseCase.markRejected(31L, "抬头有误")).thenReturn("REJECTED");
+        when(invoiceAuditUseCase.markException(31L, "税号校验失败")).thenReturn("EXCEPTION");
+
+        Map<String, Object> reject = new LinkedHashMap<>();
+        reject.put("reason", "抬头有误");
+        mvc.perform(post("/api/admin/invoices/31/reject")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(toJson(reject)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.status").value("REJECTED"));
+
+        Map<String, Object> exception = new LinkedHashMap<>();
+        exception.put("reason", "税号校验失败");
+        mvc.perform(post("/api/admin/invoices/31/exception")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(toJson(exception)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.status").value("EXCEPTION"));
+
+        Map<String, Object> blank = new LinkedHashMap<>();
+        blank.put("reason", "  ");
+        mvc.perform(post("/api/admin/invoices/31/reject")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(toJson(blank)))
+                .andExpect(jsonPath("$.code").value(40001));
     }
 
     @Test

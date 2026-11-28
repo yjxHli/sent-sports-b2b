@@ -1,7 +1,10 @@
 package com.sent.sports.web.admin;
 
 import com.sent.sports.common.anno.RequirePerm;
+import com.sent.sports.common.interceptor.PermissionInterceptor;
 import com.sent.sports.common.service.ConfirmTokenService;
+import com.sent.sports.common.web.CurrentUser;
+import com.sent.sports.common.web.GlobalExceptionHandler;
 import com.sent.sports.common.web.PageQuery;
 import com.sent.sports.common.web.PageResult;
 import com.sent.sports.order.controller.admin.AdminOrderController;
@@ -15,6 +18,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.lang.reflect.Method;
 import java.util.LinkedHashMap;
@@ -47,6 +51,29 @@ class AdminOrderApiTest extends BaseApiTest {
 
     @MockBean
     private ConfirmTokenService confirmTokenService;
+
+    @Test
+    @DisplayName("P1-RBAC 无 order:view 的员工调用订单列表返回 403；持有权限返回 200")
+    void listRequiresViewPermission() throws Exception {
+        when(orderAdminService.list(any(), any(), any())).thenReturn(PageResult.of(List.of(), 0L, 1, 10));
+        var admin = new CurrentUser(CurrentUser.AUD_ADMIN, 9005L, "jti-staff");
+
+        var denied = MockMvcBuilders.standaloneSetup(new AdminOrderController(orderAdminService))
+                .addInterceptors(new PermissionInterceptor((staffId, permission) -> false))
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
+        denied.perform(get("/api/admin/orders").requestAttr(CurrentUser.ATTR, admin))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(40301));
+
+        var allowed = MockMvcBuilders.standaloneSetup(new AdminOrderController(orderAdminService))
+                .addInterceptors(new PermissionInterceptor((staffId, permission) -> "order:view".equals(permission)))
+                .setControllerAdvice(new GlobalExceptionHandler())
+                .build();
+        allowed.perform(get("/api/admin/orders").requestAttr(CurrentUser.ATTR, admin))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+    }
 
     @Test
     @DisplayName("多维筛选列表返回空分页 200")

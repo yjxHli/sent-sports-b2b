@@ -115,7 +115,7 @@
             <h4 class="sub-title">企业授信（危险操作）</h4>
             <el-form label-width="110px">
               <el-form-item label="授信总额(元)">
-                <el-input v-model="creditForm.totalYuan" placeholder="如 50000.00" clearable />
+                <el-input v-model="creditForm.totalYuan" placeholder="如 2000.00" clearable />
               </el-form-item>
               <el-form-item label="账期(天)">
                 <el-input-number v-model="creditForm.accountPeriodDays" :min="1" :max="365" style="width: 100%" />
@@ -133,7 +133,9 @@
             <el-button type="primary" :loading="submitting" @click="submitCredit">
               确认授信
             </el-button>
-            <p class="sent-hint">提交前需按提示准确输入确认短语换取一次性令牌，令牌用后即焚。</p>
+            <p class="sent-hint">
+              企业最高可申请授信 2000 元（200000 分），超限直接拒绝；提交前需按提示准确输入确认短语换取一次性令牌，令牌用后即焚。
+            </p>
           </template>
         </div>
       </el-col>
@@ -273,6 +275,10 @@ const availableCent = computed(() => {
   return Math.max(limit - used, 0);
 });
 
+/** 与后端 CreditLine.MAX_TOTAL_CENT / V66 迁移同一口径：2000 元 = 200000 分 */
+const MAX_CREDIT_YUAN = 2000;
+const MAX_CREDIT_CENT = MAX_CREDIT_YUAN * 100;
+
 const creditForm = reactive<{
   totalYuan: string;
   accountPeriodDays: number;
@@ -359,6 +365,10 @@ async function submitCredit(): Promise<void> {
   const totalCent = yuanToCent(creditForm.totalYuan);
   if (totalCent === null || totalCent <= 0) {
     ElMessage.warning('请填写有效的授信金额');
+    return;
+  }
+  if (totalCent > MAX_CREDIT_CENT) {
+    ElMessage.warning(`授信总额最高 ${MAX_CREDIT_YUAN} 元，请下调后再提交`);
     return;
   }
   if (!creditForm.validFrom || !creditForm.validTo

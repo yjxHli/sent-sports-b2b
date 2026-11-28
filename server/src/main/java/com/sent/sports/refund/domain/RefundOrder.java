@@ -76,10 +76,6 @@ public class RefundOrder {
         return status;
     }
 
-    public void setStatus(RefundStatus status) {
-        this.status = status;
-    }
-
     /** 状态迁移统一入口：非法迁移抛 STATE_CONFLICT(40901)。 */
     public void transit(RefundAction action) {
         this.status = RefundStateMachine.transit(this.status, action);

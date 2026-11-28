@@ -58,6 +58,10 @@ test('注册 Tab 可切回登录，演示账号仍可登录', async ({ page }: {
   await expect(page.getByTestId('auth-confirm-password')).toHaveCount(0);
   await page.getByTestId('auth-phone').fill('13800138000');
   await page.getByTestId('auth-password').fill('123456');
+  // 2026-11-28：登录页新增协议勾选（默认未勾选），E2E 必须先确认协议
+  if (await page.getByTestId('auth-agree').count()) {
+    await page.getByTestId('auth-agree').locator('.el-checkbox__inner').click();
+  }
   await page.getByTestId('auth-login-submit').click();
   await expect(page).toHaveURL(/\/(home|products)(\?|$)/, { timeout: 20_000 });
 });

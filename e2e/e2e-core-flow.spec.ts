@@ -225,6 +225,10 @@ test('01 核心链路：用户登录下单支付 → 仓管发货 → 用户确�
         (r) => r.url().includes('/api/auth/login') && r.request().method() === 'POST',
         { timeout: 15_000 },
       );
+      // 2026-11-28：登录页新增协议勾选（默认未勾选），E2E 必须先确认协议
+      if (await userPage.getByTestId('auth-agree').count()) {
+        await userPage.getByTestId('auth-agree').locator('.el-checkbox__inner').click();
+userPage}
       await userPage.getByRole('button', { name: '登录' }).click();
       const response = await loginResponse;
       const body: any = await response.json().catch(() => null);
@@ -344,7 +348,12 @@ test('01 核心链路：用户登录下单支付 → 仓管发货 → 用户确�
     // ------------------------------------------------------------------
     await test.step('支付渠道异步回调：订单流转为 WAIT_SHIP', async () => {
       const readStatus = async (): Promise<string> => {
+        // 2026-11-28 批次 1 / P0-02：订单详情已收口为「必须登录 + 归属校验」，匿名读取 401。
+        // 令牌从用户端 localStorage 现场取（token 变量在另一个 step 的块作用域里，取不到）。
+        const accessToken = await userPage.evaluate(() =>
+          Object.entries(localStorage).find(([k]) => k.includes('access_token'))?.[1] ?? null);
         const res = await request.get(join(API_URL, `/orders/${orderNo}`), {
+          headers: { Authorization: `Bearer ${String(accessToken).replace(/^"|"$/g, '')}` },
           failOnStatusCode: false,
         });
         const body: any = await res.json().catch(() => null);
@@ -384,6 +393,10 @@ test('01 核心链路：用户登录下单支付 → 仓管发货 → 用户确�
         (r) => r.url().includes('/api/auth/login') && r.request().method() === 'POST',
         { timeout: 15_000 },
       );
+      // 2026-11-28：登录页新增协议勾选（默认未勾选），E2E 必须先确认协议
+      if (await adminPage.getByTestId('auth-agree').count()) {
+        await adminPage.getByTestId('auth-agree').locator('.el-checkbox__inner').click();
+adminPage}
       await adminPage.getByRole('button', { name: '登录' }).click();
       const response = await loginResponse;
       const body: any = await response.json().catch(() => null);
@@ -503,6 +516,10 @@ test('02 定制图稿链路：UV 定制下单 → 驳回 → 重传 → 审图�
       await userPage.goto(join(USER_URL, '/login'));
       await userPage.getByPlaceholder('请输入11位手机号').fill(CFG.user.username);
       await userPage.getByPlaceholder('请输入密码').fill(CFG.user.password);
+      // 2026-11-28：登录页新增协议勾选（默认未勾选），E2E 必须先确认协议
+      if (await userPage.getByTestId('auth-agree').count()) {
+        await userPage.getByTestId('auth-agree').locator('.el-checkbox__inner').click();
+userPage}
       await userPage.getByRole('button', { name: '登录' }).click();
       await expect(userPage).toHaveURL(/\/(home|products)(\?|$)/, { timeout: 15_000 });
       userToken = await accessTokenOf(userPage);
@@ -582,6 +599,10 @@ test('02 定制图稿链路：UV 定制下单 → 驳回 → 重传 → 审图�
         (r) => r.url().includes('/api/auth/login') && r.request().method() === 'POST',
         { timeout: 15_000 },
       );
+      // 2026-11-28：登录页新增协议勾选（默认未勾选），E2E 必须先确认协议
+      if (await servicePage.getByTestId('auth-agree').count()) {
+        await servicePage.getByTestId('auth-agree').locator('.el-checkbox__inner').click();
+servicePage}
       await servicePage.getByRole('button', { name: '登录' }).click();
       const response = await loginResponse;
       const body: any = await response.json().catch(() => null);

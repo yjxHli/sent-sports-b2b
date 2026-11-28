@@ -15,6 +15,7 @@ import com.sent.sports.chat.service.SendSatisfactionCardUseCase;
 import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
 import com.sent.sports.support.BaseUnitTest;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
@@ -66,7 +67,7 @@ class RateSatisfactionUseCaseTest extends BaseUnitTest {
         when(messageRepository.findBySessionAndClientMsgId(11L,
                 SendSatisfactionCardUseCase.clientMsgId(11L))).thenReturn(Optional.of(card));
 
-        RateResult result = useCase.rate(11L, "SATISFIED");
+        RateResult result = useCase.rate(11L, "SATISFIED", 9002L);
 
         assertEquals("SATISFIED", result.score());
         assertEquals("CM-CARD", result.messageId());
@@ -83,7 +84,7 @@ class RateSatisfactionUseCaseTest extends BaseUnitTest {
         when(sessionRepository.findById(11L)).thenReturn(Optional.of(session(ChatSessionStatus.CLOSED)));
         when(satisfactionMapper.selectScoreBySession(11L)).thenReturn("NORMAL");
 
-        RateResult result = useCase.rate(11L, "SATISFIED");
+        RateResult result = useCase.rate(11L, "SATISFIED", 9002L);
 
         assertEquals("NORMAL", result.score(), "同一会话只能有一条有效评价，重复点击回原档位");
         verify(satisfactionMapper, never()).insert(anyLong(), anyLong(), anyLong(), anyString(), any());
@@ -93,7 +94,7 @@ class RateSatisfactionUseCaseTest extends BaseUnitTest {
     void closedSessionStillAcceptsRating() {
         stubOpenSession(ChatSessionStatus.CLOSED);
 
-        RateResult result = useCase.rate(11L, "UNSATISFIED");
+        RateResult result = useCase.rate(11L, "UNSATISFIED", 9002L);
 
         assertEquals("UNSATISFIED", result.score(),
                 "评价卡是结束会话时发出的，必须允许已结束会话打分");
@@ -101,9 +102,33 @@ class RateSatisfactionUseCaseTest extends BaseUnitTest {
 
     @Test
     void invalidScoreRejected() {
-        BizException ex = assertThrows(BizException.class, () -> useCase.rate(11L, "VERY_GOOD"));
+        BizException ex = assertThrows(BizException.class, () -> useCase.rate(11L, "VERY_GOOD", 9002L));
 
         assertEquals(ErrorCode.PARAM_INVALID, ex.getErrorCode());
         verify(satisfactionMapper, never()).insert(anyLong(), anyLong(), anyLong(), anyString(), any());
+    }
+
+    @Test
+    @DisplayName("P0-补漏 客户 A 给客户 B 的会话打分 → FORBIDDEN，且无任何副作用")
+    void otherCustomerCannotRate() {
+        when(sessionRepository.findById(11L)).thenReturn(Optional.of(session(ChatSessionStatus.CLOSED)));
+
+        BizException ex = assertThrows(BizException.class, () -> useCase.rate(11L, "SATISFIED", 9003L));
+
+        assertEquals(ErrorCode.FORBIDDEN, ex.getErrorCode());
+        verify(satisfactionMapper, never()).insert(anyLong(), anyLong(), anyLong(), anyString(), any());
+        verify(messageRepository, never()).updateContent(anyString(), anyString());
+        verify(notifier, never()).messagePublished(any(), any());
+    }
+
+    @Test
+    @DisplayName("内部/员工口径（viewer=null）仍可为任意会话打分，保持系统任务与客服兜底")
+    void internalViewerMayRate() {
+        stubOpenSession(ChatSessionStatus.ACTIVE);
+
+        RateResult result = useCase.rate(11L, "SATISFIED", null);
+
+        assertEquals("SATISFIED", result.score());
+        verify(satisfactionMapper).insert(11L, 9001L, 9002L, "SATISFIED", null);
     }
 }

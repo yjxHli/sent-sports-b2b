@@ -19,12 +19,17 @@ import java.util.List;
 public interface CartMapper {
 
     @Select("SELECT ci.id, ci.sku_id, ci.qty, ci.selected, ci.price_snapshot_cent, "
+            + "p.main_image, "
             + "COALESCE(p.title, s.sku_no, CONCAT('SKU ', ci.sku_id)) AS sku_name "
             + "FROM cart_item ci "
             + "LEFT JOIN sku s ON s.id = ci.sku_id "
             + "LEFT JOIN product p ON p.id = s.spu_id "
             + "WHERE ci.customer_id = #{customerId} ORDER BY ci.id DESC")
     List<CartRow> selectByCustomer(@Param("customerId") long customerId);
+
+    /** 加购回包里的商品主图（个人中心购物车卡要显示真实商品图）。 */
+    @Select("SELECT p.main_image FROM sku s LEFT JOIN product p ON p.id = s.spu_id WHERE s.id = #{skuId}")
+    String selectSkuMainImage(@Param("skuId") long skuId);
 
     @Select("SELECT retail_price_cent FROM sku WHERE id = #{skuId}")
     Long selectRetailPrice(@Param("skuId") long skuId);
@@ -52,7 +57,7 @@ public interface CartMapper {
     @Delete("DELETE FROM cart_item WHERE id = #{itemId} AND customer_id = #{customerId}")
     int deleteItem(@Param("customerId") long customerId, @Param("itemId") long itemId);
 
-    /** 购物车行（含联查得到的商品名）。 */
+    /** 购物车行（含联查得到的商品名与主图）。 */
     class CartRow {
         private Long id;
         private Long skuId;
@@ -60,6 +65,7 @@ public interface CartMapper {
         private Integer selected;
         private Long priceSnapshotCent;
         private String skuName;
+        private String mainImage;
 
         public Long getId() { return id; }
         public void setId(Long id) { this.id = id; }
@@ -73,5 +79,7 @@ public interface CartMapper {
         public void setPriceSnapshotCent(Long priceSnapshotCent) { this.priceSnapshotCent = priceSnapshotCent; }
         public String getSkuName() { return skuName; }
         public void setSkuName(String skuName) { this.skuName = skuName; }
+        public String getMainImage() { return mainImage; }
+        public void setMainImage(String mainImage) { this.mainImage = mainImage; }
     }
 }

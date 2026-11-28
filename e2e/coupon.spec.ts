@@ -26,6 +26,10 @@ async function loginUserUi(page: Page): Promise<void> {
   await page.goto(join(USER_URL, '/login'));
   await page.getByPlaceholder('请输入11位手机号').fill(CUSTOMER_PHONE);
   await page.getByPlaceholder('请输入密码').fill(CUSTOMER_PASSWORD);
+  // 2026-11-28：登录页新增协议勾选（默认未勾选），E2E 必须先确认协议
+  if (await page.getByTestId('auth-agree').count()) {
+    await page.getByTestId('auth-agree').locator('.el-checkbox__inner').click();
+  }
   await page.getByRole('button', { name: '登录' }).click();
   await expect(page).toHaveURL(/\/(home|products)(\?|$)/, { timeout: 20_000 });
 }
@@ -166,6 +170,10 @@ test('管理端优惠券管理页可按入口打开并展示券档位', async ({
   await page.goto(join(ADMIN_URL, '/login'));
   await page.getByPlaceholder('用户名').fill(ADMIN_NAME);
   await page.getByPlaceholder('密码').fill(ADMIN_PASSWORD);
+  // 2026-11-28：登录页新增协议勾选（默认未勾选），E2E 必须先确认协议
+  if (await page.getByTestId('auth-agree').count()) {
+    await page.getByTestId('auth-agree').locator('.el-checkbox__inner').click();
+  }
   await page.getByRole('button', { name: '登录' }).click();
   await expect(page).toHaveURL(/\/admin\/dashboard/, { timeout: 20_000 });
 
@@ -303,6 +311,10 @@ test('领券中心：券型/有效期口径一致，且会员日门禁生效', a
   await page.goto(join(USER_URL, '/login'));
   await page.getByPlaceholder('请输入11位手机号').fill(phone);
   await page.getByPlaceholder('请输入密码').fill(password);
+  // 2026-11-28：登录页新增协议勾选（默认未勾选），E2E 必须先确认协议
+  if (await page.getByTestId('auth-agree').count()) {
+    await page.getByTestId('auth-agree').locator('.el-checkbox__inner').click();
+  }
   await page.getByRole('button', { name: '登录' }).click();
   await expect(page).toHaveURL(/\/(home|products)(\?|$)/, { timeout: 20_000 });
 

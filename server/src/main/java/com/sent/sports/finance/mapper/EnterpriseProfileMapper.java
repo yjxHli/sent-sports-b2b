@@ -3,6 +3,7 @@ package com.sent.sports.finance.mapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.sent.sports.finance.dto.admin.AdminFinanceDtos;
+import com.sent.sports.finance.mapper.po.MyEnterpriseRow;
 import com.sent.sports.finance.service.EnterpriseProfileQueryService;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
@@ -84,6 +85,19 @@ public interface EnterpriseProfileMapper {
             + "FROM enterprise_profile p JOIN customer c ON c.id = p.customer_id "
             + "WHERE c.phone = #{phone} AND p.deleted = 0 LIMIT 1")
     EnterpriseProfileQueryService.AuditProgress selectAuditProgressByPhone(@Param("phone") String phone);
+
+    /**
+     * 用户端企业档案（当前登录客户）：软删档案查不到，返回 null 表示「还不是企业客户」。
+     * <p>只取本人可见字段，授信额度与账期在这里一次性带出，前端不必再调管理端接口。</p>
+     */
+    @Select("SELECT p.customer_id AS customerId, p.company_name AS companyName, "
+            + "p.license_no AS creditCode, p.license_url AS licenseFileId, p.status AS status, "
+            + "p.credit_limit_cent AS creditLimitCent, p.credit_used_cent AS creditUsedCent, "
+            + "p.payment_term_days AS paymentTermDays, p.credit_expire_at AS creditExpireAt, "
+            + "p.audit_remark AS auditRemark, p.audited_at AS auditedAt, "
+            + "p.created_at AS submittedAt "
+            + "FROM enterprise_profile p WHERE p.customer_id = #{customerId} AND p.deleted = 0")
+    MyEnterpriseRow selectMyProfile(@Param("customerId") long customerId);
 
     /** 管理端企业审核列表批量软删：只打标记，不动授信额度与状态。 */
     @Update({"<script>",

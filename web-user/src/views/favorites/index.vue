@@ -83,6 +83,7 @@ import { fmtCent, fmtDate } from '@sent/shared';
 import { unwrap } from '@/utils/http';
 import { favoriteApi, type FavoriteVO } from '@/api/favorite';
 import ProductThumb from '@/components/ProductThumb.vue';
+import { openInNewTab } from '@/utils/link';
 
 const router = useRouter();
 
@@ -123,7 +124,7 @@ function goDetail(f: FavoriteVO): void {
     ElMessage.warning('该商品已下架，无法查看详情');
     return;
   }
-  router.push(`/product/${f.productId}`);
+  openInNewTab(router, { path: `/product/${f.productId}` });
 }
 
 /** 取消收藏：先落本地再调接口，失败回滚（避免整页重载导致滚动位置丢失） */
@@ -297,7 +298,7 @@ onMounted(() => {
   margin-top: 6px;
   font-size: 18px;
   font-weight: 700;
-  color: var(--sent-accent-dark);
+  color: var(--sent-price);
 }
 .fav-card__price .sym {
   font-size: 12px;

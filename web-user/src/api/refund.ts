@@ -58,6 +58,4 @@ export const refundApi = {
   count: () => http.get<RefundCountVO>('/refunds/count'),
   detail: (refundNo: string) =>
     http.get<RefundDetailVO>(`/refunds/${refundNo}`),
-  appeal: (refundNo: string) =>
-    http.post<RefundVO>(`/refunds/${refundNo}/appeal`),
 };

@@ -18,6 +18,7 @@ import com.sent.sports.finance.mapper.po.InvoiceListItemPO;
 import com.sent.sports.finance.mapper.po.PaymentRecordPO;
 import com.sent.sports.finance.mapper.po.ReceivableListRow;
 import com.sent.sports.finance.service.FinanceQueryService;
+import com.sent.sports.finance.service.InvoiceNotificationService;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -41,18 +42,21 @@ public class FinanceQueryServiceImpl implements FinanceQueryService {
     private final PaymentRecordMapper paymentRecordMapper;
     private final EnterpriseProfileMapper enterpriseProfileMapper;
     private final WriteOffMapper writeOffMapper;
+    private final InvoiceNotificationService invoiceNotificationService;
 
     public FinanceQueryServiceImpl(InvoiceMapper invoiceMapper, ContractMapper contractMapper,
                                    ReceivableMapper receivableMapper,
                                    PaymentRecordMapper paymentRecordMapper,
                                    EnterpriseProfileMapper enterpriseProfileMapper,
-                                   WriteOffMapper writeOffMapper) {
+                                   WriteOffMapper writeOffMapper,
+                                   InvoiceNotificationService invoiceNotificationService) {
         this.invoiceMapper = invoiceMapper;
         this.contractMapper = contractMapper;
         this.receivableMapper = receivableMapper;
         this.paymentRecordMapper = paymentRecordMapper;
         this.enterpriseProfileMapper = enterpriseProfileMapper;
         this.writeOffMapper = writeOffMapper;
+        this.invoiceNotificationService = invoiceNotificationService;
     }
 
     @Override
@@ -183,6 +187,7 @@ public class FinanceQueryServiceImpl implements FinanceQueryService {
         String invoiceNo = "INV-" + invoiceId;
         String pdfUrl = resolvePdfUrl(invoiceId, cmd.pdfUrl());
         invoiceMapper.markIssued(invoiceId, invoiceNo, pdfUrl);
+        invoiceNotificationService.issued(invoiceId);
         return new AdminFinanceDtos.InvoiceIssueVO(invoiceId, invoiceNo, cmd.orderNo(),
                 "ISSUED", pdfUrl);
     }
@@ -195,6 +200,7 @@ public class FinanceQueryServiceImpl implements FinanceQueryService {
         if (rows == 0) {
             throw new BizException(ErrorCode.NOT_FOUND, "开票申请不存在，请先按订单号新建开票申请");
         }
+        invoiceNotificationService.issued(invoiceId);
         Map<String, Object> snapshot = new LinkedHashMap<>();
         snapshot.put("invoiceId", invoiceId);
         snapshot.put("invoiceNo", invoiceNo);

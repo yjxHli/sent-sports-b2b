@@ -6,8 +6,10 @@
  *   2) 订单详情重新设计（交易进度条 / 商品清单 / 右侧付款详情与订单信息）；
  *   3) 只有「已完成」的订单才可以申请开票。
  *
+ * 2026-11-28 口径变更：订单列表 / 订单详情里的商品入口一律新开标签页，原订单页不动。
+ *
  * 断言口径：
- *   1) 列表点商品名 → URL 变 /product/<productId>，且落到真实商品详情（不出现「商品不存在」）；
+ *   1) 列表点商品名 / 再买一次 → 新标签页落到 /product/<productId> 真实详情（不出现「商品不存在」）；
  *      —— 这是关键：旧代码用 skuId 拼 /product/，会 404 到「商品不存在或已下架」。
  *   2) 订单详情页有 .od-steps（4 步，已完成节点带勾）、.od-table 商品行、.od-col-side（付款详情/订单信息）；
  *   3) 已完成订单可点「申请开票」→ 弹窗填抬头 → 提交后展示「已提交/已开具」；
@@ -31,6 +33,7 @@ async function loginUser(page: Page): Promise<void> {
     (r) => r.url().includes('/api/auth/login') && r.request().method() === 'POST',
     { timeout: 20_000 },
   );
+  await page.getByTestId('auth-agree').locator('.el-checkbox__inner').click();
   await page.getByRole('button', { name: '登录' }).click();
   const body: any = await (await resp).json().catch(() => null);
   expect(body?.code, `用户端登录失败：${JSON.stringify(body)}`).toBe(0);
@@ -60,28 +63,57 @@ test('订单列表点商品名跳到商品详情，而不是跳到 skuId 的死�
   await expect(firstTitle, '订单卡片应展示商品名').toBeVisible({ timeout: 20_000 });
   const titleText = (await firstTitle.innerText()).trim();
 
+  const before = page.url();
+  const popup = page.waitForEvent('popup', { timeout: 20_000 });
   await firstTitle.click();
+  const detail = await popup;
 
-  await expect
-    .poll(() => pathOf(page), {
-      timeout: 20_000,
-      message: '点商品名应跳到 /product/<productId>',
-    })
-    .toMatch(/^\/product\/\d+$/);
+  await expect.poll(() => pathOf(detail), { timeout: 20_000 }).toMatch(/^\/product\/\d+$/);
 
   // 真正的商品详情：面包屑 + 详情主体，且没有「商品不存在」
-  await expect(page.locator('.detail-main'), '应渲染商品详情主体').toBeVisible({
+  await expect(detail.locator('.detail-main'), '应渲染商品详情主体').toBeVisible({
     timeout: 20_000,
   });
   await expect(
-    page.getByText('商品不存在或已下架'),
+    detail.getByText('商品不存在或已下架'),
     '用 skuId 拼 /product/ 会 404 成「商品不存在」，说明取的不是 productId',
   ).toHaveCount(0);
-  await expect(page.locator('.detail')).toContainText(titleText.slice(0, 6), {
+  await expect(detail.locator('.detail')).toContainText(titleText.slice(0, 6), {
     timeout: 20_000,
   });
+  expect(page.url(), '点商品名后订单列表原页不应导航走').toBe(before);
+  await detail.close();
+
+  // 「再买一次」同样落到商品详情，且同样新开标签
+  const again = page.locator('.order-card').first().getByRole('button', { name: '再买一次' }).first();
+  await expect(again, '已完成订单应有「再买一次」').toBeVisible({ timeout: 20_000 });
+  const againPopup = page.waitForEvent('popup', { timeout: 20_000 });
+  await again.click();
+  const againDetail = await againPopup;
+  await expect.poll(() => pathOf(againDetail), { timeout: 20_000 }).toMatch(/^\/product\/\d+$/);
+  expect(page.url(), '点再买一次后订单列表原页不应导航走').toBe(before);
+  await againDetail.close();
 
   expect(errors, `console errors: ${errors.join(' | ')}`).toHaveLength(0);
+});
+
+test('订单详情点商品名 → 新标签页进商品详情，原订单页不动', async ({ page }) => {
+  await loginUser(page);
+  await openCompletedOrders(page);
+  await page.locator('.order-card').first().getByRole('button', { name: '查看详情' }).click();
+  await expect.poll(() => pathOf(page), { timeout: 20_000 }).toMatch(/^\/order\/SO\d+/);
+
+  const title = page.locator('.od-goods__title').first();
+  await expect(title, '订单详情应有商品名入口').toBeVisible({ timeout: 20_000 });
+  const before = page.url();
+  const popup = page.waitForEvent('popup', { timeout: 20_000 });
+  await title.click();
+  const detail = await popup;
+  await expect.poll(() => pathOf(detail), { timeout: 20_000 }).toMatch(/^\/product\/\d+$/);
+  await expect(detail.locator('.detail-main')).toBeVisible({ timeout: 20_000 });
+  await expect(detail.getByText('商品不存在或已下架')).toHaveCount(0);
+  expect(page.url(), '原订单详情不应导航走').toBe(before);
+  await detail.close();
 });
 
 test('订单详情按淘宝版式展示，并提供申请开票', async ({ page }) => {

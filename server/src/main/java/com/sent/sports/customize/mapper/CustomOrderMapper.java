@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.sent.sports.customize.mapper.po.CustomOrderListItemPO;
 import com.sent.sports.customize.mapper.po.CustomOrderPO;
+import com.sent.sports.customize.mapper.po.CustomStatusCountRow;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -27,24 +28,49 @@ public interface CustomOrderMapper extends BaseMapper<CustomOrderPO> {
      * 由 MyBatis-Plus 分页拦截器按传入 {@link Page} 自动追加 LIMIT/OFFSET；总数另由 {@link #countMy} 统计。
      * <p>客户侧软删（V51 {@code customer_deleted_at}）的单不再出现：列表与 {@link #countMy} 必须同条件，
      * 否则分页 total 会比实际能翻到的多出一截。</p>
+     * <p>2026-11-28：{@code statusNames} 非空时按四类筛选桶收窄（{@code bucket=todo|review|producing|done}），
+     * 条件必须与 {@link #countMy} 完全同源，否则「共 N 单」与实际翻不到。</p>
      */
-    @Select("SELECT co.custom_no AS customOrderId, co.status, co.reject_count AS rejectCount, "
-            + "COALESCE(d.max_version, co.current_version) AS version, "
-            + "o.status AS orderStatus, co.review_deadline AS reviewDeadline "
-            + "FROM custom_order co "
-            + "LEFT JOIN order_item oi ON oi.id = co.order_item_id "
-            + "LEFT JOIN orders o ON o.id = oi.order_id "
-            + "LEFT JOIN (SELECT custom_order_id, MAX(version) AS max_version FROM custom_draft "
-            + "          GROUP BY custom_order_id) d ON d.custom_order_id = co.id "
-            + "WHERE co.customer_id = #{customerId} AND co.customer_deleted_at IS NULL "
-            + "ORDER BY co.created_at DESC")
+    @Select({"<script>",
+            "SELECT co.custom_no AS customOrderId, co.status, co.reject_count AS rejectCount, ",
+            "COALESCE(d.max_version, co.current_version) AS version, ",
+            "o.status AS orderStatus, co.review_deadline AS reviewDeadline ",
+            "FROM custom_order co ",
+            "LEFT JOIN order_item oi ON oi.id = co.order_item_id ",
+            "LEFT JOIN orders o ON o.id = oi.order_id ",
+            "LEFT JOIN (SELECT custom_order_id, MAX(version) AS max_version FROM custom_draft ",
+            "          GROUP BY custom_order_id) d ON d.custom_order_id = co.id ",
+            "WHERE co.customer_id = #{customerId} AND co.customer_deleted_at IS NULL ",
+            "<if test='statusNames != null'>",
+            "AND co.status IN ",
+            "<foreach collection='statusNames' item='st' open='(' separator=',' close=')'>#{st}</foreach> ",
+            "</if>",
+            "ORDER BY co.created_at DESC",
+            "</script>"})
     IPage<CustomOrderListItemPO> selectMyPage(Page<CustomOrderListItemPO> page,
-                                             @Param("customerId") long customerId);
+                                             @Param("customerId") long customerId,
+                                             @Param("statusNames") List<String> statusNames);
 
     /** 用户端「我的定制单」总数（收口阶段），过滤条件与 {@link #selectMyPage} 保持一致。 */
-    @Select("SELECT COUNT(*) FROM custom_order "
-            + "WHERE customer_id = #{customerId} AND customer_deleted_at IS NULL")
-    long countMy(@Param("customerId") long customerId);
+    @Select({"<script>",
+            "SELECT COUNT(*) FROM custom_order ",
+            "WHERE customer_id = #{customerId} AND customer_deleted_at IS NULL ",
+            "<if test='statusNames != null'>",
+            "AND status IN ",
+            "<foreach collection='statusNames' item='st' open='(' separator=',' close=')'>#{st}</foreach> ",
+            "</if>",
+            "</script>"})
+    long countMy(@Param("customerId") long customerId,
+                 @Param("statusNames") List<String> statusNames);
+
+    /**
+     * 「我的定制单」按状态分组计数（四类筛选卡的角标）。
+     * <p>客户侧软删的单不计入：与列表同条件，否则卡片说 3 单、点进去只有 1 单。</p>
+     */
+    @Select("SELECT status, COUNT(*) AS total FROM custom_order "
+            + "WHERE customer_id = #{customerId} AND customer_deleted_at IS NULL "
+            + "GROUP BY status")
+    List<CustomStatusCountRow> countMyByStatus(@Param("customerId") long customerId);
 
     /**
      * 批量删除前的一次性读：拿这批定制单号在当前客户名下、且客户未删过的单（V51）。

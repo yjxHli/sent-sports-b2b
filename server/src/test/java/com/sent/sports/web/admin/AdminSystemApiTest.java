@@ -198,17 +198,6 @@ class AdminSystemApiTest extends BaseApiTest {
     }
 
     @Test
-    @DisplayName("销售排行报表返回字段 200")
-    void salesRankReportReturns200() throws Exception {
-        when(systemService.salesRankReport()).thenReturn(new AdminSystemDtos.SalesRankReportVO(1, "门店A", 88000L));
-        mvc.perform(get("/api/admin/reports/sales-rank"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(0))
-                .andExpect(jsonPath("$.data.rank").value(1))
-                .andExpect(jsonPath("$.data.amountCent").value(88000));
-    }
-
-    @Test
     @DisplayName("库存预警报表返回字段 200")
     void stockWarningReportReturns200() throws Exception {
         when(systemService.stockWarningReport()).thenReturn(

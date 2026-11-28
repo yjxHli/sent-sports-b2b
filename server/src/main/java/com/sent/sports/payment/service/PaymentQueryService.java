@@ -1,24 +1,17 @@
 package com.sent.sports.payment.service;
 
-import com.sent.sports.common.web.PageQuery;
-import com.sent.sports.common.web.PageResult;
-import com.sent.sports.payment.dto.PaymentDtos;
 import com.sent.sports.payment.service.dto.PaymentSummaryDto;
 
 import java.util.Optional;
 
 /**
  * 支付查询门面（P4-19 接口契约，跨模块可用）。
- * <p>payment 读面（我的流水 / 支付结果轮询）尚未建设（属 P5 DB 范畴），当前由
- * {@code PaymentQueryServiceImpl} 桩实现占位；Phase 5 接入实体与仓储后替换。契约（接口签名）保持稳定。</p>
+ *
+ * <p>2026-11-28 P2 批次：删除 {@code listMyPayments} / {@code getPayResult} 两个桩方法——
+ * 它们恒返回空列表与 PENDING，接口在、数据假，比没有更危险（前端会以为「轮询中」）。
+ * 「我的流水」与「支付结果轮询」前端均无调用方，等真正需要时再接真库重开。</p>
  */
 public interface PaymentQueryService {
-
-    /** 我的支付流水：按当前用户 + 分页。 */
-    PageResult<PaymentDtos.PayResultVO> listMyPayments(PageQuery pageQuery);
-
-    /** 支付结果轮询：返回 PAID / FAILED / PENDING 三态。 */
-    PaymentDtos.PayResultVO getPayResult(String orderNo);
 
     /**
      * 某订单最近一笔支付摘要（订单详情「订单信息」用）。

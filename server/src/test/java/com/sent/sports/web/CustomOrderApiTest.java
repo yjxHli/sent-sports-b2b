@@ -21,6 +21,7 @@ import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -54,7 +55,7 @@ class CustomOrderApiTest extends BaseApiTest {
     void returnsMyOrders() throws Exception {
         CustomDtos.MyCustomOrderVO vo = new CustomDtos.MyCustomOrderVO(
                 "CO1", "WAIT_REVIEW", "PAID", 2, 0, 1_700_000_000_000L);
-        when(customQueryService.myOrders(eq(123L), any(PageQuery.class)))
+        when(customQueryService.myOrders(eq(123L), isNull(), any(PageQuery.class)))
                 .thenReturn(PageResult.of(List.of(vo), 1L, 1, 10));
 
         mvc.perform(myWith(new CurrentUser(CurrentUser.AUD_USER, 123L, "jti-1")))
@@ -66,6 +67,40 @@ class CustomOrderApiTest extends BaseApiTest {
                 .andExpect(jsonPath("$.data.list[0].orderStatus").value("PAID"))
                 .andExpect(jsonPath("$.data.list[0].version").value(2))
                 .andExpect(jsonPath("$.data.list[0].rejectCount").value(0));
+    }
+
+    @Test
+    @DisplayName("bucket 参数透传给用例（四类筛选由后端 SQL 收窄，不在前端过滤）")
+    void passesBucketToUseCase() throws Exception {
+        when(customQueryService.myOrders(eq(123L), eq("TODO"), any(PageQuery.class)))
+                .thenReturn(PageResult.of(List.of(), 0L, 1, 10));
+
+        mvc.perform(get("/api/custom-orders/my")
+                        .param("page", "1").param("size", "10").param("bucket", "TODO")
+                        .requestAttr(CurrentUser.ATTR, new CurrentUser(CurrentUser.AUD_USER, 123L, "jti-1")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.total").value(0));
+    }
+
+    @Test
+    @DisplayName("四类角标：/my/summary 返回四个桶与总数，未登录 40101")
+    void returnsSummary() throws Exception {
+        when(customQueryService.mySummary(123L))
+                .thenReturn(new CustomDtos.MyCustomSummaryVO(2, 1, 3, 4, 12));
+
+        mvc.perform(get("/api/custom-orders/my/summary")
+                        .requestAttr(CurrentUser.ATTR, new CurrentUser(CurrentUser.AUD_USER, 123L, "jti-1")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.todo").value(2))
+                .andExpect(jsonPath("$.data.review").value(1))
+                .andExpect(jsonPath("$.data.producing").value(3))
+                .andExpect(jsonPath("$.data.done").value(4))
+                .andExpect(jsonPath("$.data.total").value(12));
+
+        mvc.perform(get("/api/custom-orders/my/summary"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(40101));
     }
 
     @Test

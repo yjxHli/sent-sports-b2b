@@ -11,7 +11,6 @@
         </p>
         <div class="gb-hero__actions">
           <button class="gb-hero__btn" @click="goChat">💬 联系客户经理</button>
-          <router-link to="/chat" class="gb-hero__btn gb-hero__btn--ghost">定制专属方案</router-link>
         </div>
       </div>
       <ul class="gb-hero__stats">
@@ -58,7 +57,7 @@
     <section class="gb-block">
       <div class="gb-block__head">
         <h3>批量采购热销</h3>
-        <router-link to="/products" class="gb-block__more">查看全部商品 ›</router-link>
+        <router-link to="/products" target="_blank" rel="noopener" class="gb-block__more">查看全部商品 ›</router-link>
       </div>
       <div v-if="loading" class="list-hint">加载中…</div>
       <el-empty v-else-if="products.length === 0" description="暂无商品" />
@@ -68,22 +67,11 @@
           :key="p.productId"
           :product="p"
           shop="森特体育自营店"
-          @click="goDetail(p.productId)"
+          new-tab
         />
       </div>
     </section>
 
-    <!-- 底部 CTA -->
-    <section class="gb-cta">
-      <div class="gb-cta__text">
-        <b>需要报价单或批量选型建议？</b>
-        <p>把清单发给客户经理，2 小时内出阶梯报价与货期。</p>
-      </div>
-      <div class="gb-cta__actions">
-        <button class="gb-cta__btn" @click="goChat">在线咨询</button>
-        <router-link to="/products" class="gb-cta__btn gb-cta__btn--ghost">继续选购</router-link>
-      </div>
-    </section>
   </div>
 </template>
 
@@ -100,6 +88,7 @@ import { useRouter } from 'vue-router';
 import { unwrap } from '@/utils/http';
 import { productApi, type CatalogProductVO } from '@/api/product';
 import GoodsCard from '@/components/GoodsCard.vue';
+import { openInNewTab } from '@/utils/link';
 
 const router = useRouter();
 
@@ -136,11 +125,7 @@ async function loadProducts(): Promise<void> {
 }
 
 function goChat(): void {
-  router.push('/chat');
-}
-
-function goDetail(id: string): void {
-  router.push(`/product/${id}`);
+  openInNewTab(router, '/chat');
 }
 
 onMounted(loadProducts);
@@ -203,11 +188,6 @@ onMounted(loadProducts);
 }
 .gb-hero__btn:hover {
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
-}
-.gb-hero__btn--ghost {
-  background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.6);
-  color: #fff;
 }
 .gb-hero__stats {
   list-style: none;
@@ -365,52 +345,6 @@ onMounted(loadProducts);
   text-align: center;
   font-size: 13px;
   color: var(--sent-muted);
-}
-
-/* ---------- 底部 CTA ---------- */
-.gb-cta {
-  margin-top: 14px;
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  background: #fff;
-  border-radius: var(--sent-radius);
-  padding: 18px 22px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-  border-left: 4px solid var(--sent-accent);
-}
-.gb-cta__text b {
-  font-size: 15px;
-  color: var(--sent-text);
-}
-.gb-cta__text p {
-  margin: 4px 0 0;
-  font-size: 12px;
-  color: var(--sent-muted);
-}
-.gb-cta__actions {
-  margin-left: auto;
-  display: flex;
-  gap: 10px;
-  flex: none;
-}
-.gb-cta__btn {
-  border: none;
-  cursor: pointer;
-  background: var(--sent-primary);
-  color: #fff;
-  font-size: 13px;
-  font-weight: 600;
-  border-radius: 18px;
-  padding: 8px 22px;
-}
-.gb-cta__btn:hover {
-  background: var(--sent-primary-dark);
-}
-.gb-cta__btn--ghost {
-  background: #fff;
-  color: var(--sent-primary);
-  border: 1px solid var(--sent-primary);
 }
 
 @media (max-width: 1240px) {

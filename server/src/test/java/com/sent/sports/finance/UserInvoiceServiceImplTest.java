@@ -2,11 +2,20 @@ package com.sent.sports.finance;
 
 import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
+import com.sent.sports.common.web.PageQuery;
+import com.sent.sports.common.web.PageResult;
 import com.sent.sports.finance.dto.UserInvoiceDtos;
 import com.sent.sports.finance.mapper.InvoiceMapper;
 import com.sent.sports.finance.mapper.po.InvoiceApplyRow;
+import com.sent.sports.finance.mapper.po.InvoiceNotifyRow;
 import com.sent.sports.finance.mapper.po.MyOrderStatePO;
+import com.sent.sports.finance.mapper.po.PendingInvoiceRow;
+import com.sent.sports.finance.mapper.po.UserInvoiceRow;
+import com.sent.sports.finance.service.InvoiceNotificationService;
+import com.sent.sports.finance.service.InvoicePdfService;
+import com.sent.sports.finance.service.dto.InvoicePdfFile;
 import com.sent.sports.finance.service.impl.UserInvoiceServiceImpl;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -16,10 +25,13 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -51,6 +63,10 @@ class UserInvoiceServiceImplTest {
 
     @Mock
     private InvoiceMapper invoiceMapper;
+    @Mock
+    private InvoiceNotificationService invoiceNotificationService;
+    @Mock
+    private InvoicePdfService invoicePdfService;
 
     @InjectMocks
     private UserInvoiceServiceImpl service;
@@ -116,6 +132,8 @@ class UserInvoiceServiceImplTest {
         assertEquals("订单完成后才能申请开票", ex.resolvedMessage());
         verify(invoiceMapper, never()).insertUserApplication(anyString(), anyLong(),
                 anyString(), any(), anyString(), any());
+        verify(invoiceNotificationService).applicationRejected(
+                CUSTOMER, ORDER_NO, "订单完成后才能申请开票");
     }
 
     @Test
@@ -247,5 +265,145 @@ class UserInvoiceServiceImplTest {
         BizException ex = assertThrows(BizException.class, () -> service.latest(CUSTOMER, ORDER_NO));
 
         assertEquals(ErrorCode.NOT_FOUND, ex.getErrorCode());
+    }
+
+    // ------------------------------------------------------------------
+    // 我的发票（个人中心）：页签 / 关键字 / 未申请 / PDF 归属
+    // ------------------------------------------------------------------
+
+    private static UserInvoiceRow invoiceRow() {
+        UserInvoiceRow row = new UserInvoiceRow();
+        row.setInvoiceId(31L);
+        row.setOrderNo(ORDER_NO);
+        row.setInvoiceNo("INV20261115000001");
+        row.setStatus("ISSUED");
+        row.setTitle("森特体育用品有限公司");
+        row.setType("NORMAL");
+        row.setAmountCent(128_800L);
+        row.setCreatedAt(LocalDateTime.of(2026, 11, 15, 10, 30, 0));
+        row.setIssuedAt(LocalDateTime.of(2026, 11, 16, 9, 0, 0));
+        return row;
+    }
+
+    private static PageQuery firstPage() {
+        PageQuery page = new PageQuery();
+        page.setPage(1);
+        page.setSize(10);
+        return page;
+    }
+
+    @Test
+    @DisplayName("我的发票：页签与关键字原样下推 SQL，列表与 count 用归一后的同一条件")
+    void minePassesTabAndKeywordToMapper() {
+        Page<UserInvoiceRow> paged = new Page<>(1, 10);
+        paged.setRecords(List.of(invoiceRow()));
+        when(invoiceMapper.selectMyInvoicePage(any(), eq(CUSTOMER), eq("OPEN"), eq("SO2026")))
+                .thenReturn(paged);
+        when(invoiceMapper.countMyInvoices(CUSTOMER, "OPEN", "SO2026")).thenReturn(3L);
+
+        PageResult<UserInvoiceDtos.InvoiceRowVO> result =
+                service.mine(CUSTOMER, " open ", " SO2026 ", firstPage());
+
+        assertEquals(3L, result.getTotal());
+        assertEquals(1, result.getList().size());
+        UserInvoiceDtos.InvoiceRowVO vo = result.getList().get(0);
+        assertEquals("31", vo.invoiceId());
+        assertEquals(ORDER_NO, vo.orderNo());
+        assertEquals("ISSUED", vo.status());
+        assertEquals(128_800L, vo.amountCent());
+        assertEquals("1288.00", vo.amountYuan());
+        assertTrue(vo.issuedAtMillis() > 0L);
+    }
+
+    @Test
+    @DisplayName("我的发票：不认识的页签直接 40001，不静默返回全量")
+    void mineRejectsUnknownTab() {
+        BizException ex = assertThrows(BizException.class,
+                () -> service.mine(CUSTOMER, "PAID", null, firstPage()));
+
+        assertEquals(ErrorCode.PARAM_INVALID, ex.getErrorCode());
+        verify(invoiceMapper, never()).selectMyInvoicePage(any(), anyLong(), any(), any());
+    }
+
+    @Test
+    @DisplayName("我的发票：未传页签表示全部，关键字空白归一为 null")
+    void mineWithoutTabQueriesAll() {
+        Page<UserInvoiceRow> paged = new Page<>(1, 10);
+        paged.setRecords(List.of());
+        when(invoiceMapper.selectMyInvoicePage(any(), eq(CUSTOMER), eq(null), eq(null)))
+                .thenReturn(paged);
+        when(invoiceMapper.countMyInvoices(CUSTOMER, null, null)).thenReturn(0L);
+
+        PageResult<UserInvoiceDtos.InvoiceRowVO> result = service.mine(CUSTOMER, null, "  ", firstPage());
+
+        assertEquals(0L, result.getTotal());
+        assertTrue(result.getList().isEmpty());
+    }
+
+    @Test
+    @DisplayName("未申请开票的订单：映射订单号、首个商品与完成时间")
+    void pendingMapsRows() {
+        PendingInvoiceRow row = new PendingInvoiceRow();
+        row.setOrderNo(ORDER_NO);
+        row.setAmountCent(25_800L);
+        row.setFirstTitle("UV 定制篮球");
+        row.setCompletedAt(LocalDateTime.of(2026, 11, 20, 18, 0, 0));
+        Page<PendingInvoiceRow> paged = new Page<>(1, 10);
+        paged.setRecords(List.of(row));
+        when(invoiceMapper.selectPendingInvoicePage(any(), eq(CUSTOMER))).thenReturn(paged);
+        when(invoiceMapper.countPendingInvoices(CUSTOMER)).thenReturn(1L);
+
+        PageResult<UserInvoiceDtos.PendingInvoiceVO> result = service.pending(CUSTOMER, firstPage());
+
+        assertEquals(1L, result.getTotal());
+        UserInvoiceDtos.PendingInvoiceVO vo = result.getList().get(0);
+        assertEquals(ORDER_NO, vo.orderNo());
+        assertEquals("258.00", vo.amountYuan());
+        assertEquals("UV 定制篮球", vo.firstTitle());
+        assertTrue(vo.completedAtMillis() > 0L);
+    }
+
+    @Test
+    @DisplayName("发票 PDF：他人发票按 404 处理，连渲染都不触发")
+    void pdfRejectsForeignInvoice() {
+        InvoiceNotifyRow row = new InvoiceNotifyRow();
+        row.setInvoiceId(31L);
+        row.setCustomerId(9003L);
+        row.setStatus("ISSUED");
+        when(invoiceMapper.selectNotifyRow(31L)).thenReturn(row);
+
+        BizException ex = assertThrows(BizException.class, () -> service.pdf(CUSTOMER, 31L));
+
+        assertEquals(ErrorCode.NOT_FOUND, ex.getErrorCode());
+        verify(invoicePdfService, never()).render(anyLong());
+    }
+
+    @Test
+    @DisplayName("发票 PDF：未开具不出票（申请中 / 驳回 / 异常都拿不到票面）")
+    void pdfRejectsNotIssuedInvoice() {
+        InvoiceNotifyRow row = new InvoiceNotifyRow();
+        row.setInvoiceId(31L);
+        row.setCustomerId(CUSTOMER);
+        row.setStatus("APPLIED");
+        when(invoiceMapper.selectNotifyRow(31L)).thenReturn(row);
+
+        BizException ex = assertThrows(BizException.class, () -> service.pdf(CUSTOMER, 31L));
+
+        assertEquals(ErrorCode.STATE_CONFLICT, ex.getErrorCode());
+        verify(invoicePdfService, never()).render(anyLong());
+    }
+
+    @Test
+    @DisplayName("发票 PDF：本人已开具的票交给 PDF 服务渲染")
+    void pdfRendersOwnIssuedInvoice() {
+        InvoiceNotifyRow row = new InvoiceNotifyRow();
+        row.setInvoiceId(31L);
+        row.setCustomerId(CUSTOMER);
+        row.setStatus("ISSUED");
+        when(invoiceMapper.selectNotifyRow(31L)).thenReturn(row);
+        InvoicePdfFile file = new InvoicePdfFile(new byte[]{1, 2, 3}, "发票-31.pdf");
+        when(invoicePdfService.render(31L)).thenReturn(file);
+
+        assertSame(file, service.pdf(CUSTOMER, 31L));
     }
 }

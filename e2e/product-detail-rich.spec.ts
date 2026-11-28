@@ -78,6 +78,10 @@ async function loginAdminUi(page: Page): Promise<void> {
     (r) => r.url().includes('/api/auth/login') && r.request().method() === 'POST',
     { timeout: 20_000 },
   );
+  // 2026-11-28：登录页新增协议勾选（默认未勾选），E2E 必须先确认协议
+  if (await page.getByTestId('auth-agree').count()) {
+    await page.getByTestId('auth-agree').locator('.el-checkbox__inner').click();
+  }
   await page.getByRole('button', { name: '登录' }).click();
   expect((await (await resp).json().catch(() => null))?.code).toBe(0);
   await expect(page).toHaveURL(/\/admin\/dashboard/, { timeout: 20_000 });
@@ -87,6 +91,10 @@ async function loginUserUi(page: Page): Promise<void> {
   await page.goto(join(USER_URL, '/login'));
   await page.getByPlaceholder('请输入11位手机号').fill(USER_NAME);
   await page.getByPlaceholder('请输入密码').fill(USER_PASSWORD);
+  // 2026-11-28：登录页新增协议勾选（默认未勾选），E2E 必须先确认协议
+  if (await page.getByTestId('auth-agree').count()) {
+    await page.getByTestId('auth-agree').locator('.el-checkbox__inner').click();
+  }
   await page.getByRole('button', { name: '登录' }).click();
   await expect(page).toHaveURL(/\/(home|products)/, { timeout: 20_000 });
 }

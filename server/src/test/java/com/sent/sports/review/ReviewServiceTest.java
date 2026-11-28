@@ -8,6 +8,8 @@ import com.sent.sports.common.web.PageQuery;
 import com.sent.sports.order.service.OrderQueryService;
 import com.sent.sports.review.dto.ReviewDtos;
 import com.sent.sports.review.mapper.ReviewMapper;
+import com.sent.sports.review.mapper.po.MyReviewRow;
+import com.sent.sports.review.mapper.po.MyReviewSummaryRow;
 import com.sent.sports.review.mapper.po.ProductReviewPO;
 import com.sent.sports.review.mapper.po.ReviewRow;
 import com.sent.sports.review.mapper.po.ReviewSummaryRow;
@@ -351,5 +353,84 @@ class ReviewServiceTest extends BaseUnitTest {
         assertFalse(service.eligibility(0L, PRODUCT_ID).eligible(), "未登录不能 401，否则详情页打不开");
         assertFalse(service.eligibility(CUSTOMER_ID, 0L).eligible());
         verifyNoInteractions(reviewMapper);
+    }
+
+    // ---------- 评价中心（2026-11-28）：已写评论 / 浏览数 / 获赞数 ----------
+
+    private MyReviewRow myRow(long id, int rating, int viewCount, int likeCount, String status) {
+        MyReviewRow r = new MyReviewRow();
+        r.setId(id);
+        r.setProductId(PRODUCT_ID);
+        r.setProductTitle("森特训练短袖");
+        r.setMainImage("f-main-1");
+        r.setRating(rating);
+        r.setContent("面料透气");
+        r.setImagesJson("[]");
+        r.setIsAnonymous(0);
+        r.setStatus(status);
+        r.setViewCount(viewCount);
+        r.setLikeCount(likeCount);
+        r.setCreatedAt(LocalDateTime.of(2026, 11, 28, 9, 30));
+        return r;
+    }
+
+    @Test
+    @DisplayName("评价中心：未登录抛 UNAUTHENTICATED，且不查库")
+    void myReviewsRejectsAnonymous() {
+        BizException ex = assertThrows(BizException.class,
+                () -> service.myReviews(0L, new PageQuery(), null));
+        assertEquals(ErrorCode.UNAUTHENTICATED, ex.getErrorCode());
+        verifyNoInteractions(reviewMapper);
+    }
+
+    @Test
+    @DisplayName("评价中心：列表带回商品标题/主图/浏览数/获赞数，隐藏评价也出行并标记 status")
+    void myReviewsReturnsRowsAndMetrics() {
+        Page<MyReviewRow> dbPage = new Page<>(1, 10);
+        dbPage.setRecords(List.of(myRow(3L, 5, 128, 12, "NORMAL"),
+                myRow(2L, 1, 9, 0, "HIDDEN")));
+        dbPage.setTotal(2L);
+        when(reviewMapper.selectMinePage(any(), anyLong(), any())).thenReturn(dbPage);
+
+        MyReviewSummaryRow summary = new MyReviewSummaryRow();
+        summary.setReviewCount(2L);
+        summary.setViewCount(137L);
+        summary.setLikeCount(12L);
+        when(reviewMapper.selectMineSummary(CUSTOMER_ID)).thenReturn(summary);
+
+        ReviewDtos.MyReviewPageVO page = service.myReviews(CUSTOMER_ID, new PageQuery(), "LATEST");
+
+        assertEquals(2, page.list().size());
+        ReviewDtos.MyReviewVO first = page.list().get(0);
+        assertEquals("3", first.reviewId());
+        assertEquals(String.valueOf(PRODUCT_ID), first.productId());
+        assertEquals("森特训练短袖", first.productTitle());
+        assertEquals("f-main-1", first.mainImage());
+        assertEquals(128L, first.viewCount());
+        assertEquals(12L, first.likeCount());
+        assertEquals("NORMAL", first.status());
+        assertEquals("HIDDEN", page.list().get(1).status(), "被隐藏的评价仍属于「我写过的」，不能从列表消失");
+
+        assertEquals(2L, page.summary().reviewCount());
+        assertEquals(137L, page.summary().viewCount());
+        assertEquals(12L, page.summary().likeCount());
+    }
+
+    @Test
+    @DisplayName("评价中心空态：没写过评价时三项统计都是 0（不是 null/NaN）")
+    void myReviewsEmptySummaryIsZero() {
+        Page<MyReviewRow> empty = new Page<>(1, 10);
+        empty.setRecords(List.of());
+        empty.setTotal(0L);
+        when(reviewMapper.selectMinePage(any(), anyLong(), any())).thenReturn(empty);
+        when(reviewMapper.selectMineSummary(CUSTOMER_ID)).thenReturn(null);
+
+        ReviewDtos.MyReviewPageVO page = service.myReviews(CUSTOMER_ID, new PageQuery(), "LATEST");
+
+        assertEquals(0, page.list().size());
+        assertEquals(0L, page.summary().reviewCount());
+        assertEquals(0L, page.summary().viewCount());
+        assertEquals(0L, page.summary().likeCount());
+        assertEquals(0L, page.pages());
     }
 }

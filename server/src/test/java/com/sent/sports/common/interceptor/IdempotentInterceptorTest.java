@@ -5,6 +5,7 @@ import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
 import com.sent.sports.common.idempotent.IdempotencyStore;
 import com.sent.sports.common.web.CurrentUser;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -197,5 +198,19 @@ class IdempotentInterceptorTest {
 
         assertThat(store.released).isFalse();
         assertThat(store.completed).isFalse();
+    }
+
+    @Test
+    @DisplayName("没有响应快照（业务失败被全局异常处理器接住时 ex=null）→ 释放键，允许改后重试")
+    void noSnapshotReleasesKey() throws Exception {
+        FakeStore store = new FakeStore();
+        IdempotentInterceptor interceptor = new IdempotentInterceptor(store);
+        MockHttpServletRequest req = request("/api/orders", "abc12345");
+        interceptor.preHandle(req, new MockHttpServletResponse(), handlerOf("createOrder"));
+
+        interceptor.afterCompletion(req, new MockHttpServletResponse(), handlerOf("createOrder"), null);
+
+        assertThat(store.completed).as("没有结果就不能标 DONE").isFalse();
+        assertThat(store.released).as("否则一次参数错误会卡满整个 TTL").isTrue();
     }
 }

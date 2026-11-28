@@ -1,5 +1,6 @@
 package com.sent.sports.system.controller.admin;
 
+import com.sent.sports.common.anno.RequirePerm;
 import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
 import com.sent.sports.common.web.CurrentUser;
@@ -27,6 +28,7 @@ public class AdminMeController {
     }
 
     @GetMapping
+    @RequirePerm("system:me:view")
     public R<AdminMeVO> me(@RequestAttribute(value = CurrentUser.ATTR, required = false) CurrentUser user) {
         if (user == null || !user.isAdmin()) {
             throw new BizException(ErrorCode.UNAUTHENTICATED);

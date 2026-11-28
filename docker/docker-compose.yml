@@ -1,6 +1,7 @@
 # 森特体育用品管理系统 · 容器编排骨架
 # 启动：docker compose up -d
-# 说明：mysql/redis 为基础设施；server 为后端；nginx 反向代理并托管两个前端静态产物。
+# 说明：mysql 为基础设施；server 为后端；nginx 反向代理并托管两个前端静态产物。
+# 2026-11-28：移除 redis 容器——代码里没有任何 Redis 调用，只留 pom 依赖与配置属于运维幻象。
 services:
   mysql:
     image: mysql:8.0
@@ -21,20 +22,6 @@ services:
       timeout: 5s
       retries: 10
 
-  redis:
-    image: redis:7
-    container_name: sent-redis
-    command: ["redis-server", "--appendonly", "yes"]
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis-data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-
   server:
     build:
       # 注意：context 相对本文件所在目录（docker/），Dockerfile 在仓库根 server/ 下
@@ -46,15 +33,12 @@ services:
       APP_ENV: prod
       DB_HOST: mysql
       DB_PASSWORD: ${DB_PASSWORD:?请在 docker/.env 或宿主环境设置 DB_PASSWORD}
-      REDIS_HOST: redis
       # 8080 在本机会被 Steam 的 steamwebhelper.exe 抢占，统一用 8088
       SERVER_PORT: 8088
     ports:
       - "8088:8088"
     depends_on:
       mysql:
-        condition: service_healthy
-      redis:
         condition: service_healthy
 
   nginx:
@@ -71,4 +55,3 @@ services:
 
 volumes:
   mysql-data:
-  redis-data:

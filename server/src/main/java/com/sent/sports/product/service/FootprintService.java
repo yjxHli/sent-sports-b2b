@@ -26,4 +26,11 @@ public interface FootprintService {
 
     /** 足迹总数（个人中心三联卡）。 */
     long count(long customerId);
+
+    /**
+     * 清理过期足迹（2026-11-28 用户要求：只保留一个月）。
+     * <p>由定时任务每轮调用；返回实际删除行数，便于日志与「删了才打日志」。
+     * 读接口也会按同一时间窗过滤，所以即使任务还没跑到，页面也不会露出过期记录。</p>
+     */
+    int cleanupExpired();
 }

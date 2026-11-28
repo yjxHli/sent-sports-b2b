@@ -5,10 +5,13 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.sent.sports.finance.mapper.po.InvoiceApplyRow;
 import com.sent.sports.finance.mapper.po.InvoiceListItemPO;
+import com.sent.sports.finance.mapper.po.InvoiceNotifyRow;
 import com.sent.sports.finance.mapper.po.InvoicePdfHeaderPO;
 import com.sent.sports.finance.mapper.po.InvoicePdfItemPO;
 import com.sent.sports.finance.mapper.po.InvoiceRequestPO;
 import com.sent.sports.finance.mapper.po.MyOrderStatePO;
+import com.sent.sports.finance.mapper.po.PendingInvoiceRow;
+import com.sent.sports.finance.mapper.po.UserInvoiceRow;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -90,6 +93,31 @@ public interface InvoiceMapper extends BaseMapper<InvoiceRequestPO> {
                    @Param("pdfUrl") String pdfUrl);
 
     // ------------------------------------------------------------------
+    // 开票站内信 / 管理端异常处置
+    // ------------------------------------------------------------------
+
+    /**
+     * 站内信取数：发票本体 + 订单号 + 票面金额，一次联查完成，
+     * 不引入对 order / customer 模块的 Java 依赖。
+     */
+    @Select("SELECT ir.id AS invoiceId, ir.customer_id AS customerId, ir.status AS status, "
+            + "ir.invoice_no AS invoiceNo, o.order_no AS orderNo, "
+            + "COALESCE(o.payable_cent, 0) AS amountCent "
+            + "FROM invoice_request ir LEFT JOIN orders o ON o.id = ir.order_id "
+            + "WHERE ir.id = #{invoiceId}")
+    InvoiceNotifyRow selectNotifyRow(@Param("invoiceId") long invoiceId);
+
+    /** 驳回：仅待开 / 已开可驳回，重复操作影响 0 行，业务侧据此拒绝重复发信。 */
+    @Update("UPDATE invoice_request SET status = 'REJECTED' "
+            + "WHERE id = #{invoiceId} AND status IN ('APPLIED', 'ISSUED')")
+    int markRejected(@Param("invoiceId") long invoiceId);
+
+    /** 标记异常（开票失败 / 票面信息有误）：已是异常的不重复写入。 */
+    @Update("UPDATE invoice_request SET status = 'EXCEPTION' "
+            + "WHERE id = #{invoiceId} AND status <> 'EXCEPTION'")
+    int markException(@Param("invoiceId") long invoiceId);
+
+    // ------------------------------------------------------------------
     // 用户端：我的订单申请开票（订单完成后可开）
     // ------------------------------------------------------------------
 
@@ -135,6 +163,67 @@ public interface InvoiceMapper extends BaseMapper<InvoiceRequestPO> {
                               @Param("taxNo") String taxNo,
                               @Param("type") String type,
                               @Param("email") String email);
+
+    // ------------------------------------------------------------------
+    // 用户端：我的发票（已开具 / 申请中 / 未申请）
+    // ------------------------------------------------------------------
+
+    /**
+     * 「我的发票」页签条件：{@code ISSUED} 只取已开具，{@code OPEN} 把待开 / 驳回 / 异常
+     * 归到「申请中」——这三种都在等财务处理或需要重新申请，和已开具分开看才有意义。
+     * <p>列表与 count 必须共用本片段，否则「共 N 条」会与行数错位。</p>
+     */
+    String MY_INVOICE_WHERE = " AND ir.customer_id = #{customerId} AND ir.deleted = 0 "
+            + "AND (#{status} IS NULL OR #{status} = '' "
+            + "OR (#{status} = 'ISSUED' AND ir.status = 'ISSUED') "
+            + "OR (#{status} = 'OPEN' AND ir.status IN ('APPLIED', 'REJECTED', 'EXCEPTION'))) "
+            + "AND (#{keyword} IS NULL OR #{keyword} = '' "
+            + "OR o.order_no LIKE CONCAT('%', #{keyword}, '%') "
+            + "OR ir.invoice_no LIKE CONCAT('%', #{keyword}, '%')) ";
+
+    /**
+     * 我的发票分页：订单号与票面金额左联 {@code orders}；只按 {@code customer_id} 收口，
+     * 不接受前端传客户号，越权查不到别人的票。
+     */
+    @Select("SELECT ir.id AS invoiceId, o.order_no AS orderNo, ir.invoice_no AS invoiceNo, "
+            + "ir.status AS status, ir.title AS title, ir.type AS type, ir.invoice_url AS pdfUrl, "
+            + "COALESCE(o.payable_cent, 0) AS amountCent, ir.created_at AS createdAt, "
+            + "ir.issued_at AS issuedAt "
+            + "FROM invoice_request ir LEFT JOIN orders o ON o.id = ir.order_id "
+            + "WHERE 1 = 1" + MY_INVOICE_WHERE
+            + " ORDER BY ir.id DESC")
+    IPage<UserInvoiceRow> selectMyInvoicePage(Page<UserInvoiceRow> page,
+                                              @Param("customerId") long customerId,
+                                              @Param("status") String status,
+                                              @Param("keyword") String keyword);
+
+    @Select("SELECT COUNT(*) FROM invoice_request ir LEFT JOIN orders o ON o.id = ir.order_id "
+            + "WHERE 1 = 1" + MY_INVOICE_WHERE)
+    long countMyInvoices(@Param("customerId") long customerId,
+                         @Param("status") String status,
+                         @Param("keyword") String keyword);
+
+    /**
+     * 未申请开票的订单：可开票口径与申请接口一致（已完成 + PAID / PART_REFUNDED），
+     * {@code NOT EXISTS} 排除已有待开 / 已开申请的订单。客户软删的订单不再出现在发票页。
+     */
+    String PENDING_INVOICE_WHERE = " WHERE o.customer_id = #{customerId} AND o.status = 'COMPLETED' "
+            + "AND o.pay_status IN ('PAID', 'PART_REFUNDED') AND o.customer_deleted_at IS NULL "
+            + "AND NOT EXISTS (SELECT 1 FROM invoice_request ir WHERE ir.order_id = o.id "
+            + "AND ir.status IN ('APPLIED', 'ISSUED')) ";
+
+    @Select("SELECT o.order_no AS orderNo, COALESCE(o.payable_cent, 0) AS amountCent, "
+            + "o.completed_at AS completedAt, "
+            + "(SELECT COALESCE(oi.spu_title_snap, p.title) FROM order_item oi "
+            + "LEFT JOIN sku s ON s.id = oi.sku_id LEFT JOIN product p ON p.id = s.spu_id "
+            + "WHERE oi.order_id = o.id ORDER BY oi.id LIMIT 1) AS firstTitle "
+            + "FROM orders o" + PENDING_INVOICE_WHERE
+            + " ORDER BY o.completed_at DESC, o.id DESC")
+    IPage<PendingInvoiceRow> selectPendingInvoicePage(Page<PendingInvoiceRow> page,
+                                                      @Param("customerId") long customerId);
+
+    @Select("SELECT COUNT(*) FROM orders o" + PENDING_INVOICE_WHERE)
+    long countPendingInvoices(@Param("customerId") long customerId);
 
     // ------------------------------------------------------------------
     // 发票 PDF 票面数据（一次性取票头，再一次取明细）

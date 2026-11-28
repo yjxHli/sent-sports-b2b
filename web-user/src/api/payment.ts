@@ -1,6 +1,6 @@
 /**
  * 支付 API（用户端，对齐 PaymentController P4-19）。
- * 发起支付需幂等键；payResult 用于轮询支付结果。
+ * 发起支付需幂等键。
  *
  * 本地演示环境没有真实第三方渠道，因此发起支付后由 scheduleMockPayCallback 延迟触发
  * POST /payment/mock/callback，等价复现「渠道服务器异步通知」把订单推进到 WAIT_SHIP。
@@ -10,7 +10,6 @@
  * 后端会把验签失败的回调直接拦成 40001。
  */
 import { http } from '@/utils/http';
-import type { PageQuery, PageResult } from '@sent/shared';
 import type { SentRequestConfig } from '@sent/shared/http';
 
 export interface PayResultVO {
@@ -35,10 +34,6 @@ export const paymentApi = {
     channel: string;
     idemKey: string;
   }, config?: SentRequestConfig) => http.post<PayResultVO>('/payments', cmd, config),
-  payResult: (orderNo: string) =>
-    http.get<PayResultVO>(`/orders/${orderNo}/pay-result`),
-  list: (query: PageQuery) =>
-    http.get<PageResult<PayResultVO>>('/payments', query),
   /** 模拟渠道回调：真实环境由支付渠道服务器调用，本地演示由前端延迟 1~2s 复现该时序 */
   mockCallback: (notify: ChannelNotify) =>
     http.post<PayResultVO>('/payment/mock/callback', notify),

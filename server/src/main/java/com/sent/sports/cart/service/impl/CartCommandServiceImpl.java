@@ -5,6 +5,7 @@ import com.sent.sports.cart.mapper.CartMapper;
 import com.sent.sports.cart.service.CartCommandService;
 import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
+import com.sent.sports.common.util.MoneyUtil;
 import com.sent.sports.common.web.CurrentUser;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.stereotype.Service;
@@ -39,7 +40,9 @@ public class CartCommandServiceImpl implements CartCommandService {
         cartMapper.upsertItem(customerId, cmd.skuId(), cmd.qty(), price);
         Long itemId = cartMapper.selectItemId(customerId, cmd.skuId());
         String name = cartMapper.selectSkuName(cmd.skuId());
-        return new CartDtos.CartItemVO(itemId, cmd.skuId(), name, cmd.qty(), true);
+        String image = cartMapper.selectSkuMainImage(cmd.skuId());
+        return new CartDtos.CartItemVO(itemId, cmd.skuId(), name, cmd.qty(), true,
+                image, price, MoneyUtil.toYuan(price));
     }
 
     @Override
@@ -64,10 +67,22 @@ public class CartCommandServiceImpl implements CartCommandService {
             return List.of();
         }
         return cartMapper.selectByCustomer(customerId).stream()
-                .map(r -> new CartDtos.CartItemVO(r.getId(), r.getSkuId(), r.getSkuName(),
-                        r.getQty() == null ? 0 : r.getQty(),
-                        r.getSelected() != null && r.getSelected() == 1))
+                .map(this::toItemVo)
                 .toList();
+    }
+
+    /**
+     * 行 → 视图：价格取 {@code price_snapshot_cent}（加购时的零售价快照）。
+     * 快照为空（历史脏数据）时价格回落 null，前端显示占位而不是 ¥0.00。
+     */
+    private CartDtos.CartItemVO toItemVo(CartMapper.CartRow r) {
+        Long price = r.getPriceSnapshotCent();
+        return new CartDtos.CartItemVO(r.getId(), r.getSkuId(), r.getSkuName(),
+                r.getQty() == null ? 0 : r.getQty(),
+                r.getSelected() != null && r.getSelected() == 1,
+                r.getMainImage() == null || r.getMainImage().isBlank() ? null : r.getMainImage(),
+                price,
+                price == null ? null : MoneyUtil.toYuan(price));
     }
 
     private long requireCustomer() {

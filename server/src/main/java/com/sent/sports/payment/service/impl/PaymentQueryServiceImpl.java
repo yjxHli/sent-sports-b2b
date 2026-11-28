@@ -1,21 +1,18 @@
 package com.sent.sports.payment.service.impl;
 
-import com.sent.sports.common.web.PageQuery;
-import com.sent.sports.common.web.PageResult;
-import com.sent.sports.payment.dto.PaymentDtos;
 import com.sent.sports.payment.mapper.PaymentTxnMapper;
 import com.sent.sports.payment.mapper.po.PaymentTxnPO;
 import com.sent.sports.payment.service.PaymentQueryService;
 import com.sent.sports.payment.service.dto.PaymentSummaryDto;
 import org.springframework.stereotype.Service;
 
-import java.util.Collections;
 import java.util.Optional;
 
 /**
  * 支付查询实现。
- * <p>「我的流水 / 结果轮询」仍是 P4 占位；{@link #findSummary} 已接真实流水表——
- * 订单详情「订单信息」要显示支付方式与交易号，这只是一行只读查询，没有理由继续桩着。</p>
+ *
+ * <p>2026-11-28 P2 批次：两个桩方法（我的流水 / 结果轮询）已删除，本类只保留
+ * {@link #findSummary}——订单详情「订单信息」要显示支付方式与交易号，这是一行真实只读查询。</p>
  */
 @Service
 public class PaymentQueryServiceImpl implements PaymentQueryService {
@@ -24,18 +21,6 @@ public class PaymentQueryServiceImpl implements PaymentQueryService {
 
     public PaymentQueryServiceImpl(PaymentTxnMapper paymentTxnMapper) {
         this.paymentTxnMapper = paymentTxnMapper;
-    }
-
-    @Override
-    public PageResult<PaymentDtos.PayResultVO> listMyPayments(PageQuery pageQuery) {
-        // P5 接入实体与仓储后替换
-        return PageResult.of(Collections.emptyList(), 0L, pageQuery.getPage(), pageQuery.getSize());
-    }
-
-    @Override
-    public PaymentDtos.PayResultVO getPayResult(String orderNo) {
-        // P5 接入实体与仓储后替换；当前默认 PENDING（前端轮询等待）
-        return new PaymentDtos.PayResultVO(orderNo, "PENDING", null, null, null);
     }
 
     /**

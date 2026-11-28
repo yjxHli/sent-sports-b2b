@@ -111,28 +111,25 @@
         </div>
 
         <div class="side-links">
-          <router-link to="/orders" class="side-link">📦 我的订单</router-link>
-          <router-link to="/custom" class="side-link">🎨 我的定制</router-link>
-          <router-link to="/favorites" class="side-link">⭐ 我的收藏</router-link>
-          <router-link to="/footprints" class="side-link">👣 我的足迹</router-link>
-          <router-link to="/chat" target="_blank" rel="noopener" class="side-link side-link--chat">💬 在线客服</router-link>
-        </div>
+    <router-link to="/orders" target="_blank" rel="noopener" class="side-link">📦 我的订单</router-link>
+    <router-link to="/custom" target="_blank" rel="noopener" class="side-link">🎨 我的定制</router-link>
+    <router-link to="/favorites" target="_blank" rel="noopener" class="side-link">⭐ 我的收藏</router-link>
+    <router-link to="/footprints" target="_blank" rel="noopener" class="side-link">👣 我的足迹</router-link>
+    <router-link to="/chat" target="_blank" rel="noopener" class="side-link side-link--chat">💬 在线客服</router-link>
+  </div>
 
-        <div class="side-tip">
-          <b>企业采购</b>
-          <p>专票·账期·阶梯价</p>
-          <router-link :to="GROUP_BUY" target="_blank" rel="noopener" class="side-tip__btn">查看团购专区</router-link>
-        </div>
+  <div class="side-tip">
+    <b>企业采购</b>
+    <p>专票·账期·阶梯价</p>
+    <router-link :to="GROUP_BUY" target="_blank" rel="noopener" class="side-tip__btn">查看团购专区</router-link>
+  </div>
+
       </aside>
     </div>
 
-    <!-- 猜你喜欢：整宽铺开（放在三栏之外，否则会被中栏挤成窄条） -->
-    <section class="home-section">
-      <div class="section-head">
-        <h3>猜你喜欢</h3>
-        <a class="section-more" @click="goProducts">查看全部 ›</a>
-      </div>
-
+    <!-- 商品信息流：2026-11-28 用户要求去掉「猜你喜欢」标题与「查看全部」入口，
+         并且整块不要再套白色大框 —— 商品网格直接落在页面底色上（对齐京东首页信息流） -->
+    <section class="home-section" data-testid="home-goods-flow">
       <div v-if="loading" class="list-hint">加载中…</div>
       <el-empty v-else-if="products.length === 0" description="暂无商品" />
       <div v-else class="goods-grid">
@@ -862,7 +859,7 @@ onUnmounted(() => {
   flex: none;
   font-size: 13px;
   font-weight: 700;
-  color: var(--sent-accent-dark);
+  color: var(--sent-price);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
@@ -937,45 +934,16 @@ onUnmounted(() => {
   filter: drop-shadow(0 10px 20px rgba(0, 0, 0, 0.22));
 }
 
-/* ---------- 猜你喜欢 ---------- */
+/* ---------- 商品信息流 ---------- */
+/* 2026-11-28：去掉标题行与白色大框。商品卡自己也不再描边（见全局 .good-card），
+   整块直接贴在页面底色上，鼠标移上去才有白色底 + 淡阴影，这样看不出「外面有个大框」。 */
 .home-section {
   margin-top: 14px;
-  background: #fff;
-  border-radius: var(--sent-radius);
-  padding: 16px;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
   /* 点分类后 scrollIntoView 落位时，给吸顶导航留出空间 */
   scroll-margin-top: 64px;
-}
-.section-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin-bottom: 14px;
-}
-.section-head h3 {
-  font-size: 18px;
-  margin: 0;
-  color: var(--sent-text);
-  position: relative;
-  padding-left: 14px;
-}
-.section-head h3::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 3px;
-  bottom: 3px;
-  width: 4px;
-  border-radius: 2px;
-  background: var(--sent-accent);
-}
-.section-more {
-  font-size: 13px;
-  color: var(--sent-muted);
-  cursor: pointer;
-}
-.section-more:hover {
-  color: var(--sent-accent);
 }
 /* 网格列数交给全局 `.goods-grid`（auto-fill / minmax(216px, 1fr)）：
    1440 版心下自动排 6 列，窄屏自动降列，不再在这里写死 5 列。

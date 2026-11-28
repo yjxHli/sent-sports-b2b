@@ -25,7 +25,6 @@ export interface FavoriteStatusVO {
 
 export const favoriteApi = {
   list: (query: PageQuery) => http.get<PageResult<FavoriteVO>>('/favorites', query),
-  count: () => http.get<number | string>('/favorites/count'),
   status: (productId: number | string) =>
     http.get<FavoriteStatusVO>('/favorites/status', { productId }),
   /** 收藏（幂等：重复收藏后端不报错） */

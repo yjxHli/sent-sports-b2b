@@ -55,8 +55,22 @@ public final class CartDtos {
         }
     }
 
-    /** 购物车项视图。 */
-    public record CartItemVO(Long itemId, Long skuId, String skuName, int qty, boolean selected) {
+    /**
+     * 购物车项视图。
+     *
+     * <p>2026-11-28：补 {@code mainImage} / {@code unitPriceCent} / {@code unitPriceYuan}——
+     * 个人中心「我的森特」的购物车卡要和收藏 / 足迹统一成「商品图片 + 商品名称 + 商品价格」，
+     * 只有 skuName 时前端只能画占位图、也没有价格可展示。
+     * 价格取加购时写入的 {@code cart_item.price_snapshot_cent}（快照，不是实时重算），
+     * 与购物车页的取价引擎结果分属两个口径：概览只做展示，结算价一律由试算接口给。</p>
+     */
+    public record CartItemVO(Long itemId, Long skuId, String skuName, int qty, boolean selected,
+                             String mainImage, Long unitPriceCent, String unitPriceYuan) {
+
+        /** 兼容老调用方（加购 / 改量只需要行标识与数量）。 */
+        public CartItemVO(Long itemId, Long skuId, String skuName, int qty, boolean selected) {
+            this(itemId, skuId, skuName, qty, selected, null, null, null);
+        }
     }
 
     /** 试算单行视图：单价（分）+ 元 + 来源 + 是否低于成本 + 行小计。 */

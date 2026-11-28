@@ -101,6 +101,29 @@ class CreditGrantUseCaseTest extends BaseUseCaseTest {
     }
 
     @Test
+    @DisplayName("授信上限：超过 2000 元（200001 分）拒绝，且内存仓储与真库都不写")
+    void totalMustNotExceed2000Yuan() {
+        BizException e = assertThrows(BizException.class,
+                () -> useCase.grant(new CreditGrantCmd(10L, 200_001L, 60L, 100L, 200L, 7L, "x")));
+        assertEquals(ErrorCode.PARAM_INVALID, e.getErrorCode());
+        verify(creditLineRepository, never()).save(any());
+        verify(enterpriseProfileMapper, never()).updateCredit(anyLong(), anyLong(), anyLong(), anyLong());
+        verify(enterpriseProfileMapper, never()).insertCredit(anyLong(), any(), anyLong(), anyLong(), anyLong());
+    }
+
+    @Test
+    @DisplayName("授信上限边界：恰好 2000 元允许")
+    void totalAt2000YuanIsAllowed() {
+        when(creditLineRepository.findByCustomerId(10L)).thenReturn(Optional.empty());
+
+        CreditGrantResult r = useCase.grant(new CreditGrantCmd(10L, 200_000L, 60L, 100L, 200L, 7L, "x"));
+
+        assertEquals(200_000L, r.totalCent());
+        verify(creditLineRepository).save(creditCaptor.capture());
+        assertEquals(200_000L, creditCaptor.getValue().getTotalCent());
+    }
+
+    @Test
     void validToMustBeAfterValidFrom() {
         BizException e = assertThrows(BizException.class,
                 () -> useCase.grant(new CreditGrantCmd(10L, 50000L, 60L, 200L, 100L, 7L, "x")));

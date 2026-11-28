@@ -8,6 +8,7 @@
  */
 import type { RouteRecordRaw, RouteRecordSingleView } from 'vue-router';
 import Layout from '@/layout/index.vue';
+import MineLayout from '@/layout/mine.vue';
 
 export interface AppRoute {
   path: string;
@@ -132,17 +133,83 @@ export const staticRoutes: RouteRecordRaw[] = [
   },
 ];
 
-/** 业务路由：统一挂在 Layout（底部 Tab）下 */
+/**
+ * 个人中心簇（2026-11-27）：这些路径全部渲染在 MineLayout 外壳内，
+ * URL 保持不变（`/cart` 还是 `/cart`），只是不再套站点大版式。
+ *
+ * 判定用前缀：`/refund` 同时覆盖 `/refunds`、`/refund/:refundNo`、`/refund/apply/:orderNo`；
+ * `/order/` 只覆盖订单详情，`/orders` 单独列出（避免前缀误伤）；
+ * 2026-11-28 起 `/group-buy` 也走个人中心外壳，团购专区页保留侧边栏。
+ */
+const MINE_PREFIXES = ['/mine', '/cart', '/orders', '/order/', '/custom', '/coupons', '/footprints', '/favorites', '/refund', '/profile/', '/member', '/group-buy'];
+function isMinePath(path: string): boolean {
+  return MINE_PREFIXES.some((p) => path === p || path.startsWith(p));
+}
+
+/** 业务路由：站点版式（浏览/购买流程）与个人中心版式（我的 xx）两组 */
 export const businessRoutes: RouteRecordRaw[] = [
   {
     path: '/',
     component: Layout,
     redirect: '/home',
-    children: MENU_ROUTES.map((entry) => ({
+    // 个人中心簇已挪到下方 MineLayout，这里只留商品浏览、下单支付、客服、帮助等站点页
+    children: MENU_ROUTES.filter((entry) => !isMinePath(entry.path)).map((entry) => ({
       path: entry.path,
       name: `page_${entry.path.replace(/[^a-zA-Z0-9]/g, '_')}`,
       component: REAL_PAGES[entry.path] ?? NotFound,
       meta: { title: entry.title, tab: entry.tab, hidden: entry.hidden },
     })),
+  },
+  {
+    // 绝对子路径（vue-router 会把以 / 开头的子路径当根路径处理），
+    // 因此 `/cart` `/orders` 等既有 URL 与 `location.href`、E2E 断言完全不变。
+    path: '/mine',
+    component: MineLayout,
+    children: [
+      ...MENU_ROUTES.filter((entry) => isMinePath(entry.path)).map((entry) => ({
+        path: entry.path,
+        name: `mine_${entry.path.replace(/[^a-zA-Z0-9]/g, '_')}`,
+        component: REAL_PAGES[entry.path] ?? NotFound,
+        // `/mine` 在菜单表里叫「我的」，个人中心标题行要显示「我的森特」
+        meta: { title: entry.path === '/mine' ? '我的森特' : entry.title, hidden: entry.hidden },
+      })),
+      {
+        path: '/mine/invoices',
+        name: 'MineInvoices',
+        component: () => import('@/views/mine/invoices.vue'),
+        meta: { title: '我的发票' },
+      },
+      {
+        // 评价中心（2026-11-28）：订单中心 → 评价中心；「我的森特」的待评价也落到这里
+        path: '/mine/reviews',
+        name: 'MineReviews',
+        component: () => import('@/views/mine/reviews.vue'),
+        meta: { title: '评价中心' },
+      },
+      {
+        path: '/mine/enterprise/procurement',
+        name: 'MineEnterpriseProcurement',
+        component: () => import('@/views/mine/enterprise.vue'),
+        meta: { title: '企业采购', tool: 'procurement' },
+      },
+      {
+        path: '/mine/enterprise/credit',
+        name: 'MineEnterpriseCredit',
+        component: () => import('@/views/mine/enterprise.vue'),
+        meta: { title: '我的授信', tool: 'credit' },
+      },
+      {
+        path: '/mine/enterprise/pay-later',
+        name: 'MineEnterprisePayLater',
+        component: () => import('@/views/mine/enterprise.vue'),
+        meta: { title: '先采后付', tool: 'pay-later' },
+      },
+      {
+        path: '/mine/enterprise/contracts',
+        name: 'MineEnterpriseContracts',
+        component: () => import('@/views/mine/enterprise.vue'),
+        meta: { title: '我的合同', tool: 'contracts' },
+      },
+    ],
   },
 ];

@@ -3,9 +3,12 @@ package com.sent.sports.web;
 import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
 import com.sent.sports.common.web.CurrentUser;
+import com.sent.sports.common.web.PageQuery;
+import com.sent.sports.common.web.PageResult;
 import com.sent.sports.finance.controller.UserInvoiceController;
 import com.sent.sports.finance.dto.UserInvoiceDtos;
 import com.sent.sports.finance.service.UserInvoiceService;
+import com.sent.sports.finance.service.dto.InvoicePdfFile;
 import com.sent.sports.support.BaseApiTest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -14,6 +17,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 
+import java.util.List;
 import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -24,6 +28,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -139,5 +145,80 @@ class UserInvoiceApiTest extends BaseApiTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value(40101));
         verify(userInvoiceService, never()).apply(anyLong(), any());
+    }
+
+    // ------------------------------------------------------------------
+    // 我的发票（个人中心）
+    // ------------------------------------------------------------------
+
+    @Test
+    @DisplayName("我的发票列表：页签与关键字透传用例，返回分页结构")
+    void mineReturnsPage() throws Exception {
+        UserInvoiceDtos.InvoiceRowVO row = new UserInvoiceDtos.InvoiceRowVO(
+                "31", "SO20261115000001", "INV20261115000001", "ISSUED",
+                "森特体育用品有限公司", "NORMAL", 128_800L, "1288.00",
+                1_763_000_000_000L, 1_763_100_000_000L);
+        when(userInvoiceService.mine(eq(9002L), eq("ISSUED"), eq("INV"), any(PageQuery.class)))
+                .thenReturn(PageResult.of(List.of(row), 1L, 1, 10));
+
+        mvc.perform(get("/api/invoices?status=ISSUED&keyword=INV")
+                        .requestAttr(CurrentUser.ATTR, USER))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0))
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.list[0].orderNo").value("SO20261115000001"))
+                .andExpect(jsonPath("$.data.list[0].status").value("ISSUED"))
+                .andExpect(jsonPath("$.data.list[0].amountYuan").value("1288.00"));
+    }
+
+    @Test
+    @DisplayName("我的发票列表：未登录返回 40101，且不触达用例")
+    void mineWithoutUserReturns40101() throws Exception {
+        mvc.perform(get("/api/invoices?status=ISSUED"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(40101));
+        verify(userInvoiceService, never()).mine(anyLong(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("未申请开票的订单列表：返回订单号与票面金额")
+    void pendingReturnsPage() throws Exception {
+        UserInvoiceDtos.PendingInvoiceVO row = new UserInvoiceDtos.PendingInvoiceVO(
+                "SO20261120000001", 25_800L, "258.00", "UV 定制篮球", 1_763_000_000_000L);
+        when(userInvoiceService.pending(eq(9002L), any(PageQuery.class)))
+                .thenReturn(PageResult.of(List.of(row), 1L, 1, 10));
+
+        mvc.perform(get("/api/invoices/pending")
+                        .requestAttr(CurrentUser.ATTR, USER))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.total").value(1))
+                .andExpect(jsonPath("$.data.list[0].orderNo").value("SO20261120000001"))
+                .andExpect(jsonPath("$.data.list[0].firstTitle").value("UV 定制篮球"));
+    }
+
+    @Test
+    @DisplayName("我的发票 PDF：按下载参数给 attachment，文件名带 UTF-8 编码")
+    void pdfReturnsFile() throws Exception {
+        when(userInvoiceService.pdf(9002L, 31L))
+                .thenReturn(new InvoicePdfFile(new byte[]{1, 2, 3}, "发票-31.pdf"));
+
+        mvc.perform(get("/api/invoices/31/pdf?download=true")
+                        .requestAttr(CurrentUser.ATTR, USER))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_PDF))
+                .andExpect(header().string("Content-Disposition",
+                        org.hamcrest.Matchers.containsString("attachment")))
+                .andExpect(header().string("Content-Disposition",
+                        org.hamcrest.Matchers.containsString("filename*=UTF-8''")))
+                .andExpect(content().bytes(new byte[]{1, 2, 3}));
+    }
+
+    @Test
+    @DisplayName("我的发票 PDF：未登录返回 40101")
+    void pdfWithoutUserReturns40101() throws Exception {
+        mvc.perform(get("/api/invoices/31/pdf"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(40101));
+        verify(userInvoiceService, never()).pdf(anyLong(), anyLong());
     }
 }

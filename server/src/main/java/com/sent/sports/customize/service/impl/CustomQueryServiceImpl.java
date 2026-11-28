@@ -5,10 +5,12 @@ import com.sent.sports.common.web.PageQuery;
 import com.sent.sports.common.web.PageResult;
 import com.sent.sports.customize.domain.CustomDraftTimeoutPolicy;
 import com.sent.sports.customize.domain.CustomStatus;
+import com.sent.sports.customize.domain.CustomStatusBucket;
 import com.sent.sports.customize.dto.CustomDtos;
 import com.sent.sports.customize.mapper.CustomOrderMapper;
 import com.sent.sports.customize.mapper.po.CustomOrderListItemPO;
 import com.sent.sports.customize.mapper.po.CustomOrderPO;
+import com.sent.sports.customize.mapper.po.CustomStatusCountRow;
 import com.sent.sports.customize.service.CustomQueryService;
 import org.springframework.stereotype.Service;
 
@@ -103,15 +105,46 @@ public class CustomQueryServiceImpl implements CustomQueryService {
 
     @Override
     public PageResult<CustomDtos.MyCustomOrderVO> myOrders(long customerId, PageQuery pageQuery) {
+        return myOrders(customerId, null, pageQuery);
+    }
+
+    @Override
+    public PageResult<CustomDtos.MyCustomOrderVO> myOrders(long customerId, String bucket,
+                                                          PageQuery pageQuery) {
+        CustomStatusBucket resolved = CustomStatusBucket.of(bucket);
+        List<String> statusNames = resolved == null ? null : resolved.statusNames();
         Page<CustomOrderListItemPO> page = new Page<>(pageQuery.getPage(), pageQuery.getSize());
-        customOrderMapper.selectMyPage(page, customerId);
-        long total = customOrderMapper.countMy(customerId);
+        customOrderMapper.selectMyPage(page, customerId, statusNames);
+        // 总数与列表同条件：分页 total 与「共 N 单」都对得上，翻页也不会翻出空白页
+        long total = customOrderMapper.countMy(customerId, statusNames);
         page.setTotal(total);
 
         java.util.List<CustomDtos.MyCustomOrderVO> list = page.getRecords().stream()
                 .map(this::toVo)
                 .toList();
         return PageResult.of(list, total, pageQuery.getPage(), pageQuery.getSize());
+    }
+
+    @Override
+    public CustomDtos.MyCustomSummaryVO mySummary(long customerId) {
+        long[] counts = new long[CustomStatusBucket.values().length];
+        long total = 0L;
+        for (CustomStatusCountRow row : customOrderMapper.countMyByStatus(customerId)) {
+            long cnt = row.getTotal() == null ? 0L : row.getTotal();
+            total += cnt;
+            String status = row.getStatus();
+            for (CustomStatusBucket bucket : CustomStatusBucket.values()) {
+                if (bucket.matches(status)) {
+                    counts[bucket.ordinal()] += cnt;
+                }
+            }
+        }
+        return new CustomDtos.MyCustomSummaryVO(
+                counts[CustomStatusBucket.TODO.ordinal()],
+                counts[CustomStatusBucket.REVIEW.ordinal()],
+                counts[CustomStatusBucket.PRODUCING.ordinal()],
+                counts[CustomStatusBucket.DONE.ordinal()],
+                total);
     }
 
     @Override

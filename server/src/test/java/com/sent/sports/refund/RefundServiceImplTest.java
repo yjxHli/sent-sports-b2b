@@ -8,6 +8,7 @@ import com.sent.sports.payment.service.PaymentRefundGateway;
 import com.sent.sports.refund.domain.RefundStatus;
 import com.sent.sports.refund.mapper.RefundOrderMapper;
 import com.sent.sports.refund.repository.RefundRepository;
+import com.sent.sports.refund.service.RefundSuccessNotifier;
 import com.sent.sports.refund.service.impl.RefundServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -46,6 +47,8 @@ class RefundServiceImplTest {
     private com.sent.sports.member.service.MemberRefundGateway memberRefundGateway;
     @Mock
     private com.sent.sports.coupon.service.CouponDeduction couponDeduction;
+    @Mock
+    private RefundSuccessNotifier refundSuccessNotifier;
 
     private IdGen idGen;
     private RefundServiceImpl service;
@@ -56,7 +59,7 @@ class RefundServiceImplTest {
         service = new RefundServiceImpl(refundRepository, idGen,
                 Clock.fixed(Instant.parse("2026-11-08T06:00:00Z"), ZoneOffset.UTC),
                 refundOrderMapper, paymentRefundGateway, orderRefundViewService, memberRefundGateway,
-                couponDeduction);
+                couponDeduction, refundSuccessNotifier);
     }
 
     @Test
@@ -67,6 +70,11 @@ class RefundServiceImplTest {
         verify(paymentRefundGateway).refund("SO-1", 20000L);
         // 该单没用积分（订单视图取不到 → 退回积分为 0）
         verify(refundOrderMapper).insertCloseRefund(refundNo, 11L, 20000L, "客户取消", 0L);
+        ArgumentCaptor<com.sent.sports.refund.domain.RefundOrder> notice =
+                ArgumentCaptor.forClass(com.sent.sports.refund.domain.RefundOrder.class);
+        verify(refundSuccessNotifier).notify(notice.capture());
+        assertEquals(RefundStatus.REFUNDED, notice.getValue().getStatus());
+        assertEquals(refundNo, notice.getValue().getRefundNo());
         org.junit.jupiter.api.Assertions.assertTrue(refundNo.startsWith("RF"));
         verify(refundRepository, never()).save(any());
     }

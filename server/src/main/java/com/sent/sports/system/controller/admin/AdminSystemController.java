@@ -129,12 +129,6 @@ public class AdminSystemController {
         return R.ok(systemService.salesReport());
     }
 
-    @GetMapping("/reports/sales-rank")
-    @RequirePerm("system:report:view")
-    public R<AdminSystemDtos.SalesRankReportVO> salesRankReport() {
-        return R.ok(systemService.salesRankReport());
-    }
-
     @GetMapping("/reports/stock-warning")
     @RequirePerm("system:report:view")
     public R<AdminSystemDtos.StockWarningReportVO> stockWarningReport() {

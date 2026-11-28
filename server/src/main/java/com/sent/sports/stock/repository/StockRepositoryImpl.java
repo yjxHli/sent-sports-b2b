@@ -99,17 +99,35 @@ public class StockRepositoryImpl implements StockRepository {
 
     @Override
     public void save(long skuId, StockItem item) {
-        SkuStockPO before = stockMapper.selectBySkuId(skuId);
+        // P0-05：行锁读。原先用普通快照读，随后的绝对值覆盖写会把并发预占（lockStock 的 +n）抹掉。
+        // FOR UPDATE 把「读 - 改 - 写」串行化；调用方都在 @UseCase 事务内，锁持有到提交。
+        SkuStockPO before = stockMapper.selectBySkuIdForUpdate(skuId);
         if (before == null) {
             throw new BizException(ErrorCode.NOT_FOUND, "库存台账不存在，请先初始化 SKU 库存");
         }
-        stockMapper.updateLedger(skuId, item.getPhysicalQty(), item.getLockedQty(),
-                item.getPendingQty(), item.getFrozenQty());
-        int delta = (int) (item.getPhysicalQty() - before.getPhysicalQty());
+        // 只认「实物量」由调用方决定：锁定 / 在途 / 冻结是其他链路的原子事实，
+        // 必须用锁内读到的当前值回写，绝不能用调用方手里可能过期的快照覆盖（那正是丢更新的根因）。
+        int updated = stockMapper.updateLedger(skuId, item.getPhysicalQty(),
+                intOf(before.getLockedQty()), intOf(before.getPendingQty()), intOf(before.getFrozenQty()),
+                longOf(before.getVersion()));
+        if (updated == 0) {
+            // 理论上 FOR UPDATE 已排除并发；仍返回 0 说明不是「读-写」模型能覆盖的异常（如行被删/手工改库），
+            // 按冲突处理让调用方重试，比静默覆盖安全。
+            throw new BizException(ErrorCode.STATE_CONFLICT, "库存台账已被并发修改，请重试");
+        }
+        int delta = (int) (item.getPhysicalQty() - intOf(before.getPhysicalQty()));
         if (delta != 0) {
-            recordFlow(skuId, FLOW_ADJUST, delta, before.getPhysicalQty(),
+            recordFlow(skuId, FLOW_ADJUST, delta, intOf(before.getPhysicalQty()),
                     (int) item.getPhysicalQty(), null);
         }
+    }
+
+    private static int intOf(Integer value) {
+        return value == null ? 0 : value;
+    }
+
+    private static long longOf(Long value) {
+        return value == null ? 0L : value;
     }
 
     private Integer lockedQtyOf(long skuId) {

@@ -2,13 +2,13 @@
 
 # 森特体育 · sent-sports-b2b
 
-**面向体育用品批发场景的 B2B 电商中台 —— 模块化单体 + 双端 Vue3**
+**面向体育用品批发场景的 B2B 电商中台 —— 模块化单体 + 三端 Vue3 + 共享包**
 
 [![Build](https://img.shields.io/badge/build-passing-brightgreen?style=flat-square)](#-测试与质量)
 [![Coverage](https://img.shields.io/badge/coverage-80%25%2B-brightgreen?style=flat-square)](#-测试与质量)
-[![Unit Tests](https://img.shields.io/badge/unit_tests-1233_passed-success?style=flat-square)](#-测试与质量)
-[![Integration](https://img.shields.io/badge/integration-66_(Testcontainers)-blue?style=flat-square)](#-测试与质量)
-[![E2E](https://img.shields.io/badge/E2E-123_passed-success?style=flat-square)](#-测试与质量)
+[![Unit Tests](https://img.shields.io/badge/unit_tests-1652_passed-success?style=flat-square)](#-测试与质量)
+[![Integration](https://img.shields.io/badge/integration-143_passed-blue?style=flat-square)](#-测试与质量)
+[![E2E](https://img.shields.io/badge/E2E-224_passed-success?style=flat-square)](#-测试与质量)
 [![Java](https://img.shields.io/badge/Java-17-orange?style=flat-square&logo=openjdk)](#-技术栈)
 [![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.2.5-6DB33F?style=flat-square&logo=springboot)](#-技术栈)
 [![Vue](https://img.shields.io/badge/Vue-3.4-42b883?style=flat-square&logo=vuedotjs)](#-技术栈)
@@ -27,16 +27,16 @@
 
 ## 📖 项目简介
 
-森特体育用品管理系统是一个**模块化单体（Modular Monolith）**架构的 B2B 电商与经营管理中台：企业客户认证与授信、验证码登录与找回密码、阶梯价 / 一客一价、购物车与下单、模拟支付与退款、定制图稿多版本审核、库存与部分发货、应收核销与发票 PDF、**四类券型的优惠券营销体系（含会员日门禁）**、会员积分抵扣闭环、收藏与足迹、站内信、带图实时客服与质检、违禁词风控、批量软删除，以及配套的管理后台与商城前台。
+森特体育用品管理系统是一个**模块化单体（Modular Monolith）**架构的 B2B 电商与经营管理中台：企业客户认证与授信、验证码登录与找回密码、阶梯价 / 一客一价、购物车与下单、模拟支付与退款、定制图稿多版本审核、库存与部分发货、应收核销与发票 PDF、**四类券型的优惠券营销体系（含会员日门禁）**、会员积分抵扣闭环、收藏与足迹、站内信、带图实时客服与质检、服务工单、评价中心、客户标签、客服发券、违禁词风控、批量软删除，以及配套的管理后台、商城前台与独立客服工作台。安全侧已完成水平越权补漏与 22 个管理端只读接口的细粒度 RBAC 收口。
 
 后端按业务域拆成 **20 个模块包**（`auth / customer / member / product / stock / cart / order / payment / refund / customize / coupon / finance / chat / notify / report / file / job / system / common / web`），跨模块只允许经由对方 `service` 接口调用 —— 这条边界由 **ArchUnit 规则**在构建期强制守住，不必等到运行期才发现依赖腐化。
 
 | 维度 | 规模 |
 |---|---|
-| 后端源码 | 701 个 Java 文件 / 20 个业务模块 / 203 个 REST 端点 / 1 个 WebSocket 端点 |
-| 数据模型 | 50 个 Flyway 迁移（V1 → V50）/ 63 张表 / 46 个具名唯一索引 |
-| 前端 | 双端 84 个 `.vue` + 68 个 `.ts`，商城 **24 个业务路由**、管理端 **37 个业务路由** |
-| 测试 | 1233 单元测试 + 66 集成测试（19 个 `*IT`）+ 123 条 Playwright E2E 用例（70 个 spec） |
+| 后端源码 | 809 个 Java 文件（主源码）/ 20 个业务模块 / 246 个 REST 映射 / 1 个 WebSocket 端点 |
+| 数据模型 | 69 个 Flyway 迁移（V1 → V70，V64 为纯代码）/ 56 张表（55 业务表 + Flyway 历史表）/ 51 个唯一索引 |
+| 前端 | 三端 106 个 `.vue` + 94 个 `.ts`（含 `packages/shared`）；商城 39 / 管理端 43 / 客服台 2 条路由声明 |
+| 测试 | 1652 单元测试 + 143 集成测试（36 个 `*IT`）+ 225 条 Playwright E2E 用例（117 个 spec，224 passed / 1 skipped） |
 
 ---
 
@@ -56,7 +56,8 @@
                         │  /api/**   +   /ws/chat
                         ▼
 ┌─ ② 接入层 ────────────────────────────────────────────────
-│  AuthFilter（双 Token）· DataScope（数据权限）· RateLimit · 幂等拦截 · 二次确认 · 短信验证码
+│  AuthFilter（双 Token）· PermissionInterceptor（管理端默认拒绝 + xxx:view 细粒度 RBAC）
+│  RateLimit · Idempotency-Key 回放 · 二次确认 · 短信验证码 · 客户归属校验（会话/订单/积分）
 └──────────────────────────────────────────────────────────
                         ▼
 ┌─ ③ 业务域（模块化单体，跨模块只走 service 接口）─────────────
@@ -67,7 +68,7 @@
 │  横切：file(内容寻址) · job(10 个定时任务) · report(报表) · common
 └──────────────────────────────────────────────────────────
                         ▼
-      MySQL 8.0（63 表 / Flyway V1→V50） + 本地内容寻址文件库
+      MySQL 8.0（56 表 / Flyway V1→V70） + 本地内容寻址文件库
 ```
 
 **一条主链路的完整生命周期**：
@@ -90,9 +91,9 @@
 | 持久层 | MyBatis-Plus 3.5.7（**条件更新**支撑库存原子扣减）、Flyway 10、MySQL 8.0 |
 | 认证 | jjwt 0.12.5（HS256 双令牌：Access + Refresh） |
 | 文档 | springdoc-openapi 2.3.0（dev 开 `/swagger-ui`，prod 关闭） |
-| 前端 | Vue 3.4 + Vite 5 + TypeScript 5 + Pinia + Vue Router + Element Plus 2.7 |
+| 前端 | Vue 3.4 + Vite 5 + TypeScript 5 + Pinia + Vue Router + Element Plus 2.7（商城 / 管理 / 客服三端） |
 | 样式 | 商城端 Tailwind 3 + CSS 变量版式约束；管理端 Element Plus 变量体系 |
-| 共享层 | `packages/shared` —— HTTP 内核、TokenStorage、错误码分流、金额/时间格式化 |
+| 共享层 | `packages/shared` —— HTTP 内核、TokenStorage、错误码分流、金额/时间格式化、跨端 API 工厂、幂等工具与通用组件 |
 | 报表 / 文档 | Apache PDFBox 3.0.3（发票 PDF 现场渲染） |
 | 测试 | JUnit 5 + Mockito + AssertJ + **ArchUnit 4 条** + JaCoCo + **Testcontainers(MySQL)** + Playwright |
 
@@ -101,6 +102,17 @@
 ---
 
 ## 💎 核心技术亮点
+
+### 🔐 安全边界闭环（2026-11-28 批次 1/2）
+
+| 风险 | 收口方式 |
+|---|---|
+| 管理端未注解接口匿名可读 | `PermissionInterceptor` 对 `/api/admin/**` **默认要求管理员身份**；22 个只读接口另补 `order:view` / `finance:view` / `customer:view` 等 9 类细粒度码，由 **V70** 登记并显式授权给 7 个管理端角色 |
+| 客户横向越权 | 订单详情/取消/确认收货、会员积分与授信、聊天会话列表与满意度打分，均从 `CurrentUser` 取身份并在用例入口按库中真实归属复核；客户传他人 ID 返回 403，员工/系统任务保留跨客户口径 |
+| 写面身份伪造 | REST 发消息不再信任报文 `senderType`，按令牌归一为 STAFF / CUSTOMER，与 WS 链路同口径 |
+| 库存旁路丢更新 | 台账 `save()` 改行锁读 + 仅回写实物量 + `version` 条件更新，避免覆盖并发预占导致超卖 |
+
+以上修复均按 **TDD 先红后绿** 落地，新增 29 个单元用例；`AdminViewPermissionTest` 对 22 个真实 Controller 方法反射断言「无权限 403 / 有权限放行」。详见 `docs/批次1-P0安全止血记录-2026-11-28.md` 与 `docs/批次2-权限安全闭环记录-2026-11-28.md`。
 
 ### 1️⃣ 高并发库存防超卖 + 分布式防重
 
@@ -381,18 +393,18 @@ sent-sports-b2b/
 │   │   └── common/                  # 领域基座：error/idempotent/ratelimit/storage/interceptor
 │   ├── src/main/resources/
 │   │   ├── application{,-dev,-test,-prod}.yml
-│   │   └── db/migration/            # Flyway V1 → V50（63 张表）
-│   └── src/test/java/               # 单元测试 + integration/*IT（Testcontainers，19 个）
+│   │   └── db/migration/            # Flyway V1 → V70（56 张表，含 Flyway 历史表）
+│   └── src/test/java/               # 单元测试 1652 + 集成测试 143（36 个 *IT）
 ├── web-admin/                       # 管理端 Vue3（dev :5174，base /admin/）
 ├── web-cs/                          # 独立客服工作台 Vue3（dev :5175，base /，Token 前缀 cs-token）
 ├── web-user/                        # 商城端 Vue3（dev :5173，base /）
-├── packages/shared/                 # 双端共享 HTTP 内核 / TokenStorage / 类型 / 格式化
-├── e2e/                             # Playwright 用例（70 个 spec / 123 条用例）
+├── packages/shared/                 # 三端共享 HTTP 内核 / TokenStorage / API 工厂 / 组件 / 格式化
+├── e2e/                             # Playwright 用例（117 个 spec / 225 条，224 passed + 1 skipped）
 ├── docker/                          # docker-compose.yml + nginx.conf
-├── docs/                            # DEPLOYMENT.md、prod-deploy-checklist.md、设计模式审计报告
+├── docs/                            # 部署手册、生产部署配置审计、设计模式审计报告等
 ├── specs/                           # 设计与任务文档（历史快照，实现以代码为准）
 ├── .env.example                     # 环境变量模板（仅占位值，可安全提交）
-└── .github/workflows/ci.yml         # CI：后端单测 + 双端构建
+└── .github/workflows/ci.yml         # CI：后端单测 + 三端构建
 ```
 
 ---
@@ -401,7 +413,7 @@ sent-sports-b2b/
 
 ### 路线 A：Docker Compose（推荐，一键起四件套）
 
-`docker/docker-compose.yml` 编排 **MySQL 8.0 + Redis 7 + 后端 + Nginx**，Nginx 同时托管两端静态产物并反向代理 `/api`、`/ws/chat`。
+`docker/docker-compose.yml` 编排 **MySQL 8.0 + Redis 7 + 后端 + Nginx**，Nginx 托管商城端 / 管理端静态产物并反向代理 `/api`、`/ws/chat`；独立客服台 `web-cs` 目前走本地开发端口 `:5175`，不在 Compose 内。
 
 ```bash
 # 0) 前置：Docker / Docker Compose v2、Node 22 + pnpm（构建前端用）
@@ -427,12 +439,12 @@ curl -s http://127.0.0.1:8088/actuator/health      # {"status":"UP"}
 | 管理端 | `http://localhost/admin/` |
 | 后端 API | `http://localhost:8088/api/**`（经 Nginx 反代对外） |
 
-> 后端固定 **8088**（8080 常被 Steam 等软件抢占）。首次启动由 Flyway 自动建表（V1 → V50）；`APP_ENV=prod` 下未注入 `JWT_SECRET` / `PAY_MOCK_SECRET` 时会**拒绝启动**，这是刻意的 fail-closed 设计。
+> 后端固定 **8088**（8080 常被 Steam 等软件抢占）。首次启动由 Flyway 自动建表（V1 → V70，V64 为纯代码无迁移）；`APP_ENV=prod` 下未注入 `JWT_SECRET` / `PAY_MOCK_SECRET` 时会**拒绝启动**，这是刻意的 fail-closed 设计。
 
 ### 路线 B：本地开发（改代码用）
 
 <details>
-<summary><b>展开：JDK 17 + 本机 MySQL 8.0，双端热更新</b></summary>
+<summary><b>展开：JDK 17 + 本机 MySQL 8.0，三端热更新</b></summary>
 
 **前置**：JDK 17、Maven 3.9+、Node.js 22、pnpm、本机 MySQL 8.0（`utf8mb4` / `Asia/Shanghai`）。
 
@@ -468,7 +480,7 @@ curl -s http://127.0.0.1:8088/actuator/health                                # {
 - Swagger UI（仅 dev）：`http://127.0.0.1:8088/swagger-ui/index.html`
 - 端口被系统排除段占用（Windows 报 `listen EACCES` 且 `netstat` 无占用）→ 管理员 PowerShell 执行 `net stop winnat && net start winnat`
 - 改了 `packages/shared` 源码需要重启 Vite 时加 `--force`（依赖预构建缓存）
-- **`mvn clean` 会删掉 `target/sent-server.jar`**：跑完门禁要重新 `package` 并重启 :8088，否则 E2E 全线假红
+- **`mvn clean` 会删掉 `target/sent-server.jar`**：从 `target/` 直接启动的实例会在下一次类加载时静默退出。建议先把新 jar 复制到临时目录再启动（如 `cp target/sent-server.jar /tmp/sent-runtime.jar && java -jar /tmp/sent-runtime.jar ...`），这样后续 verify 不会打断运行中的后端；否则 E2E 全线假红
 
 </details>
 
@@ -486,7 +498,7 @@ curl -s http://127.0.0.1:8088/actuator/health                                # {
 | `JWT_RENEW_THRESHOLD_MS` | `900000` | 剩余不足 15min 触发 `X-New-Token` 滑动续期 |
 | `PAY_MOCK_SECRET` | 启动时随机生成 | Mock 支付回调签名密钥；`prod` 下必须注入 |
 | `CHAT_IDLE_MINUTES` | `10` | 客服会话空闲超时（分钟），客户无消息即自动结束 —— **唯一真源** |
-| `APP_CORS_ORIGINS` | 本机两个 dev server | 跨域白名单，逗号分隔；生产必须改成真实域名 |
+| `APP_CORS_ORIGINS` | 本机三个 dev server | 跨域白名单，逗号分隔；生产必须改成真实域名 |
 | `UPLOAD_BASE_DIR` | `./data/upload` | 文件服务根目录（内容寻址落盘位置） |
 | `APP_SENSITIVE_WORDS_FILE` | `sensitive_words.txt` | 违禁词库 classpath 文件；词库缺失即启动失败（风控静默失效比启动失败更危险） |
 | `CUSTOM_FEE_SINGLE_CENT` | `1000` | UV 定制服务费单价（分/件，单面）；购物车试算与下单共用同一引擎，调价只改这里 |
@@ -521,36 +533,39 @@ curl -s http://127.0.0.1:8088/actuator/health                                # {
 ## 🧪 测试与质量
 
 ```
-    ┌─ Backend   ─  mvn -o clean verify          →  单测 + IT + ArchUnit + JaCoCo
-    ├─ Frontend  ─  vue-tsc -b && vite build     →  两端 0 error
-    └─ E2E       ─  npx playwright test          →  123 passed
+    ┌─ Backend   ─  mvn -o clean verify          →  单测 1652 + IT 143 + ArchUnit + JaCoCo
+    ├─ Frontend  ─  vue-tsc -b && vite build     →  三端 0 error
+    └─ E2E       ─  node ./node_modules/@playwright/test/cli.js test --workers=1
+                                                  →  224 passed / 0 failed / 1 skipped
 ```
 
 | 层级 | 数量 | 说明 |
 |---|---:|---|
-| 单元测试（Surefire） | **1233** | JUnit 5 + Mockito + AssertJ，0 失败 0 跳过 |
-| 集成测试（Failsafe） | **66** | 19 个 `*IT`，Testcontainers 拉起真 MySQL |
+| 单元测试（Surefire） | **1652** | JUnit 5 + Mockito + AssertJ，0 失败 0 跳过 |
+| 集成测试（Failsafe） | **143** | 36 个 `*IT`，默认本机 `sent_test` 真库，可显式切 Testcontainers |
 | 架构约束（ArchUnit） | **4** | 分层与依赖边界，违反即构建失败 |
-| E2E（Playwright） | **123** | 70 个 spec，全绿，单 worker 稳定串行（约 10 分钟） |
-| 行覆盖率（JaCoCo） | **81.2%** | 域层 + `common/util` 口径 **94.2%** |
+| E2E（Playwright） | **224 passed / 1 skipped** | 117 个 spec，全量门禁 `npm run test:full`（单 worker，约 19 分钟） |
+| 行覆盖率（JaCoCo） | **89.0%** | 域层 + `common/util` 口径 **93.5%**，门禁线 80% 禁止下调 |
 
 ```bash
-# 后端全量门禁：单测 + IT(Testcontainers) + ArchUnit + JaCoCo check
+# 后端全量门禁：单测 + IT + ArchUnit + JaCoCo check（先停 8088 再跑 clean）
 cd server && mvn -o clean verify       # 本地仓库已预热可加 -o 离线跑
 
-# 双端类型检查与生产构建
+# 三端类型检查与生产构建
 pnpm -C web-admin build        # vue-tsc -b && vite build
 pnpm -C web-user  build
+pnpm -C web-cs    build
 
-# 端到端（需先起 5173 / 5174 / 8088 三端）
-cd e2e && npx playwright test --output runs/$(date +%Y%m%d-%H%M)
+# 端到端（需先起 5173 / 5174 / 5175 / 8088 四端）
+# 注意：npx playwright test 在本机会静默卡死，统一走 cli.js / npm script
+cd e2e && npm run test:full            # 单 worker 串行，约 19 分钟
 ```
 
 **质量门禁规则**
 
 - **ArchUnit 4 条铁律**：`controller` 不得依赖 `mapper`；`domain` 必须是纯 POJO（不依赖 Spring）；`common` 不得依赖任何业务模块；跨模块只允许经由对方 `service` 接口（可带 DTO）。
 - **JaCoCo `haltOnFailure=true`**：`*/domain/**` 与 `common/util/**` 行覆盖率低于 80% 直接构建失败，**禁止下调阈值**。
-- **集成测试用真库**：Testcontainers 优先拉 `mysql:8.0`，Docker 不可用时回落本机 `sent_test`；数据库完全不可达时相关测试类整类跳过，不误报失败。
+- **集成测试用真库**：默认连本机 `sent_test`，显式开启 Testcontainers 时切换一次性 `mysql:8.0`；数据库完全不可达时相关测试类整类跳过，不误报失败。
 - **缺陷先红后绿**：业务缺陷、链路问题同样先补一条会失败的 E2E 用例，再改代码。
 - **E2E 不写死演示数据**：演示库会随用例漂移（某 SKU 可能刚好被买空），用例一律现场挑选「在架且库存足够」的商品，必要时用 `E2E_PRODUCT_ID` 显式覆盖。
 
@@ -564,15 +579,16 @@ cd e2e && npx playwright test --output runs/$(date +%Y%m%d-%H%M)
 - 手机号使用 `1380000900x` / `1390000910x` / `13800138000` 等示例号段；邮箱使用保留域 `.test` / `example.com`。
 - 统一社会信用代码、发票代码、银行账号均含 `XXXXXXXX` / `DEMO-` / 全零等占位特征，**不可用于真实开票或结算**；发票销售方信息可经 `INVOICE_SELLER_*` 覆盖。
 - 商品图片使用占位图源；支付通道为可复现的 Mock 网关，不连接任何真实支付机构。
-- 种子数据位于 `server/src/main/resources/db/migration/V11`~`V15`、`V29`、`V42`~`V50` 与 `seed/DemoDataGenerator`。
+- 种子数据位于 `server/src/main/resources/db/migration/V11`~`V15`、`V29`、`V42`~`V70` 与 `seed/DemoDataGenerator`；后者支持 `tiny` / `full` 两档，`tiny` 约 12 人 / 25 企业 / 115 单，重灌前需先执行 `db/clean-test-data.sql`。
 
 **已完成的加固**
 
 1. **凭证外置**：数据库口令、JWT 密钥、支付回调密钥、Redis 口令、发票主体全部走环境变量，`application*.yml` / `pom.xml` 中不含真实凭证。
 2. **生产 fail-closed**：`prod` profile 对 `DB_USERNAME` / `DB_PASSWORD` / `JWT_SECRET` / `PAY_MOCK_SECRET` 不设默认值；`docker-compose.yml` 用 `${DB_PASSWORD:?...}` 强制要求注入。
 3. **无可伪造的默认密钥**：本地未设置时由框架启动时随机生成，公开仓库里的默认值无法用来伪造令牌。
-4. **前端无第三方密钥**：两端 `.env.development` 只含本地代理地址、路由与令牌前缀（需随仓库提交以便开箱即用）。
-5. **本地产物屏蔽**：`.gitignore` 覆盖 `target/`、`node_modules/`、`dist/`、`*.log`、本地 MySQL 数据目录、Playwright 报告与录屏。
+4. **前端无第三方密钥**：三端 `.env.development` 只含本地代理地址、路由与令牌前缀（需随仓库提交以便开箱即用）。
+5. **边界加固**：管理端默认拒绝匿名访问，22 个只读接口细分 `xxx:view`；订单/会员/会话/满意度按 `CurrentUser` 做归属校验；REST 消息发送方按令牌归一。
+6. **本地产物屏蔽**：`.gitignore` 覆盖 `target/`、`node_modules/`、`dist/`、`*.log`、本地 MySQL 数据目录、Playwright 报告与录屏。
 
 提交前建议自检：
 
@@ -592,23 +608,23 @@ git ls-files | grep -Ei '(^|/)(target|node_modules|dist|logs)/|\.log$|\.pem$|\.k
 | 文件存储 | 本地磁盘 `LocalFileStorage` | 换对象存储（OSS/S3），保留 `fileId` 语义 |
 | 支付 | Mock 网关 | 接入真实通道 + 回调验签 + 对账 |
 | 优惠券 | 单券抵扣、无叠加规则引擎 | 叠加/互斥策略、自动发券、预算与核销对账 |
-| 权限 | 演示数据全量授权 | 按角色/数据域回收权限点 |
+| 权限 | 22 个只读接口已有 `xxx:view`，但演示角色仍普遍持有 `*` | 生产按角色 / 数据域回收通配符，仅保留必要权限点 |
 | 报表 | 部分指标为演示快照 | 改为真实聚合或离线数仓 |
 | 前端体积 | 管理端 Element Plus 全量引入（主 chunk ≈1.1 MB） | 按需引入 / 路由级分包 |
 | 部署 | 单机 Compose | 多实例 + 健康探针 + 灰度 + 全站 HTTPS + 密钥轮换 |
 
 **Roadmap**：`logout-all`（全端下线）· 企业认证双向核验 · 库存批次与效期 · 券叠加与自动发券 · 移动端（H5/小程序）· OpenAPI 对外开放。
 
-更多部署细节见 [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md) 与 [`docs/prod-deploy-checklist.md`](./docs/prod-deploy-checklist.md)；`specs/` 为设计阶段历史快照，**实现以代码为准**。
+更多部署细节见 [`docs/部署手册-2026-11-09.md`](./docs/部署手册-2026-11-09.md) 与 [`docs/生产部署配置审计与环境变量清单.md`](./docs/生产部署配置审计与环境变量清单.md)；`specs/` 为设计阶段历史快照，**实现以代码为准**。
 
 ---
 
 ## 🤝 贡献指南
 
 1. Fork → 建分支（`feat/xxx`、`fix/xxx`、`docs/xxx`）。
-2. 提交前必须过门禁：`mvn -o clean verify` + 双端 `build` + `npx playwright test`。
+2. 提交前必须过门禁：`mvn -o clean verify` + 三端 `build` + `npm run test:full`。
 3. 遵循既有边界：新增跨模块调用必须走 `service` 接口，否则 ArchUnit 会拦下你的 PR。
-4. 新增表结构只能**追加** Flyway 迁移（当前最新 `V50`，下一个是 `V51__xxx.sql`），不得修改历史迁移（会破坏 `sent_test` 校验和）。
+4. 新增表结构或权限点只能**追加** Flyway 迁移（当前最新 `V70`，下一个是 `V71__xxx.sql`），**不得修改任何已应用的历史迁移，连注释也不行**（会破坏 `sent_test` 校验和）。
 5. Commit 信息用中文或英文均可，但需说明「改了什么 + 为什么」。
 
 ---

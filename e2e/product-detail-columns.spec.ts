@@ -27,6 +27,10 @@ async function login(page: Page): Promise<void> {
   if (await page.locator('input[type="password"]').count()) {
     await page.locator('input').first().fill(USER_NAME);
     await page.locator('input[type="password"]').fill(USER_PASSWORD);
+    // 2026-11-28：登录页新增协议勾选（默认未勾选），E2E 必须先确认协议
+    if (await page.getByTestId('auth-agree').count()) {
+      await page.getByTestId('auth-agree').locator('.el-checkbox__inner').click();
+  }
     await page.getByRole('button', { name: '登录' }).click();
     await expect(page.locator('input[type="password"]')).toHaveCount(0, { timeout: 15000 });
   }
@@ -239,11 +243,18 @@ test.describe('商品详情页 · 淘宝式两栏', () => {
     await brand.click();
     await expect(page).toHaveURL(/\/(home)(\?|$)/, { timeout: 20_000 });
 
-    // ⑤ 迷你搜索真能搜：提交后跳商品列表并带 keyword
+    // ⑤ 迷你搜索真能搜：提交后在新标签打开商品列表并带 keyword
+    // （2026-11-28 商品详情页搜索改为新开标签，同页跳转的旧断言已失效；
+    //   新开标签本身的覆盖在 new-tab-navigation.spec.ts）
     await page.goto(detailUrl, { waitUntil: 'networkidle' });
     await search.locator('input').fill('排球');
-    await button.click();
-    await expect(page).toHaveURL(/\/products\?keyword=/, { timeout: 20_000 });
-    await expect(page.locator('.searchbar')).toBeVisible();
+    const [searchTab] = await Promise.all([
+      page.waitForEvent('popup', { timeout: 20_000 }),
+      button.click(),
+    ]);
+    await searchTab.waitForLoadState();
+    await expect(searchTab).toHaveURL(/\/products\?keyword=/, { timeout: 20_000 });
+    await expect(searchTab.locator('.searchbar')).toBeVisible();
+    await searchTab.close();
   });
 });

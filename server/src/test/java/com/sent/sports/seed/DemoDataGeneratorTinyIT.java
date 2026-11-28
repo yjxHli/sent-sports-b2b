@@ -103,6 +103,16 @@ class DemoDataGeneratorTinyIT extends FullStackIntegrationTest {
     }
 
     @Test
+    @DisplayName("tiny 档：演示企业授信额度不得超过 2000 元（200000 分）")
+    void generatedCreditNeverExceedsCap() {
+        generator.run();
+
+        Integer overCap = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM enterprise_profile WHERE credit_limit_cent > 200000", Integer.class);
+        assertThat(overCap).as("演示数据不得重新灌入超过 2000 元的授信").isZero();
+    }
+
+    @Test
     @DisplayName("tiny 档：近 30 天有唯一峰值日（趋势图 peak 点只能有 1 个）")
     void tinyScaleProducesSinglePeakDay() {
         generator.run();

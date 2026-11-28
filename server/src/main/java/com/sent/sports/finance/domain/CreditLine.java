@@ -12,6 +12,9 @@ public class CreditLine {
     public static final String STATUS_ACTIVE = "ACTIVE";
     public static final String STATUS_EXPIRED = "EXPIRED";
 
+    /** 企业最高可申请授信：2000 元 = 200000 分（2026-11-27 用户口径，V66 同步下调存量）。 */
+    public static final long MAX_TOTAL_CENT = 200_000L;
+
     private final long customerId;
     private long totalCent;
     private long usedCent;

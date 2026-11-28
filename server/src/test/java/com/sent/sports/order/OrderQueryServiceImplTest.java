@@ -1,6 +1,7 @@
 package com.sent.sports.order;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.web.PageQuery;
 import com.sent.sports.order.dto.OrderDtos;
 import com.sent.sports.order.mapper.OrderMapper;
@@ -193,7 +194,7 @@ class OrderQueryServiceImplTest extends BaseUnitTest {
         when(orderMapper.selectByOrderNo("SO1")).thenReturn(order(1L, "WAIT_SHIP", 20000L));
         when(orderMapper.selectItemsByOrderIds(List.of(1L))).thenReturn(List.of(item(1L, 2, 5000L)));
 
-        OrderDtos.OrderVO vo = service.getDetail("SO1");
+        OrderDtos.OrderVO vo = service.getDetail("SO1", null);
 
         assertEquals(1, vo.items().size(), "详情应返回商品行");
         assertEquals("9209", vo.items().get(0).skuId());
@@ -220,7 +221,7 @@ class OrderQueryServiceImplTest extends BaseUnitTest {
         shipment.setShippedAt(LocalDateTime.of(2026, 11, 12, 8, 30));
         when(shipmentMapper.selectLatestByOrderId(3L)).thenReturn(shipment);
 
-        OrderDtos.OrderVO vo = service.getDetail("SO3");
+        OrderDtos.OrderVO vo = service.getDetail("SO3", null);
 
         assertEquals(
                 LocalDateTime.of(2026, 11, 11, 10, 0).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
@@ -242,7 +243,7 @@ class OrderQueryServiceImplTest extends BaseUnitTest {
         when(orderMapper.selectByOrderNo("SO2")).thenReturn(order(2L, "COMPLETED", 100L));
         when(orderMapper.selectItemsByOrderIds(List.of(2L))).thenReturn(List.of());
 
-        OrderDtos.OrderVO vo = service.getDetail("SO2");
+        OrderDtos.OrderVO vo = service.getDetail("SO2", null);
 
         assertTrue(vo.items().isEmpty());
     }
@@ -257,7 +258,7 @@ class OrderQueryServiceImplTest extends BaseUnitTest {
         when(paymentQueryService.findSummary("SO7")).thenReturn(java.util.Optional.of(
                 new PaymentSummaryDto("SO7", "ALIPAY", "TXN202611150001", "2026111522001440071234567890", "PAID")));
 
-        OrderDtos.OrderVO vo = service.getDetail("SO7");
+        OrderDtos.OrderVO vo = service.getDetail("SO7", null);
 
         assertEquals("ALIPAY", vo.payChannel());
         assertEquals("TXN202611150001", vo.payTxnNo(), "平台流水号");
@@ -271,7 +272,7 @@ class OrderQueryServiceImplTest extends BaseUnitTest {
         when(orderMapper.selectItemsByOrderIds(List.of(8L))).thenReturn(List.of());
         when(paymentQueryService.findSummary("SO8")).thenReturn(java.util.Optional.empty());
 
-        OrderDtos.OrderVO vo = service.getDetail("SO8");
+        OrderDtos.OrderVO vo = service.getDetail("SO8", null);
 
         org.junit.jupiter.api.Assertions.assertNull(vo.payChannel());
         org.junit.jupiter.api.Assertions.assertNull(vo.payTxnNo());
@@ -291,7 +292,7 @@ class OrderQueryServiceImplTest extends BaseUnitTest {
         when(orderMapper.selectByOrderNo("SO9")).thenReturn(po);
         when(orderMapper.selectItemsByOrderIds(List.of(9L))).thenReturn(List.of());
 
-        OrderDtos.OrderVO vo = service.getDetail("SO9");
+        OrderDtos.OrderVO vo = service.getDetail("SO9", null);
 
         assertEquals(
                 expireAt.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(),
@@ -306,7 +307,7 @@ class OrderQueryServiceImplTest extends BaseUnitTest {
         when(orderMapper.selectByOrderNo("SO10")).thenReturn(order(10L, "COMPLETED", 100L));
         when(orderMapper.selectItemsByOrderIds(List.of(10L))).thenReturn(List.of());
 
-        OrderDtos.OrderVO vo = service.getDetail("SO10");
+        OrderDtos.OrderVO vo = service.getDetail("SO10", null);
 
         org.junit.jupiter.api.Assertions.assertNull(vo.expireAtMillis());
     }
@@ -329,10 +330,43 @@ class OrderQueryServiceImplTest extends BaseUnitTest {
                 result.getList().get(0).expireAtMillis());
     }
 
+    // ---------------- P0-02：订单详情归属校验 ----------------
+
+    @Test
+    @DisplayName("P0-02 客户查看自己的订单：viewer 与 order.customerId 一致时正常返回")
+    void detailAllowsOwner() {
+        when(orderMapper.selectByOrderNo("SO1")).thenReturn(order(1L, "WAIT_SHIP", 20000L));
+        when(orderMapper.selectItemsByOrderIds(List.of(1L))).thenReturn(List.of());
+
+        OrderDtos.OrderVO vo = service.getDetail("SO1", 9002L);
+
+        assertEquals("SO1", vo.orderNo());
+    }
+
+    @Test
+    @DisplayName("P0-02 客户查看他人订单：viewer 不一致 → FORBIDDEN(403)，不泄露订单是否存在")
+    void detailRejectsOtherCustomer() {
+        when(orderMapper.selectByOrderNo("SO1")).thenReturn(order(1L, "WAIT_SHIP", 20000L));
+
+        BizException ex = org.junit.jupiter.api.Assertions.assertThrows(BizException.class,
+                () -> service.getDetail("SO1", 9003L));
+
+        assertEquals(com.sent.sports.common.error.ErrorCode.FORBIDDEN, ex.getErrorCode());
+        verify(orderMapper, never()).selectItemsByOrderIds(any());
+    }
+
+    @Test
+    @DisplayName("P0-02 管理端（viewer=null）可看任意订单，不受归属校验影响")
+    void detailAllowsAdminViewer() {
+        when(orderMapper.selectByOrderNo("SO1")).thenReturn(order(1L, "WAIT_SHIP", 20000L));
+        when(orderMapper.selectItemsByOrderIds(List.of(1L))).thenReturn(List.of());
+
+        assertEquals("SO1", service.getDetail("SO1", null).orderNo());
+    }
+
     @Test
     @DisplayName("关单结果核对：只有「已关闭 + 已全额退款」才算关成功")
-    void closeStateRequiresClosedAndFullyRefunded() {
-        OrderPO closed = new OrderPO();
+    void closeStateRequiresClosedAndFullyRefunded() {        OrderPO closed = new OrderPO();
         closed.setStatus("CLOSED");
         closed.setPayStatus("FULL_REFUNDED");
         when(orderMapper.selectByOrderNo("SO-CLOSED")).thenReturn(closed);

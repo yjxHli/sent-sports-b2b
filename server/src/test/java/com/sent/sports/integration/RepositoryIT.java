@@ -127,7 +127,12 @@ class RepositoryIT extends BaseIntegrationTest {
 
         StockItem current = stockRepository.findBySku(6001L).orElseThrow();
         stockRepository.save(6001L, new StockItem(current.getPhysicalQty(), 0, 0, 0));
-        assertThat(stockRepository.findBySku(6001L).orElseThrow().getLockedQty()).isZero();
+        // P0-05（2026-11-28 批次 1）：save 的语义收窄为「只覆盖实物量」。
+        // 锁定 / 在途 / 冻结是其他链路的原子事实，必须沿用锁内读数——此前这里断言「locked 归零」，
+        // 那正是绝对值覆盖写的副作用：入库/盘点期间并发的预占会被一起抹掉，可用量虚高导致超卖。
+        assertThat(stockRepository.findBySku(6001L).orElseThrow().getLockedQty())
+                .as("save 不得清空并发预占量")
+                .isEqualTo(3);
     }
 
     @Test

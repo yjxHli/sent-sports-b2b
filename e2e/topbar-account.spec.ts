@@ -9,6 +9,7 @@ async function login(page: Page): Promise<void> {
   await page.goto(join(USER_URL, '/login'));
   await page.getByPlaceholder('请输入11位手机号').fill(CUSTOMER_PHONE);
   await page.getByPlaceholder('请输入密码').fill(CUSTOMER_PASSWORD);
+  await page.getByTestId('auth-agree').locator('.el-checkbox__inner').click();
   await page.getByRole('button', { name: '登录' }).click();
   await expect(page).toHaveURL(/\/(home|products)(\?|$)/, { timeout: 20_000 });
 }
@@ -31,9 +32,13 @@ test('顶栏账户名来自 /api/me，下拉可进个人账户并退出登录', 
 
   await account.hover();
   await expect(page.getByTestId('topbar-account-link')).toBeVisible({ timeout: 8_000 });
+  const popup = page.waitForEvent('popup', { timeout: 15_000 });
   await page.getByTestId('topbar-account-link').click();
-  await expect(page).toHaveURL(/\/mine(\?|$)/, { timeout: 15_000 });
-  await expect(page.locator('.profile-name')).toContainText(nickname);
+  const mine = await popup;
+  await expect(mine).toHaveURL(/\/mine(\?|$)/, { timeout: 15_000 });
+  await expect(mine.locator('.profile-name')).toContainText(nickname);
+  await mine.close();
+  expect(page.url(), '点个人账户后原首页不应导航走').toContain('/home');
 
   await page.goto(join(USER_URL, '/home'));
   await account.hover();

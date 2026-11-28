@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
+import { sql, sqlNumber } from './db';
 
 /**
  * 企业审核与授信验收（TDD 红→绿）。
@@ -95,7 +96,7 @@ test('企业审核通过与驳回都返回成功，认证状态随之变化', as
   expect(errors, 'console 不应有错误').toHaveLength(0);
 });
 
-test('确认授信后列表立即显示「已授信」与对应额度', async ({ page }) => {
+test('确认授信后列表立即显示「已授信」与对应额度（≤2000 元）', async ({ page }) => {
   const calls = watchPosts(page, '/api/admin/enterprise/');
   const errors: string[] = [];
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
@@ -106,38 +107,65 @@ test('确认授信后列表立即显示「已授信」与对应额度', async ({
   await page.waitForTimeout(1000);
 
   const firstRow = page.locator('.el-table__body tbody tr').first();
-  const customerId = (await firstRow.locator('td').first().innerText()).trim();
+  const customerId = Number((await firstRow.locator('td').first().innerText()).trim());
   await firstRow.getByRole('button', { name: '选择' }).click();
 
-  const row = page.locator('.el-table__body tbody tr').filter({ hasText: customerId }).first();
+  const row = page.locator('.el-table__body tbody tr').filter({ hasText: String(customerId) }).first();
   const creditStateCell = row.locator('td').nth(5);
+  const originalLimit = sqlNumber(
+    `SELECT credit_limit_cent FROM enterprise_profile WHERE customer_id = ${customerId}`, 0);
 
-  // 授信表单：金额 + 账期 + 生效/失效时间
-  await page.locator('.sent-panel').nth(1).getByPlaceholder('如 50000.00').fill('66666');
-  const dateInputs = page.locator('.sent-panel').nth(1).locator('.el-date-editor input');
-  await dateInputs.nth(0).click();
-  await dateInputs.nth(0).fill('2026-11-11 00:00:00');
-  await dateInputs.nth(0).press('Enter');
-  await page.waitForTimeout(300);
-  await dateInputs.nth(1).click();
-  await dateInputs.nth(1).fill('2027-11-11 00:00:00');
-  await dateInputs.nth(1).press('Enter');
-  await page.waitForTimeout(300);
+  try {
+    // 授信表单：金额 + 账期 + 生效/失效时间（新口径：最高 2000 元）
+    await page.locator('.sent-panel').nth(1).getByPlaceholder('如 2000.00').fill('1500');
+    const dateInputs = page.locator('.sent-panel').nth(1).locator('.el-date-editor input');
+    await dateInputs.nth(0).click();
+    await dateInputs.nth(0).fill('2026-11-11 00:00:00');
+    await dateInputs.nth(0).press('Enter');
+    await page.waitForTimeout(300);
+    await dateInputs.nth(1).click();
+    await dateInputs.nth(1).fill('2027-11-11 00:00:00');
+    await dateInputs.nth(1).press('Enter');
+    await page.waitForTimeout(300);
 
+    await page.getByRole('button', { name: '确认授信' }).click();
+    const confirmBox = page.locator('.el-message-box:visible');
+    await confirmBox.locator('input').fill('确认授信');
+    await confirmBox.getByRole('button', { name: '确认继续' }).click();
+    await page.waitForTimeout(2000);
+
+    const creditCall = calls.find((c) => c.url.includes('/credit'));
+    expect(creditCall, '应发出授信请求').toBeTruthy();
+    expect(creditCall!.status, '授信 HTTP 状态').toBe(200);
+    expect(creditCall!.code, '授信业务码').toBe(0);
+
+    // 界面必须立即从「未授信」翻成「已授信」，额度同步刷新（1500 元 = 150000 分）
+    await expect(creditStateCell).toContainText('已授信');
+    await expect(row).toContainText('1,500.00');
+    expect(errors, 'console 不应有错误').toHaveLength(0);
+  } finally {
+    sql(`UPDATE enterprise_profile SET credit_limit_cent = ${originalLimit} WHERE customer_id = ${customerId};`);
+  }
+});
+
+test('授信金额超过 2000 元时前端直接拦截，不发请求', async ({ page }) => {
+  const calls = watchPosts(page, '/api/admin/enterprise/');
+  await login(page);
+  await page.goto(ENTERPRISE);
+  await page.waitForSelector('.el-table__body tbody tr');
+  await page.waitForTimeout(1000);
+
+  const firstRow = page.locator('.el-table__body tbody tr').first();
+  await firstRow.getByRole('button', { name: '选择' }).click();
+  await page.locator('.sent-panel').nth(1).getByPlaceholder('如 2000.00').fill('2001');
   await page.getByRole('button', { name: '确认授信' }).click();
-  const confirmBox = page.locator('.el-message-box:visible');
-  await confirmBox.locator('input').fill('确认授信');
-  await confirmBox.getByRole('button', { name: '确认继续' }).click();
-  await page.waitForTimeout(2000);
 
-  const creditCall = calls.find((c) => c.url.includes('/credit'));
-  expect(creditCall, '应发出授信请求').toBeTruthy();
-  expect(creditCall!.status, '授信 HTTP 状态').toBe(200);
-  expect(creditCall!.code, '授信业务码').toBe(0);
+  await expect(page.locator('.el-message--warning')).toContainText('2000');
+  expect(calls.filter((c) => c.url.includes('/credit'))).toHaveLength(0);
+});
 
-  // 界面必须立即从「未授信」翻成「已授信」，额度同步刷新（66666 元 = 6,666,600 分）
-  await expect(creditStateCell).toContainText('已授信');
-  await expect(row).toContainText('66,666.00');
-
-  expect(errors, 'console 不应有错误').toHaveLength(0);
+test('存量企业授信全部不高于 2000 元', async ({ page }) => {
+  await login(page);
+  const overCap = sqlNumber('SELECT COUNT(*) FROM enterprise_profile WHERE credit_limit_cent > 200000', 1);
+  expect(overCap, 'V66 迁移后不应再有超过 2000 元的企业授信').toBe(0);
 });

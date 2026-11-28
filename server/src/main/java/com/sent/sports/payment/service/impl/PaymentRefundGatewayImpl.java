@@ -38,6 +38,9 @@ public class PaymentRefundGatewayImpl implements PaymentRefundGateway {
         Optional<PaymentTxn> existing = paymentRepository.findByOrderNo(orderNo);
         // 无通道流水（余额 / 授信支付）时用确定性占位号，保证网关仍能受理且不落虚假流水。
         String txnNo = existing.map(PaymentTxn::getTxnNo).orElse("RF-" + orderNo);
+        // TODO(2026-11-28 批次 2 / P1-07)：当前 PayGateway 是进程内模拟实现（无网络 IO），
+        // 所以放在 @UseCase 事务里没有实际风险。换成真实通道后，这一行必须移到事务之外：
+        // 由编排层先调渠道、拿到受理结果再开事务落退款单，避免长事务与「渠道成功但本地回滚」的不一致。
         if (!payGateway.refund(txnNo, orderNo, amountCent)) {
             throw new BizException(ErrorCode.BIZ_REJECT, "模拟退款网关拒绝退款");
         }

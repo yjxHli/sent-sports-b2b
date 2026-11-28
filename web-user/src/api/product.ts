@@ -99,8 +99,6 @@ export const productApi = {
       '/products/suggest', { keyword, limit }),
   detail: (productId: string) =>
     http.get<CatalogProductVO>(`/products/${productId}`),
-  skus: (productId: string) =>
-    http.get<CatalogSkuVO[]>(`/products/${productId}/skus`),
   categories: () =>
     http.get<CategoryVO[]>('/categories'),
 };

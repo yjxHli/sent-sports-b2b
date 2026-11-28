@@ -24,7 +24,7 @@
       <section class="ra-order">
         <div class="ra-order__main">
           <span class="ra-order__no">订单号 {{ order.orderNo }}</span>
-          <span class="ra-order__status">{{ statusText(order.status) }}</span>
+          <span class="ra-order__status">{{ statusLabel(order.status) }}</span>
         </div>
         <div class="ra-order__sum">
           实付 <b>¥{{ order.payableYuan || '0.00' }}</b>
@@ -148,7 +148,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import type { UploadUserFile } from 'element-plus';
-import { fmtCent } from '@sent/shared';
+import { fmtCent, statusLabel } from '@sent/shared';
 import { unwrap } from '@/utils/http';
 import { orderApi, type OrderVO } from '@/api/order';
 import { refundApi, type RefundVO } from '@/api/refund';
@@ -182,20 +182,6 @@ const proof = ref('');
 const files = ref<UploadUserFile[]>([]);
 /** uid（缺省退回文件名）→ fileId：重试时不必重复上传同一个文件 */
 const uploadedIds = new Map<string, string>();
-
-const STATUS_TEXT: Record<string, string> = {
-  WAIT_PAY: '待付款',
-  WAIT_SHIP: '待发货',
-  WAIT_RECEIVE: '待收货',
-  PART_SHIPPED: '部分发货',
-  COMPLETED: '交易完成',
-  CANCELLED: '已取消',
-  CLOSED: '已关闭',
-};
-
-function statusText(status: string | null | undefined): string {
-  return STATUS_TEXT[status ?? ''] ?? '处理中';
-}
 
 const selectedCount = computed(() => lines.value.filter((l) => l.selected).length);
 const totalCent = computed(() =>

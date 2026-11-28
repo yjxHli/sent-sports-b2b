@@ -13,6 +13,13 @@
  * 2026-11-26 扩大口径（用户补充）：顶部搜索（回车 / 搜索按钮 / 热搜 / 历史 / 联想）、
  * 首页大屏「立即选购」、底部四个入口瓦片，一律像点商品详情一样新开一页，原页保持不动。
  *
+ * 2026-11-28 再扩大：我的森特搜索框 / 领券中心入口、收藏与足迹（含概览迷你卡）、
+ * 订单列表与订单详情里的商品入口（含「再买一次」）、会员专属商品与「去逛逛」、
+ * 顶栏消息与商品详情页搜索也新开；
+ * 领券中心页下半区商品卡仍保持同页（见文末反向保护用例）。
+ * 团购专区：企业工具侧栏入口与其他子项一样同页（且落地页保留侧边栏），
+ * 企业采购页里的推广卡、团购页的商品卡 /「查看全部商品」/「联系客户经理」仍新开。
+ *
  * 实现口径（断言依据）：商品卡根节点必须是真正的 `<a href target="_blank">`，
  * 才能让鼠标中键 / 右键「在新窗口打开」也生效，而不是靠 JS 拦截点击。
  *
@@ -33,6 +40,7 @@ async function loginUser(page: Page): Promise<void> {
     (r) => r.url().includes('/api/auth/login') && r.request().method() === 'POST',
     { timeout: 20_000 },
   );
+  await page.getByTestId('auth-agree').locator('.el-checkbox__inner').click();
   await page.getByRole('button', { name: '登录' }).click();
   const body: any = await (await resp).json().catch(() => null);
   expect(body?.code, `用户端登录失败：${JSON.stringify(body)}`).toBe(0);
@@ -178,6 +186,37 @@ test('顶栏购物车 → 新标签页打开购物车', async ({ page, context }
   await cartPage.close();
 });
 
+test('商品详情页搜索 → 新标签页打开商品结果页', async ({ page, context }) => {
+  await loginUser(page);
+  await page.goto(`${USER_URL.replace(/\/+$/, '')}/product/9101`);
+  await expect(page.getByTestId('detail-brand')).toBeVisible({ timeout: 20_000 });
+
+  const box = page.getByTestId('detail-mini-search');
+  await box.locator('input').fill('篮球');
+  const products = await clickAndCatchNewPage(context, page, () =>
+    box.getByRole('button', { name: '搜索' }).click(),
+  );
+  expect(pathOf(products)).toBe('/products');
+  expect(new URL(products.url()).searchParams.get('keyword')).toBe('篮球');
+  await products.close();
+  expect(pathOf(page)).toBe('/product/9101');
+});
+
+test('顶栏消息 → 新标签页打开消息中心', async ({ page, context }) => {
+  await loginUser(page);
+  await page.goto(`${USER_URL.replace(/\/+$/, '')}/home`);
+
+  const msgLink = page.locator('.topbar__msg');
+  await expect(msgLink).toBeVisible({ timeout: 20_000 });
+  await expect(msgLink).toHaveAttribute('target', '_blank');
+  await expect(msgLink).toHaveAttribute('href', /\/messages/);
+
+  const msgPage = await clickAndCatchNewPage(context, page, () => msgLink.click());
+  expect(pathOf(msgPage)).toBe('/messages');
+  await msgPage.close();
+  expect(pathOf(page)).toBe('/home');
+});
+
 test('会员日「立即抢购」→ 新标签页打开商品列表', async ({ page, context }) => {
   await loginUser(page);
   // 固定到周三（会员日），否则横幅不渲染；与执行当天是星期几无关
@@ -207,19 +246,41 @@ test('领券中心「立即领取」→ 新标签页打开领券中心', async (
   expect(pathOf(page)).toBe('/home');
 });
 
-test('企业采购「查看团购专区」→ 新标签页打开团购专区', async ({ page, context }) => {
+test('企业采购页推广卡「团购专区」→ 新标签页打开（侧栏入口改同页）', async ({ page, context }) => {
   await loginUser(page);
-  await page.goto(`${USER_URL.replace(/\/+$/, '')}/home`);
+  await page.goto(`${USER_URL.replace(/\/+$/, '')}/mine/enterprise/procurement`);
 
-  const btn = page.locator('.side-tip__btn').first();
+  const btn = page.locator('.ent-groupbuy').getByRole('link', { name: /查看团购/ });
   await expect(btn).toBeVisible({ timeout: 20_000 });
   await expect(btn).toHaveAttribute('target', '_blank');
 
   const groupBuyPage = await clickAndCatchNewPage(context, page, () => btn.click());
   expect(pathOf(groupBuyPage)).toBe('/group-buy');
   await expect(groupBuyPage.locator('.group-buy')).toBeVisible({ timeout: 20_000 });
+  await expect(groupBuyPage.getByTestId('mine-sidebar'), '新开的团购专区也有侧边栏').toBeVisible();
   await groupBuyPage.close();
-  expect(pathOf(page)).toBe('/home');
+  expect(pathOf(page)).toBe('/mine/enterprise/procurement');
+});
+
+test('团购专区商品卡与「查看全部商品」→ 新标签页，原页不动', async ({ page, context }) => {
+  await loginUser(page);
+  await page.goto(`${USER_URL.replace(/\/+$/, '')}/group-buy`);
+
+  const card = page.locator('.group-buy .good-card').first();
+  await expect(card, '团购专区应有商品卡').toBeVisible({ timeout: 20_000 });
+  await expectNativeNewTabAnchor(card);
+  const detail = await clickAndCatchNewPage(context, page, () => card.click());
+  expect(pathOf(detail)).toMatch(/^\/product\/\w+$/);
+  await detail.close();
+  expect(pathOf(page)).toBe('/group-buy');
+
+  const more = page.locator('.gb-block__more');
+  await expect(more).toBeVisible({ timeout: 20_000 });
+  await expect(more).toHaveAttribute('target', '_blank');
+  const products = await clickAndCatchNewPage(context, page, () => more.click());
+  expect(pathOf(products)).toBe('/products');
+  await products.close();
+  expect(pathOf(page)).toBe('/group-buy');
 });
 
 /**

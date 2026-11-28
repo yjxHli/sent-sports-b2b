@@ -39,10 +39,15 @@ function sql(statement: string, tabular = false): string {
 
 async function api(request: APIRequestContext, method: 'GET' | 'POST', path: string,
                    data?: unknown, token?: string): Promise<any> {
+  // 2026-11-28 批次 2：POST /api/orders 已挂 @Idempotent，缺 Idempotency-Key 会 40002。
+  // 统一给写请求带一个每次唯一的键（其它 POST 没挂注解，多带一个头无副作用）。
   const res = await request.fetch(`${API_URL}${path}`, {
     method,
     data,
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(method === 'POST' ? { 'Idempotency-Key': `E2E-${Date.now()}-${Math.random().toString(36).slice(2, 10)}` } : {}),
+    },
     failOnStatusCode: false,
   });
   return res.json().catch(() => null);

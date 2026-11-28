@@ -53,8 +53,7 @@ class ChatQueryServiceTest extends BaseUseCaseTest {
     }
 
     @Test
-    void historySkipsMessagesAtOrBeforeAfterSeq() {
-        when(chatMessageRepository.findBySessionId(33L)).thenReturn(List.of(
+    void historySkipsMessagesAtOrBeforeAfterSeq() {        when(chatMessageRepository.findBySessionId(33L)).thenReturn(List.of(
                 new ChatMessage("MSG1", 33L, SenderType.CUSTOMER, "a", "c1", 1, 1000L),
                 new ChatMessage("MSG2", 33L, SenderType.STAFF, "b", "c2", 2, 2000L)));
 
@@ -167,5 +166,53 @@ class ChatQueryServiceTest extends BaseUseCaseTest {
         ChatDtos.SessionVO vo = queryService.currentOpen(9002L);
 
         assertEquals(8L, vo.sessionId(), "已结束会话不能被当成当前会话复用，否则客户发消息会被 STATE_CONFLICT 拒绝");
+    }
+
+    // ---------------- P0-04：历史消息归属校验 ----------------
+
+    @Test
+    void historyRejectsOtherCustomer() {
+        when(sessionRepository.findById(33L))
+                .thenReturn(Optional.of(new ChatSession(33L, 9002L, ChatSessionStatus.ACTIVE, 9001L)));
+
+        BizException ex = assertThrows(BizException.class,
+                () -> queryService.history(33L, 0, 9003L));
+
+        assertEquals(com.sent.sports.common.error.ErrorCode.FORBIDDEN, ex.getErrorCode());
+        verify(chatMessageRepository, never()).findBySessionId(33L);
+    }
+
+    @Test
+    void historyAllowsSessionOwner() {
+        when(sessionRepository.findById(33L))
+                .thenReturn(Optional.of(new ChatSession(33L, 9002L, ChatSessionStatus.ACTIVE, 9001L)));
+        when(chatMessageRepository.findBySessionId(33L)).thenReturn(List.of(
+                new ChatMessage("MSG1", 33L, SenderType.CUSTOMER, "a", "c1", 1, 1000L)));
+
+        List<ChatDtos.MessageVO> rows = queryService.history(33L, 0, 9002L);
+
+        assertEquals(1, rows.size());
+    }
+
+    @Test
+    void historyForStaffSkipsOwnershipCheck() {
+        // 客服工作台是共享队列：排队中的会话还没分配，坐席必须先能看到历史才能接待
+        when(chatMessageRepository.findBySessionId(33L)).thenReturn(List.of(
+                new ChatMessage("MSG1", 33L, SenderType.CUSTOMER, "a", "c1", 1, 1000L)));
+
+        List<ChatDtos.MessageVO> rows = queryService.history(33L, 0, null);
+
+        assertEquals(1, rows.size());
+        verify(sessionRepository, never()).findById(33L);
+    }
+
+    @Test
+    void historyRejectsWhenSessionMissing() {
+        when(sessionRepository.findById(404L)).thenReturn(Optional.empty());
+
+        BizException ex = assertThrows(BizException.class,
+                () -> queryService.history(404L, 0, 9002L));
+
+        assertEquals(com.sent.sports.common.error.ErrorCode.NOT_FOUND, ex.getErrorCode());
     }
 }

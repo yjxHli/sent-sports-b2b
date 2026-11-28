@@ -89,7 +89,6 @@ export const couponApi = {
   batchDeleteTemplates: (ids: string[], config?: SentRequestConfig) =>
     http.post<{ deleted: number }>('/admin/coupons/templates/batch-delete', { ids }, config),
 
-  issues: (limit = 50) => http.get<CouponIssueVO[]>('/admin/coupons/issues', { limit }),
   issuesPage: (query: PageQuery & { source?: string; keyword?: string }) =>
     http.get<PageResult<CouponIssuePageVO>>('/admin/coupons/issues/page', query),
   batchDeleteIssues: (ids: string[], config?: SentRequestConfig) =>

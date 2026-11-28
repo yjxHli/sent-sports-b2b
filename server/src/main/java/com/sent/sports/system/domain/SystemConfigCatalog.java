@@ -49,7 +49,7 @@ public enum SystemConfigCatalog {
             "开具增值税发票时使用的税率（0~100 的整数，如 13 表示 13%）。"),
     CREDIT_DEFAULT_LIMIT_CENT("finance.credit.default.limit.cent", "企业客户默认授信额度",
             "财务与开票", "分", ConfigValueType.MONEY_CENT,
-            "企业客户审核通过时自动授予的额度，单位是「分」：5000000 分 = 50000.00 元。"),
+            "企业最高可申请授信额度，单位是「分」：200000 分 = 2000.00 元。"),
     CREDIT_DEFAULT_TERM_DAYS("finance.credit.default.term.days", "企业客户默认账期",
             "财务与开票", "天", ConfigValueType.NUMBER,
             "企业客户赊账后多少天内应回款，超期会在应收账龄报表里标记逾期。"),

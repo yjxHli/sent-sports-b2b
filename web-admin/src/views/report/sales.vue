@@ -384,7 +384,7 @@ import {
   type TopCustomerItemVO,
   type TopCustomerVO,
 } from '@/api';
-import { fmtMoney } from '@sent/shared';
+import { fmtMoney, maskPhone } from '@sent/shared';
 
 const DEFAULT_DAYS = 30;
 /** 排行条数：后端 limit 收敛 1~50，这里只要 Top 5 */
@@ -644,13 +644,6 @@ function fmtSpec(spec: string): string {
   } catch {
     return text;
   }
-}
-
-/** 手机号脱敏：138****8000（保留前 3 后 4，长度不足时原样返回） */
-function maskPhone(phone: string): string {
-  const text = (phone ?? '').trim();
-  if (text.length < 8) return text || '—';
-  return `${text.slice(0, 3)}****${text.slice(-4)}`;
 }
 
 /** Y 轴 4 档刻度（从高到低），金额超过 1 万用「万」，否则取整到元 */

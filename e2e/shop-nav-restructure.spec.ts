@@ -36,6 +36,7 @@ async function loginUser(page: Page): Promise<void> {
   await page.goto(`${USER_URL.replace(/\/+$/, '')}/login`);
   await page.getByPlaceholder('请输入11位手机号').fill(CUSTOMER_PHONE);
   await page.getByPlaceholder('请输入密码').fill(CUSTOMER_PASSWORD);
+  await page.getByTestId('auth-agree').locator('.el-checkbox__inner').click();
   const resp = page.waitForResponse(
     (r) => r.url().includes('/api/auth/login') && r.request().method() === 'POST',
     { timeout: 20_000 },
@@ -51,7 +52,7 @@ async function backHome(page: Page): Promise<void> {
   await expect(page.locator('.cat-nav__item').first()).toBeVisible({ timeout: 20_000 });
 }
 
-test('会员中心与在线客服收纳在右上角，主导航行已移除', async ({ page, context }) => {
+test('在线客服收纳在右上角，会员中心已挪到个人中心侧栏', async ({ page, context }) => {
   const errors: string[] = [];
   page.on('console', (m) => {
     if (m.type() === 'error' && !NOISE.test(m.text())) errors.push(m.text());
@@ -61,11 +62,11 @@ test('会员中心与在线客服收纳在右上角，主导航行已移除', as
   await backHome(page);
 
   const topbar = page.locator('.topbar');
-  const memberLink = topbar.locator('.topbar__link', { hasText: '会员中心' }).first();
   const chatLink = topbar.locator('.topbar__link', { hasText: '在线客服' }).first();
 
-  await expect(memberLink, '顶栏应有「会员中心」入口').toBeVisible();
-  await expect(memberLink, '「会员中心」应指向 /member').toHaveAttribute('href', /\/member/);
+  // 2026-11-28：用户要求「会员中心放进个人中心侧栏，去掉顶栏入口」
+  await expect(topbar.locator('.topbar__link', { hasText: '会员中心' }),
+    '顶栏不应再有「会员中心」（已挪到个人中心侧栏）').toHaveCount(0);
   await expect(chatLink, '顶栏应有「在线客服」入口').toBeVisible();
   await expect(chatLink, '「在线客服」应指向 /chat').toHaveAttribute('href', /\/chat/);
 
@@ -73,8 +74,11 @@ test('会员中心与在线客服收纳在右上角，主导航行已移除', as
   await expect(page.locator('.mainnav'), '绿色主导航行应已删除').toHaveCount(0);
   await expect(page.locator('.mainnav__item'), '主导航项应已全部移除').toHaveCount(0);
 
-  // 顶栏入口真的能到达对应页面（在线客服自 2026-11-25 起改为新标签页打开）
-  await memberLink.click();
+  // 会员中心的入口改到个人中心侧栏，且真的能到达
+  await page.goto(`${USER_URL.replace(/\/+$/, '')}/mine`);
+  const sideMember = page.getByTestId('mine-nav-member');
+  await expect(sideMember, '个人中心侧栏应有「会员中心」').toBeVisible({ timeout: 20_000 });
+  await sideMember.click();
   await expect.poll(() => pathOf(page), { timeout: 20_000 }).toBe('/member');
 
   await backHome(page);
@@ -127,7 +131,7 @@ test('查看团购专区进入团购专区页，而不是训练关键词列表',
   await loginUser(page);
   await backHome(page);
 
-  // 2026-11-25：新标签页打开，原首页保持不动
+  // 首页底部入口保留并新开标签；团购专区页现在也保留我的森特侧边栏
   const [groupBuyPage] = await Promise.all([
     context.waitForEvent('page', { timeout: 20_000 }),
     page.locator('.side-tip__btn').first().click(),
@@ -135,6 +139,7 @@ test('查看团购专区进入团购专区页，而不是训练关键词列表',
   await groupBuyPage.waitForLoadState('domcontentloaded');
   expect(pathOf(groupBuyPage), '新标签页应落在团购专区').toBe('/group-buy');
   expect(groupBuyPage.url(), '团购专区不应再落到训练关键词').not.toContain('keyword=');
+  await expect(groupBuyPage.getByTestId('mine-sidebar'), '团购专区应有我的森特侧边栏').toBeVisible();
 
   await expect(groupBuyPage.locator('.group-buy'), '团购专区页应渲染专属区块').toBeVisible({
     timeout: 20_000,

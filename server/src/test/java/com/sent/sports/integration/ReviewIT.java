@@ -52,6 +52,9 @@ class ReviewIT extends FullStackIntegrationTest {
                 SKU_ALT_ID, PRODUCT_ID, "SKU-" + SKU_ALT_ID);
         jdbc.update("INSERT INTO customer (id, customer_no, phone, nickname, type) "
                 + "VALUES (?, 'C9601', '13900009601', '张伟', 'PERSON')", CUSTOMER_ID);
+        // 评价中心列表要带出商品标题（LEFT JOIN product），没有商品行时标题会是空串
+        jdbc.update("INSERT INTO product (id, product_no, title, status) "
+                + "VALUES (?, ?, '森特训练短袖', 'ON')", PRODUCT_ID, "P-" + PRODUCT_ID);
     }
 
     /** 播一笔订单（可直接指定状态），行里挂 SKU_ID。 */
@@ -220,5 +223,85 @@ class ReviewIT extends FullStackIntegrationTest {
         assertThat(summary.negativeCount()).isZero();
         assertThat(summary.positiveRate()).isZero();
         assertThat(summary.avgRating()).isEqualTo("0.0");
+    }
+
+    // ---------- 评价中心（V68）：已写评论 / 浏览数 / 获赞数 ----------
+
+    @Test
+    @DisplayName("评价中心真实聚合：三项统计按客户隔离，浏览/获赞取自单条评价累积列")
+    void myReviewsAggregatesPerCustomer() {
+        seedOrder(ORDER_NO, CUSTOMER_ID, "COMPLETED");
+        seedOrder(ORDER_NO + "B", OTHER_CUSTOMER_ID, "COMPLETED");
+        jdbc.update("INSERT INTO customer (id, customer_no, phone, nickname, type) "
+                + "VALUES (?, 'C9602', '13900009602', '李小明', 'PERSON')", OTHER_CUSTOMER_ID);
+
+        reviewService.submit(CUSTOMER_ID, cmd(5, "很好", List.of(), false));
+        reviewService.submit(OTHER_CUSTOMER_ID, cmd(4, "不错", List.of(), false));
+
+        // 浏览/点赞列在真实使用中由访问侧累加，这里直接写库验证聚合口径
+        jdbc.update("UPDATE product_review SET view_count = 120, like_count = 8 "
+                + "WHERE customer_id = ?", CUSTOMER_ID);
+        jdbc.update("UPDATE product_review SET view_count = 30, like_count = 2 "
+                + "WHERE customer_id = ?", OTHER_CUSTOMER_ID);
+
+        ReviewDtos.MyReviewPageVO mine = reviewService.myReviews(CUSTOMER_ID, new PageQuery(), "LATEST");
+
+        assertThat(mine.total()).isEqualTo(1);
+        assertThat(mine.summary().reviewCount()).isEqualTo(1);
+        assertThat(mine.summary().viewCount()).as("只看自己的评价，不把别人的浏览数算进来").isEqualTo(120);
+        assertThat(mine.summary().likeCount()).isEqualTo(8);
+        assertThat(mine.list()).singleElement().satisfies(item -> {
+            assertThat(item.productId()).isEqualTo(String.valueOf(PRODUCT_ID));
+            assertThat(item.productTitle()).isNotBlank();
+            assertThat(item.viewCount()).isEqualTo(120);
+            assertThat(item.likeCount()).isEqualTo(8);
+        });
+    }
+
+    @Test
+    @DisplayName("评价中心空态：没写过评价的客户三项统计全 0，不是 null")
+    void myReviewsEmptyWhenNoReview() {
+        ReviewDtos.MyReviewPageVO mine = reviewService.myReviews(OTHER_CUSTOMER_ID, new PageQuery(), "LATEST");
+
+        assertThat(mine.list()).isEmpty();
+        assertThat(mine.total()).isZero();
+        assertThat(mine.summary().reviewCount()).isZero();
+        assertThat(mine.summary().viewCount()).isZero();
+        assertThat(mine.summary().likeCount()).isZero();
+    }
+
+    @Test
+    @DisplayName("待评价闭环：已完成未评价才在列表里，评价后消失，删除后可重新评价")
+    void pendingFlowAndDeleteReview() {
+        jdbc.update("INSERT INTO customer (id, customer_no, phone, nickname, type) "
+                + "VALUES (?, 'C9602', '13900009602', '李小明', 'PERSON')", OTHER_CUSTOMER_ID);
+        seedOrder(ORDER_NO, CUSTOMER_ID, "COMPLETED");
+
+        ReviewDtos.MyPendingPageVO pending = reviewService.myPendingReviews(CUSTOMER_ID, new PageQuery());
+        assertThat(pending.total()).isEqualTo(1);
+        ReviewDtos.MyPendingReviewVO item = pending.list().get(0);
+        assertThat(item.orderNo()).isEqualTo(ORDER_NO);
+        assertThat(item.productId()).isEqualTo(String.valueOf(PRODUCT_ID));
+        assertThat(item.paidYuan()).as("实付 = 行金额 - 分摊优惠").isEqualTo("199.00");
+
+        reviewService.submit(CUSTOMER_ID, cmd(5, "手感很好", List.of(), false));
+        assertThat(reviewService.myPendingReviews(CUSTOMER_ID, new PageQuery()).total())
+                .as("评过的商品不能再出现在待评价里").isZero();
+
+        Long reviewId = jdbc.queryForObject(
+                "SELECT id FROM product_review WHERE customer_id = ?", Long.class, CUSTOMER_ID);
+
+        // 越权删除：别人的评价删不到行，表现为 404（不泄露「存在但不属于你」）
+        assertThatThrownBy(() -> reviewService.deleteMyReview(OTHER_CUSTOMER_ID, reviewId))
+                .isInstanceOf(BizException.class)
+                .extracting(e -> ((BizException) e).getErrorCode())
+                .isEqualTo(ErrorCode.NOT_FOUND);
+        assertThat(countOf("product_review")).as("越权删除不能真的删掉").isEqualTo(1);
+
+        reviewService.deleteMyReview(CUSTOMER_ID, reviewId);
+        assertThat(countOf("product_review")).isZero();
+        assertThat(reviewService.myReviews(CUSTOMER_ID, new PageQuery(), "LATEST").total()).isZero();
+        assertThat(reviewService.myPendingReviews(CUSTOMER_ID, new PageQuery()).total())
+                .as("删掉评价后该订单商品回到待评价").isEqualTo(1);
     }
 }

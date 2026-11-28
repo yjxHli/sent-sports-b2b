@@ -22,7 +22,7 @@
         row-key="invoiceId"
         exportable
         export-name="发票列表"
-        :operation-width="240"
+        :operation-width="340"
         @selection-change="selected = $event"
         @update:page="onPage"
         @update:size="onSize"
@@ -54,6 +54,18 @@
         <template #operations="{ row }">
           <el-button link type="primary" @click="openPreview(row)">预览 / 下载</el-button>
           <el-button link type="primary" @click="openIssue(row)">开票 / 换开</el-button>
+          <el-button
+            link
+            type="danger"
+            data-testid="invoice-reject"
+            @click="audit(row, 'reject')"
+          >驳回</el-button>
+          <el-button
+            link
+            type="warning"
+            data-testid="invoice-exception"
+            @click="audit(row, 'exception')"
+          >标记异常</el-button>
         </template>
       </SentTable>
     </div>
@@ -160,7 +172,7 @@
  * /files/invoice/*.pdf 从来不存在，点下载必然 404，只能靠人手填地址。
  */
 import { reactive, ref } from 'vue';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { unwrap } from '@/utils/http';
 import { financeApi, orderApi } from '@/api';
 import { fmtDateTime, fmtMoney } from '@sent/shared';
@@ -304,6 +316,39 @@ async function downloadPdf(row: any): Promise<void> {
     ElMessage.error((error as Error)?.message || '发票 PDF 下载失败');
   } finally {
     downloading.value = false;
+  }
+}
+
+/** 驳回 / 标记异常：原因必填并原样送进客户站内信，避免客户只看到状态变化却不知道为什么。 */
+async function audit(row: any, action: 'reject' | 'exception'): Promise<void> {
+  const invoiceId = Number(row?.invoiceId ?? 0);
+  if (!(invoiceId > 0)) {
+    ElMessage.warning('发票申请无效，请刷新列表后重试');
+    return;
+  }
+  const title = action === 'reject' ? '驳回开票申请' : '标记发票异常';
+  let reason = '';
+  try {
+    const { value } = await ElMessageBox.prompt(
+      action === 'reject' ? '请填写驳回原因（会发给客户）' : '请填写异常原因（会发给客户）',
+      title,
+      {
+        inputValidator: (v: string) => (v && v.trim() ? true : '原因不能为空'),
+        type: 'warning',
+      },
+    );
+    reason = String(value).trim();
+  } catch {
+    return;
+  }
+  try {
+    const vo = action === 'reject'
+      ? await unwrap(financeApi.rejectInvoice(invoiceId, reason))
+      : await unwrap(financeApi.markInvoiceException(invoiceId, reason));
+    ElMessage.success(`${title}成功，状态 ${vo?.status ?? ''}`);
+    await load();
+  } catch (error) {
+    ElMessage.error((error as Error)?.message || `${title}失败`);
   }
 }
 

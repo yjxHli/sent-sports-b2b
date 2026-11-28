@@ -71,5 +71,4 @@ export const customApi = {
   /** 用户端图稿上传（左图右单页面的版本来源） */
   uploadDraft: (id: string, cmd: UploadDraftCmd) =>
     http.post<DraftVO>(`/customize/orders/${id}/drafts`, cmd),
-  customDetail: (id: string) => http.get<CustomVO>(`/customize/orders/${id}`),
 };

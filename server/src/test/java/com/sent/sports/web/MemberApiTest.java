@@ -1,37 +1,32 @@
 package com.sent.sports.web;
 
+import com.sent.sports.common.error.BizException;
+import com.sent.sports.common.error.ErrorCode;
+import com.sent.sports.common.web.CurrentUser;
 import com.sent.sports.member.controller.MemberController;
 import com.sent.sports.member.dto.MemberDtos;
-import com.sent.sports.member.domain.MemberTier;
-import com.sent.sports.member.service.AdjustPointUseCase;
-import com.sent.sports.member.service.GrantLevelUseCase;
 import com.sent.sports.member.service.MemberQueryService;
-import com.sent.sports.member.service.dto.AdjustPointResult;
-import com.sent.sports.member.service.dto.GrantLevelResult;
 import com.sent.sports.support.BaseApiTest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
 
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
  * 会员接口契约测试（P4-26，红→绿）。
- * 读面（等级进度/积分明细/额度应收/专属商品）走 MemberQueryService 桩；写面（授级/积分调整）走用例。
- * 当前用户绑定（@CurrentUserArg）在 Phase 5，读面以占位客户号查询。
+ * 2026-11-28 起 MemberController 只保留读面（等级进度/积分明细/额度应收/专属商品），
+ * 全部走 MemberQueryService；写面已迁到管理端 customers 接口，不再属于本控制器。
  */
 @WebMvcTest(MemberController.class)
 @AutoConfigureMockMvc(addFilters = false)
@@ -39,12 +34,6 @@ class MemberApiTest extends BaseApiTest {
 
     @MockBean
     private MemberQueryService memberQueryService;
-
-    @MockBean
-    private GrantLevelUseCase grantLevelUseCase;
-
-    @MockBean
-    private AdjustPointUseCase adjustPointUseCase;
 
     @Test
     @DisplayName("会员等级进度 200")
@@ -83,15 +72,44 @@ class MemberApiTest extends BaseApiTest {
     }
 
     @Test
-    @DisplayName("管理端按客户查看会员概览：customerId 透传到查询服务")
-    void levelAcceptsExplicitCustomerId() throws Exception {
+    @DisplayName("P0-03 管理端按客户查看会员概览：管理员令牌下 customerId 透传到查询服务")
+    void adminCanQueryOtherCustomer() throws Exception {
         when(memberQueryService.levelProgress(91203L))
                 .thenReturn(new MemberDtos.LevelVO(91203L, "LV2", 6000L, 5000L, 20000L, 0.0667d, 0L));
-        mvc.perform(get("/api/member/level").param("customerId", "91203"))
+        mvc.perform(get("/api/member/level").param("customerId", "91203")
+                        .requestAttr(CurrentUser.ATTR, new CurrentUser(CurrentUser.AUD_ADMIN, 9001L, "jti")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data.customerId").value(91203))
                 .andExpect(jsonPath("$.data.level").value("LV2"));
+    }
+
+    @Test
+    @DisplayName("P0-03 普通客户传他人 customerId：参数被忽略，只查自己的")
+    void customerCannotQueryOtherCustomer() throws Exception {
+        when(memberQueryService.levelProgress(9002L))
+                .thenReturn(new MemberDtos.LevelVO(9002L, "LV1", 1200L, 1000L, 5000L, 0.05d, 0L));
+
+        mvc.perform(get("/api/member/level").param("customerId", "91203")
+                        .requestAttr(CurrentUser.ATTR, new CurrentUser(CurrentUser.AUD_USER, 9002L, "jti")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.customerId").value(9002));
+
+        verify(memberQueryService).levelProgress(9002L);
+        verify(memberQueryService, never()).levelProgress(91203L);
+    }
+
+    @Test
+    @DisplayName("P0-03 匿名传 customerId：不生效，退回占位 0 由查询服务拒绝")
+    void anonymousCannotQueryOtherCustomer() throws Exception {
+        when(memberQueryService.levelProgress(0L))
+                .thenThrow(new BizException(ErrorCode.NOT_FOUND));
+
+        mvc.perform(get("/api/member/level").param("customerId", "91203"))
+                .andExpect(status().isNotFound());
+
+        verify(memberQueryService).levelProgress(0L);
+        verify(memberQueryService, never()).levelProgress(91203L);
     }
 
     @Test
@@ -103,45 +121,5 @@ class MemberApiTest extends BaseApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data[0].productName").value("限量球衣"));
-    }
-
-    @Test
-    @DisplayName("人工授级 200")
-    void grantLevelReturns200() throws Exception {
-        when(grantLevelUseCase.grant(any()))
-                .thenReturn(new GrantLevelResult(1L, MemberTier.LV2, 1_800_000_000_000L));
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("customerId", 1L);
-        body.put("targetLevel", "LV2");
-        body.put("validToMillis", 1_800_000_000_000L);
-        body.put("reason", "大客户维护");
-        mvc.perform(post("/api/member/grant-level")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(toJson(body)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(0))
-                .andExpect(jsonPath("$.data.level").value("LV2"))
-                .andExpect(jsonPath("$.data.validToMillis").value(1_800_000_000_000L));
-    }
-
-    @Test
-    @DisplayName("积分调整 200")
-    void adjustPointReturns200() throws Exception {
-        when(adjustPointUseCase.adjust(any()))
-                .thenReturn(new AdjustPointResult(1L, 1200L, 1500L, 300L));
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("customerId", 1L);
-        body.put("delta", 300L);
-        body.put("reason", "活动奖励");
-        body.put("bizType", "ACTIVITY");
-        body.put("bizNo", "A-1");
-        mvc.perform(post("/api/member/points/adjust")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(toJson(body)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(0))
-                .andExpect(jsonPath("$.data.beforePoints").value(1200))
-                .andExpect(jsonPath("$.data.afterPoints").value(1500))
-                .andExpect(jsonPath("$.data.delta").value(300));
     }
 }

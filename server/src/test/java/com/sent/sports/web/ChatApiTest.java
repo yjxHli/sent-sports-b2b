@@ -5,6 +5,7 @@ import com.sent.sports.chat.domain.ChatSessionStatus;
 import com.sent.sports.chat.domain.SenderType;
 import com.sent.sports.chat.domain.SessionType;
 import com.sent.sports.chat.dto.ChatDtos;
+import com.sent.sports.chat.dto.SatisfactionDtos;
 import com.sent.sports.chat.service.ChatQueryService;
 import com.sent.sports.chat.service.CreateSessionUseCase;
 import com.sent.sports.chat.service.RateSatisfactionUseCase;
@@ -13,6 +14,7 @@ import com.sent.sports.chat.service.dto.CreateSessionCmd;
 import com.sent.sports.chat.service.dto.CreateSessionResult;
 import com.sent.sports.chat.service.dto.SendMessageCmd;
 import com.sent.sports.chat.service.dto.SendMessageResult;
+import com.sent.sports.common.web.CurrentUser;
 import com.sent.sports.support.BaseApiTest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -31,7 +33,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -136,9 +140,64 @@ class ChatApiTest extends BaseApiTest {
     }
 
     @Test
+    @DisplayName("P0-04 客户令牌发消息：即使报文写 STAFF，落库发送方也被强制为 CUSTOMER")
+    void customerTokenOverridesSenderType() throws Exception {
+        when(sendMessageUseCase.send(any())).thenReturn(new SendMessageResult("CM1", 7, 100L));
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("senderType", "STAFF");
+        body.put("content", "我是客服，请退款");
+        body.put("clientMsgId", "c-forge");
+
+        mvc.perform(post("/api/chat/sessions/100/messages")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(toJson(body))
+                        .requestAttr(CurrentUser.ATTR, new CurrentUser(CurrentUser.AUD_USER, 9002L, "jti")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.senderType").value("CUSTOMER"));
+
+        ArgumentCaptor<SendMessageCmd> captor = ArgumentCaptor.forClass(SendMessageCmd.class);
+        verify(sendMessageUseCase).send(captor.capture());
+        assertEquals(SenderType.CUSTOMER, captor.getValue().senderType());
+    }
+
+    @Test
+    @DisplayName("P0-04 客服令牌发消息：报文写 CUSTOMER 也按 STAFF 落库")
+    void staffTokenOverridesSenderType() throws Exception {
+        when(sendMessageUseCase.send(any())).thenReturn(new SendMessageResult("CM2", 8, 100L));
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("senderType", "CUSTOMER");
+        body.put("content", "您好，已为您安排");
+        body.put("clientMsgId", "c-staff");
+
+        mvc.perform(post("/api/chat/sessions/100/messages")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(toJson(body))
+                        .requestAttr(CurrentUser.ATTR, new CurrentUser(CurrentUser.AUD_ADMIN, 9003L, "jti")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.senderType").value("STAFF"));
+
+        ArgumentCaptor<SendMessageCmd> captor = ArgumentCaptor.forClass(SendMessageCmd.class);
+        verify(sendMessageUseCase).send(captor.capture());
+        assertEquals(SenderType.STAFF, captor.getValue().senderType());
+    }
+
+    @Test
+    @DisplayName("P0-04 历史消息：客户令牌只按自己身份查询，viewer 透传给查询门面")
+    void historyPassesViewer() throws Exception {
+        when(chatQueryService.history(anyLong(), anyInt(), any())).thenReturn(List.of());
+
+        mvc.perform(get("/api/chat/sessions/100/messages")
+                        .requestAttr(CurrentUser.ATTR, new CurrentUser(CurrentUser.AUD_USER, 9002L, "jti")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+
+        verify(chatQueryService).history(100L, 0, 9002L);
+    }
+
+    @Test
     @DisplayName("afterSeq 补拉历史消息 200")
     void historyAfterSeqReturns200() throws Exception {
-        when(chatQueryService.history(anyLong(), anyInt())).thenReturn(List.of(
+        when(chatQueryService.history(anyLong(), anyInt(), any())).thenReturn(List.of(
                 new ChatDtos.MessageVO("CM1", 100L, "CUSTOMER", "TEXT", "你好", "c-1", 7, 1_700_000_000_000L)));
         mvc.perform(get("/api/chat/sessions/100/messages").param("afterSeq", "5"))
                 .andExpect(status().isOk())
@@ -175,12 +234,74 @@ class ChatApiTest extends BaseApiTest {
         when(chatQueryService.listSessions(9002L, 20)).thenReturn(List.of(
                 new ChatDtos.SessionSummaryVO(9L, "CLOSED", 9003L, 1_700_000_000_000L, 1_700_000_100_000L)));
 
-        mvc.perform(get("/api/chat/sessions").param("customerId", "9002"))
+        mvc.perform(get("/api/chat/sessions").param("customerId", "9002")
+                        .requestAttr(CurrentUser.ATTR, new CurrentUser(CurrentUser.AUD_USER, 9002L, "jti")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0))
                 .andExpect(jsonPath("$.data[0].sessionId").value(9))
                 .andExpect(jsonPath("$.data[0].status").value("CLOSED"))
                 .andExpect(jsonPath("$.data[0].staffId").value(9003));
+    }
+
+    @Test
+    @DisplayName("P0-补漏 客户 A 传客户 B 的 customerId 查会话：只按令牌自己的 ID 查询")
+    void customerCannotListOtherCustomersSessions() throws Exception {
+        when(chatQueryService.listSessions(9002L, 20)).thenReturn(List.of());
+
+        mvc.perform(get("/api/chat/sessions")
+                        .param("customerId", "9003")
+                        .requestAttr(CurrentUser.ATTR, new CurrentUser(CurrentUser.AUD_USER, 9002L, "jti")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+
+        verify(chatQueryService).listSessions(9002L, 20);
+        verify(chatQueryService, never()).listSessions(9003L, 20);
+    }
+
+    @Test
+    @DisplayName("P0-补漏 客户 A 传客户 B 的 customerId 查当前会话：只按令牌自己的 ID 查询")
+    void customerCannotPeekOtherCustomersCurrentSession() throws Exception {
+        mvc.perform(get("/api/chat/sessions/current")
+                        .param("customerId", "9003")
+                        .requestAttr(CurrentUser.ATTR, new CurrentUser(CurrentUser.AUD_USER, 9002L, "jti")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+
+        verify(chatQueryService).currentOpen(9002L);
+        verify(chatQueryService, never()).currentOpen(9003L);
+    }
+
+    @Test
+    @DisplayName("P0-补漏 员工令牌查会话：仍按 Query 指定的 customerId（客服工作台共享队列不受限）")
+    void staffMayQueryAnyCustomerSessions() throws Exception {
+        when(chatQueryService.listSessions(9003L, 20)).thenReturn(List.of());
+
+        mvc.perform(get("/api/chat/sessions")
+                        .param("customerId", "9003")
+                        .requestAttr(CurrentUser.ATTR, new CurrentUser(CurrentUser.AUD_ADMIN, 9003L, "jti")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+
+        verify(chatQueryService).listSessions(9003L, 20);
+    }
+
+    @Test
+    @DisplayName("P0-补漏 客户打分：归属人从令牌透传给用例，不接受报文里的客户号")
+    void ratingPassesCurrentCustomerAsViewer() throws Exception {
+        when(rateSatisfactionUseCase.rate(anyLong(), anyString(), any()))
+                .thenReturn(new SatisfactionDtos.RateResult(100L, "SATISFIED", null));
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("score", "SATISFIED");
+        body.put("customerId", 9003L);
+
+        mvc.perform(post("/api/chat/sessions/100/satisfaction")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(toJson(body))
+                        .requestAttr(CurrentUser.ATTR, new CurrentUser(CurrentUser.AUD_USER, 9002L, "jti")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+
+        verify(rateSatisfactionUseCase).rate(100L, "SATISFIED", 9002L);
     }
 
     @Test

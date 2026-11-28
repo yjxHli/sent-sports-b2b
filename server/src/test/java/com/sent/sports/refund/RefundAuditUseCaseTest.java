@@ -63,6 +63,12 @@ class RefundAuditUseCaseTest extends BaseUseCaseTest {
                 RefundStatus.PENDING, 0L);
     }
 
+    /** P2 批次：RefundOrder.setStatus 已删除，测试改用构造器直接落到目标状态。 */
+    private RefundOrder inStatus(RefundStatus status) {
+        return new RefundOrder("RF20240101000001", "SO20240101000099", 1L, 5000L, "REFUND", "reason",
+                status, 0L);
+    }
+
     private void givenOrderOwner() {
         when(orderRefundViewService.getView("SO20240101000099"))
                 .thenReturn(Optional.of(new OrderRefundView("SO20240101000099", CUSTOMER_ID, 1L,
@@ -84,8 +90,7 @@ class RefundAuditUseCaseTest extends BaseUseCaseTest {
 
     @Test
     void approveOnlyFromPendingRejected() {
-        RefundOrder o = pending();
-        o.setStatus(RefundStatus.REFUNDING);
+        RefundOrder o = inStatus(RefundStatus.REFUNDING);
         when(refundRepository.findByRefundNo("RF20240101000001")).thenReturn(Optional.of(o));
 
         BizException ex = assertThrows(BizException.class,
@@ -178,8 +183,7 @@ class RefundAuditUseCaseTest extends BaseUseCaseTest {
 
     @Test
     void appealAfterRejectAllowed() {
-        RefundOrder o = pending();
-        o.setStatus(RefundStatus.CLOSED);
+        RefundOrder o = inStatus(RefundStatus.CLOSED);
         when(refundRepository.findByRefundNo("RF20240101000001")).thenReturn(Optional.of(o));
 
         AuditRefundResult result = useCase.audit(new AuditRefundCmd("RF20240101000001", "APPEAL", null));
@@ -217,8 +221,7 @@ class RefundAuditUseCaseTest extends BaseUseCaseTest {
 
     @Test
     void secondAppealBlocked() {
-        RefundOrder o = pending();
-        o.setStatus(RefundStatus.CLOSED);
+        RefundOrder o = inStatus(RefundStatus.CLOSED);
         o.setAppealCount(1);
         when(refundRepository.findByRefundNo("RF20240101000001")).thenReturn(Optional.of(o));
 

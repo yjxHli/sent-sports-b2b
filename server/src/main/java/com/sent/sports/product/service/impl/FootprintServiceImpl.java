@@ -32,6 +32,9 @@ public class FootprintServiceImpl implements FootprintService {
 
     private static final String STATUS_ON_SHELF = "ON_SHELF";
 
+    /** 足迹保留天数（2026-11-28）：超过一个月的浏览记录由定时任务删除，读接口也按此过滤 */
+    static final int RETENTION_DAYS = 30;
+
     private final ProductFootprintMapper footprintMapper;
     private final ProductFavoriteMapper favoriteMapper;
     private final ProductMapper productMapper;
@@ -69,8 +72,10 @@ public class FootprintServiceImpl implements FootprintService {
         if (customerId <= 0) {
             return PageResult.of(List.of(), 0L, query.getPage(), query.getSize());
         }
-        List<ProductFootprintRow> rows = footprintMapper.selectMyPage(customerId, query.offset(), query.limit());
-        long total = footprintMapper.countMy(customerId);
+        LocalDateTime cutoff = cutoff();
+        List<ProductFootprintRow> rows = footprintMapper.selectMyPage(
+                customerId, cutoff, query.offset(), query.limit());
+        long total = footprintMapper.countMy(customerId, cutoff);
         if (rows == null || rows.isEmpty()) {
             return PageResult.of(List.of(), total, query.getPage(), query.getSize());
         }
@@ -90,7 +95,17 @@ public class FootprintServiceImpl implements FootprintService {
 
     @Override
     public long count(long customerId) {
-        return customerId <= 0 ? 0L : footprintMapper.countMy(customerId);
+        return customerId <= 0 ? 0L : footprintMapper.countMy(customerId, cutoff());
+    }
+
+    @Override
+    public int cleanupExpired() {
+        return footprintMapper.deleteViewedBefore(cutoff());
+    }
+
+    /** 足迹只保留一个月（2026-11-28 用户要求）；读接口与清理任务共用同一个截止时间口径 */
+    private LocalDateTime cutoff() {
+        return LocalDateTime.now().minusDays(RETENTION_DAYS);
     }
 
     private FavoriteDtos.FootprintVO toVo(ProductFootprintRow row, boolean favorited) {

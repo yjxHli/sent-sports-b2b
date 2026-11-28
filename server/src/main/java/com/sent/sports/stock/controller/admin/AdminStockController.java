@@ -57,6 +57,7 @@ public class AdminStockController {
     }
 
     @GetMapping
+    @RequirePerm("stock:view")
     public R<PageResult<?>> list(@ModelAttribute PageQuery page,
                                  @RequestParam(required = false) Long skuId,
                                  @RequestParam(required = false, defaultValue = "false") boolean warningOnly) {
@@ -64,6 +65,7 @@ public class AdminStockController {
     }
 
     @GetMapping("/flows")
+    @RequirePerm("stock:view")
     public R<PageResult<?>> flows(@ModelAttribute PageQuery page,
                                   @RequestParam(required = false) Long skuId,
                                   @RequestParam(required = false) String bizType) {

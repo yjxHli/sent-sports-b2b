@@ -488,7 +488,7 @@ onMounted(async () => {
 .cart-price__now {
   font-size: 16px;
   font-weight: 700;
-  color: var(--sent-accent-dark);
+  color: var(--sent-price);
 }
 .cart-price__now em {
   font-style: normal;

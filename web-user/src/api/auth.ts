@@ -116,8 +116,6 @@ export const authApi = {
   enterpriseAuditProgress: (payload: AuditProgressCmd) =>
     http.post<AuditProgressVO>('/auth/enterprise/audit-progress', payload,
       { skipAuth: true, skipAuthFlow: true }),
-  refresh: (refreshToken: string) =>
-    http.post<TokenVO>('/auth/refresh', { refreshToken }, { skipAuth: true, skipAuthFlow: true }),
   logout: (refreshToken: string) =>
     http.post<void>('/auth/logout', { refreshToken }, { skipAuthFlow: true }),
 };

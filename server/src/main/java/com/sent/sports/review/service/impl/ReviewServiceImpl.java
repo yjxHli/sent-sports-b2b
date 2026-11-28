@@ -5,11 +5,15 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.sent.sports.common.error.BizException;
 import com.sent.sports.common.error.ErrorCode;
 import com.sent.sports.common.util.JsonListCodec;
+import com.sent.sports.common.util.MoneyUtil;
 import com.sent.sports.common.util.SensitiveWordFilter;
 import com.sent.sports.common.web.PageQuery;
 import com.sent.sports.order.service.OrderQueryService;
 import com.sent.sports.review.dto.ReviewDtos;
 import com.sent.sports.review.mapper.ReviewMapper;
+import com.sent.sports.review.mapper.po.MyPendingReviewRow;
+import com.sent.sports.review.mapper.po.MyReviewRow;
+import com.sent.sports.review.mapper.po.MyReviewSummaryRow;
 import com.sent.sports.review.mapper.po.ProductReviewPO;
 import com.sent.sports.review.mapper.po.ReviewRow;
 import com.sent.sports.review.mapper.po.ReviewSummaryRow;
@@ -143,8 +147,106 @@ public class ReviewServiceImpl implements ReviewService {
         return new ReviewDtos.ReviewEligibilityVO(!reviewed, reviewed);
     }
 
-    private ReviewDtos.ReviewSummaryVO summary(long productId) {
-        ReviewSummaryRow row = reviewMapper.selectSummary(productId);
+    @Override
+    public ReviewDtos.MyReviewPageVO myReviews(long customerId, PageQuery pageQuery, String sort) {
+        // 评价中心是「我的」数据：未登录一律 401，不像详情页那样降级成空列表
+        if (customerId <= 0) {
+            throw new BizException(ErrorCode.UNAUTHENTICATED);
+        }
+        PageQuery query = pageQuery == null ? new PageQuery() : pageQuery;
+        Page<MyReviewRow> page = new Page<>(query.getPage(), query.getSize());
+        IPage<MyReviewRow> rows = reviewMapper.selectMinePage(page, customerId, normalizeSort(sort));
+        List<ReviewDtos.MyReviewVO> list = rows == null || rows.getRecords() == null
+                ? List.of()
+                : rows.getRecords().stream().map(this::toMyVo).toList();
+        long total = rows == null ? 0L : rows.getTotal();
+        return new ReviewDtos.MyReviewPageVO(
+                mySummary(customerId), list, total, query.getPage(), query.getSize(),
+                pageCount(total, query.getSize()));
+    }
+
+    @Override
+    public ReviewDtos.MyPendingPageVO myPendingReviews(long customerId, PageQuery pageQuery) {
+        if (customerId <= 0) {
+            throw new BizException(ErrorCode.UNAUTHENTICATED);
+        }
+        PageQuery query = pageQuery == null ? new PageQuery() : pageQuery;
+        Page<MyPendingReviewRow> page = new Page<>(query.getPage(), query.getSize());
+        IPage<MyPendingReviewRow> rows = reviewMapper.selectMyPendingPage(page, customerId);
+        List<ReviewDtos.MyPendingReviewVO> list = rows == null || rows.getRecords() == null
+                ? List.of()
+                : rows.getRecords().stream().map(this::toPendingVo).toList();
+        long total = rows == null ? 0L : rows.getTotal();
+        return new ReviewDtos.MyPendingPageVO(list, total, query.getPage(), query.getSize(),
+                pageCount(total, query.getSize()));
+    }
+
+    @Override
+    public void deleteMyReview(long customerId, long reviewId) {
+        if (customerId <= 0) {
+            throw new BizException(ErrorCode.UNAUTHENTICATED);
+        }
+        if (reviewId <= 0) {
+            throw new BizException(ErrorCode.PARAM_INVALID, "评价ID不合法");
+        }
+        if (reviewMapper.deleteMine(reviewId, customerId) == 0) {
+            // 别人的评价 / 已经删过：都回 404，不区分，避免被用来探测评价归属
+            throw new BizException(ErrorCode.NOT_FOUND, "评价不存在或不属于当前账号");
+        }
+    }
+
+    /**
+     * 排序白名单：只认三个常量，其余（含空串、前端乱传）一律按最新。
+     * <p>排序字段会拼进 SQL，必须在这里收敛成常量，不能让请求参数直通。</p>
+     */
+    private String normalizeSort(String sort) {
+        String value = sort == null ? "" : sort.trim().toUpperCase();
+        return switch (value) {
+            case "EARLIEST", "COMPREHENSIVE" -> value;
+            default -> "LATEST";
+        };
+    }
+
+    private ReviewDtos.MyPendingReviewVO toPendingVo(MyPendingReviewRow row) {
+        long paid = row.getPaidCent() == null ? 0L : row.getPaidCent();
+        return new ReviewDtos.MyPendingReviewVO(
+                row.getOrderNo() == null ? "" : row.getOrderNo(),
+                row.getProductId() == null ? "" : String.valueOf(row.getProductId()),
+                row.getProductTitle() == null ? "" : row.getProductTitle(),
+                row.getMainImage(),
+                row.getQty() == null ? 0 : row.getQty(),
+                paid,
+                MoneyUtil.toYuan(paid),
+                toMillis(row.getCompletedAt()));
+    }
+
+    private ReviewDtos.MyReviewSummaryVO mySummary(long customerId) {
+        MyReviewSummaryRow row = reviewMapper.selectMineSummary(customerId);
+        return new ReviewDtos.MyReviewSummaryVO(
+                row == null || row.getReviewCount() == null ? 0L : row.getReviewCount(),
+                row == null || row.getViewCount() == null ? 0L : row.getViewCount(),
+                row == null || row.getLikeCount() == null ? 0L : row.getLikeCount());
+    }
+
+    private ReviewDtos.MyReviewVO toMyVo(MyReviewRow row) {
+        boolean anonymous = row.getIsAnonymous() != null && row.getIsAnonymous() == 1;
+        String title = row.getProductTitle() == null ? "" : row.getProductTitle();
+        return new ReviewDtos.MyReviewVO(
+                row.getId() == null ? "" : String.valueOf(row.getId()),
+                row.getProductId() == null ? "" : String.valueOf(row.getProductId()),
+                title,
+                row.getMainImage(),
+                row.getRating() == null ? 0 : row.getRating(),
+                row.getContent(),
+                JsonListCodec.read(row.getImagesJson(), String.class),
+                anonymous,
+                row.getStatus() == null ? "NORMAL" : row.getStatus(),
+                row.getViewCount() == null ? 0L : row.getViewCount(),
+                row.getLikeCount() == null ? 0L : row.getLikeCount(),
+                toMillis(row.getCreatedAt()));
+    }
+
+    private ReviewDtos.ReviewSummaryVO summary(long productId) {        ReviewSummaryRow row = reviewMapper.selectSummary(productId);
         long total = row == null || row.getTotal() == null ? 0L : row.getTotal();
         long positive = row == null || row.getPositiveCount() == null ? 0L : row.getPositiveCount();
         long negative = row == null || row.getNegativeCount() == null ? 0L : row.getNegativeCount();

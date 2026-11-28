@@ -184,6 +184,12 @@ export const financeApi = {
   /** 对已有开票申请开票 / 换开（补 PDF、换发票文件） */
   issueInvoice: (invoiceId: number, pdfUrl?: string, remark?: string) =>
     http.post<void>(`/admin/invoices/${invoiceId}/issue`, { pdfUrl, remark }),
+  /** 驳回开票申请：原因会原样进入客户站内信 */
+  rejectInvoice: (invoiceId: number, reason: string) =>
+    http.post<{ invoiceId: number; status: string }>(`/admin/invoices/${invoiceId}/reject`, { reason }),
+  /** 标记开票失败 / 异常：原因会原样进入客户站内信 */
+  markInvoiceException: (invoiceId: number, reason: string) =>
+    http.post<{ invoiceId: number; status: string }>(`/admin/invoices/${invoiceId}/exception`, { reason }),
 
   /**
    * 发票 PDF（后端现场生成的增值税电子普通发票，非静态文件）。
@@ -200,7 +206,6 @@ export const financeApi = {
   /** 审核列表来自管理端 /admin/refunds（真实分页，支持 status 过滤）；审核端点已就绪 */
   refunds: (query: PageQuery & { status?: string; keyword?: string }) =>
     http.get<PageResult<RefundVO>>('/admin/refunds', query),
-  refundDetail: (refundNo: string) => http.get<RefundVO>(`/refunds/${refundNo}`),
   /**
    * 退款审核详情（单笔）：退款单 + 订单基本信息 + 客户 + 商品明细，一次拿全。
    * 列表行点「详情」进独立审核页用这个端点，不再拼两次请求。

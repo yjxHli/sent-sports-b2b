@@ -13,6 +13,8 @@
   --sent-accent: #ff7a1a;
   --sent-accent-dark: #e8640a;
   --sent-accent-soft: #fff1e6;
+  /* 商品价格专用红（2026-11-28 用户要求：商品价格一律红色，与「按钮橙」区分开） */
+  --sent-price: #e93b2e;
   --sent-bg: #f5f5f5;
   --sent-card: #ffffff;
   --sent-text: #1f2329;
@@ -453,18 +455,22 @@ a {
   grid-template-columns: repeat(auto-fill, minmax(216px, 1fr));
   gap: 12px;
 }
+/* 商品卡（2026-11-28 改版，对齐京东信息流）：
+   卡片本身不画外框、不铺白底 —— 商品图与文字直接落在页面底色上，
+   鼠标移上去才浮出白色底与淡阴影。之前「白底 + 1px 边 + 每张都浮起」会让
+   整个列表看起来是一堆分开的框，用户明确要求「看不出外面有个大框」。 */
 .good-card {
-  background: var(--sent-card);
+  background: transparent;
   border-radius: var(--sent-radius);
   overflow: hidden;
   cursor: pointer;
-  transition: transform 0.18s ease, box-shadow 0.18s ease;
-  border: 1px solid #f0f0f0;
+  padding: 0;
+  transition: background 0.18s ease, box-shadow 0.18s ease;
+  border: none;
 }
 .good-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 10px 26px rgba(18, 102, 79, 0.14);
-  border-color: #e3ece8;
+  background: #fff;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
 }
 .good-card__body {
   padding: 12px 14px 14px;
@@ -485,7 +491,7 @@ a {
 }
 .good-card__price {
   margin-top: 10px;
-  color: var(--sent-accent);
+  color: var(--sent-price);
   font-weight: 700;
   display: flex;
   align-items: baseline;
@@ -543,7 +549,7 @@ a {
 
 /* 通用价格样式 */
 .sent-price {
-  color: var(--sent-accent);
+  color: var(--sent-price);
   font-weight: 700;
 }
 

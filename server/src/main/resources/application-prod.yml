@@ -16,10 +16,6 @@ spring:
     password: ${DB_PASSWORD}
   flyway:
     enabled: true
-  data:
-    redis:
-      host: ${REDIS_HOST:redis}
-      port: 6379
 
 # 生产关闭 swagger
 springdoc:
@@ -43,10 +39,6 @@ management:
   endpoint:
     health:
       show-details: never
-  # Redis 为可选缓存（生产可独立部署），不将其纳入健康检查聚合
-  health:
-    redis:
-      enabled: false
   info:
     env:
       enabled: false

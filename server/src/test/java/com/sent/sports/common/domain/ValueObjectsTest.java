@@ -6,11 +6,16 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * P2-45 值对象测试（TDD 红）：幂等键格式校验 + 7 个 action 确认短语精确匹配（plan §10.1）。
+ * P2-45 值对象测试（TDD 红）：幂等键格式校验 + 危险操作枚举的确认短语完整性（plan §10.1）。
+ *
+ * <p>2026-11-28：{@code ConfirmPhrase} 辅助类已删除（生产零调用，实际校验在
+ * {@code ConfirmTokenServiceImpl} 里用 {@code ConfirmAction.phrase()} 完成），
+ * 这里只保留对 {@code ConfirmAction} 本身的保护性断言。</p>
  */
 class ValueObjectsTest {
 
@@ -48,19 +53,13 @@ class ValueObjectsTest {
     }
 
     @Test
-    void confirmPhraseExactMatch() {
-        assertTrue(ConfirmPhrase.matches(ConfirmAction.ORDER_CLOSE, "确认关闭"));
-        assertFalse(ConfirmPhrase.matches(ConfirmAction.ORDER_CLOSE, "确认关"));
-        assertFalse(ConfirmPhrase.matches(ConfirmAction.ORDER_CLOSE, null));
-    }
-
-    @Test
-    void allActionsExactPhrases() {
-        // 7 个历史危险操作 + 1 个六列表批量删除（短语「删除」）
+    void allActionsKeepNonEmptyPhrases() {
+        // 7 个历史危险操作 + 1 个六列表批量删除（短语「删除」）。
+        // ConfirmAction 仍被 @Confirm 注解与 ConfirmTokenServiceImpl 使用，断言不能跟着辅助类一起删。
         assertEquals(8, ConfirmAction.values().length);
         for (ConfirmAction a : ConfirmAction.values()) {
-            assertTrue(ConfirmPhrase.matches(a, a.phrase()));
-            assertFalse(ConfirmPhrase.matches(a, a.phrase() + "x"));
+            assertNotNull(a.phrase());
+            assertFalse(a.phrase().isBlank());
         }
     }
 }

@@ -102,4 +102,30 @@ class CancelOrderUseCaseTest extends BaseUseCaseTest {
                 () -> useCase.cancel(new CancelOrderCmd("NOPE")));
         assertEquals(ErrorCode.PARAM_INVALID, ex.getErrorCode());
     }
+
+    // ---------------- P0-02：取消订单归属校验 ----------------
+
+    @Test
+    void cancelRejectsOtherCustomer() {
+        Order order = waitPayOrder();
+        when(orderRepository.findByOrderNo("SO20240101000099")).thenReturn(Optional.of(order));
+
+        BizException ex = assertThrows(BizException.class,
+                () -> useCase.cancel(new CancelOrderCmd("SO20240101000099"), 999L));
+
+        assertEquals(ErrorCode.FORBIDDEN, ex.getErrorCode());
+        verify(stockService, never()).release(anyLong(), anyInt());
+        verify(orderRepository, never()).save(any());
+    }
+
+    @Test
+    void cancelAllowsOwner() {
+        Order order = waitPayOrder();
+        when(orderRepository.findByOrderNo("SO20240101000099")).thenReturn(Optional.of(order));
+
+        CancelOrderResult result = useCase.cancel(new CancelOrderCmd("SO20240101000099"), 100L);
+
+        assertEquals("CANCELLED", result.status());
+        verify(stockService).release(1L, 2);
+    }
 }

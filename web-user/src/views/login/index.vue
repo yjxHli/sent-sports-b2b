@@ -105,7 +105,7 @@
         <button v-else type="button" data-testid="login-mode-login" @click="switchMode('login')">已有账号？返回登录</button>
       </div>
 
-      <el-checkbox v-model="agreed" class="login-agreement">
+      <el-checkbox v-model="agreed" class="login-agreement" data-testid="auth-agree">
         已阅读并同意
         <a
           class="login-agreement__link"
@@ -163,8 +163,8 @@ const loading = ref(false);
 const mode = ref<'login' | 'register'>('login');
 /** 登录模式内的两种凭证方式 */
 const loginType = ref<'password' | 'code'>('password');
-/** 协议勾选项作为展示口径，暂不作为登录拦截条件（演示环境保留测试账号） */
-const agreed = ref(true);
+/** 协议确认：默认未勾选，登录必须先确认《用户服务协议》与《隐私权政策》 */
+const agreed = ref(false);
 
 /** 验证码倒计时：与后端 60s 有效期一致，按钮置灰防连点 */
 const countdown = ref(0);
@@ -218,6 +218,11 @@ function switchMode(next: 'login' | 'register'): void {
 }
 
 function submit(): void {
+  // 登录必须先确认协议：未勾选时给出明确提示，不发登录请求
+  if (mode.value === 'login' && !agreed.value) {
+    ElMessage.warning('请先勾选「已阅读并同意」，确认协议后再登录');
+    return;
+  }
   if (mode.value === 'register') void onRegister();
   else void onLogin();
 }

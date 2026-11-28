@@ -74,8 +74,8 @@ class SystemConfigCatalogTest {
         assertEquals("30 分钟", SystemConfigCatalog.of("order.pay.timeout.minutes").orElseThrow().display("30"));
         assertEquals("7 天", SystemConfigCatalog.of("order.auto.confirm.days").orElseThrow().display("7"));
         assertEquals("13 %", SystemConfigCatalog.of("finance.invoice.tax.rate").orElseThrow().display("13"));
-        assertEquals("¥50,000.00",
-                SystemConfigCatalog.of("finance.credit.default.limit.cent").orElseThrow().display("5000000"));
+        assertEquals("¥2,000.00",
+                SystemConfigCatalog.of("finance.credit.default.limit.cent").orElseThrow().display("200000"));
         // 空值不显示成 "null 分钟"，统一给占位符，前端不必再判空
         assertEquals("未设置", SystemConfigCatalog.of("stock.warning.threshold").orElseThrow().display(null));
     }

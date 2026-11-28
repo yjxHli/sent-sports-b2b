@@ -13,6 +13,7 @@ import com.sent.sports.refund.domain.RefundOrder;
 import com.sent.sports.refund.domain.RefundStatus;
 import com.sent.sports.refund.repository.RefundRepository;
 import com.sent.sports.refund.service.RefundCallbackUseCase;
+import com.sent.sports.refund.service.RefundSuccessNotifier;
 import com.sent.sports.stock.service.StockRefundGateway;
 import com.sent.sports.support.BaseUseCaseTest;
 import org.junit.jupiter.api.DisplayName;
@@ -54,6 +55,8 @@ class RefundCallbackUseCaseTest extends BaseUseCaseTest {
     private StockRefundGateway stockRefundGateway;
     @Mock
     private OrderRefundGateway orderRefundGateway;
+    @Mock
+    private RefundSuccessNotifier refundSuccessNotifier;
 
     @InjectMocks
     private RefundCallbackUseCase useCase;
@@ -83,6 +86,7 @@ class RefundCallbackUseCaseTest extends BaseUseCaseTest {
         verify(orderRefundGateway).closeOnFullRefund("SO20240101000099");
         verify(refundRepository).save(saveCaptor.capture());
         assertEquals(RefundStatus.REFUNDED, saveCaptor.getValue().getStatus());
+        verify(refundSuccessNotifier).notify(saveCaptor.getValue());
     }
 
     @Test
@@ -95,6 +99,7 @@ class RefundCallbackUseCaseTest extends BaseUseCaseTest {
         verify(memberRefundGateway, never()).refundPoints(anyLong(), anyString(), anyLong());
         verify(stockRefundGateway, never()).releaseOnRefund(anyString());
         verify(orderRefundGateway, never()).closeOnFullRefund(anyString());
+        verify(refundSuccessNotifier, never()).notify(org.mockito.ArgumentMatchers.any());
         verify(refundRepository).save(saveCaptor.capture());
         assertEquals(RefundStatus.FAILED, saveCaptor.getValue().getStatus());
     }
@@ -110,6 +115,7 @@ class RefundCallbackUseCaseTest extends BaseUseCaseTest {
         verify(paymentRefundGateway).markRefunded("SO20240101000099");
         verify(stockRefundGateway, never()).releaseOnRefund(anyString());
         verify(orderRefundGateway, never()).closeOnFullRefund(anyString());
+        verify(refundSuccessNotifier, never()).notify(org.mockito.ArgumentMatchers.any());
         verify(refundRepository).save(saveCaptor.capture());
         assertEquals(RefundStatus.FAILED, saveCaptor.getValue().getStatus());
     }

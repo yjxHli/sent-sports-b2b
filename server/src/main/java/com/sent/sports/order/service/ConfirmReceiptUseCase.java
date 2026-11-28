@@ -36,8 +36,25 @@ public class ConfirmReceiptUseCase {
 
     @UseCase
     public ConfirmReceiptResult confirm(ConfirmReceiptCmd cmd) {
+        return confirm(cmd, null);
+    }
+
+    /**
+     * 确认收货（带归属校验，2026-11-28 批次 1 / P0-02）。
+     *
+     * @param viewerCustomerId 发起人客户号；{@code null} 表示系统自动确认/管理端（不校验归属）。
+     *                         非空且与订单归属不一致抛 {@code FORBIDDEN(40301)}，
+     *                         校验在状态机裁决与奖励发放之前，越权请求不产生副作用。
+     */
+    @UseCase
+    public ConfirmReceiptResult confirm(ConfirmReceiptCmd cmd, Long viewerCustomerId) {
         Order order = orderRepository.findByOrderNo(cmd.orderNo())
                 .orElseThrow(() -> new BizException(ErrorCode.PARAM_INVALID, "订单不存在"));
+
+        if (viewerCustomerId != null && !order.isOwnedBy(viewerCustomerId)) {
+            throw new BizException(ErrorCode.FORBIDDEN, "无权确认该订单");
+        }
+
         // 准入由状态机单一裁决：WAIT_RECEIVE / PART_SHIPPED 可确认，其余一律 40901
         if (!order.canTransit(OrderAction.CONFIRM_RECEIVE)) {
             throw new BizException(ErrorCode.STATE_CONFLICT, "订单当前状态不可确认收货");

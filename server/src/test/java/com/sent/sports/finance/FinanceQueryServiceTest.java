@@ -13,6 +13,7 @@ import com.sent.sports.finance.mapper.ReceivableMapper;
 import com.sent.sports.finance.mapper.po.PaymentRecordPO;
 import com.sent.sports.finance.mapper.po.ContractListItemPO;
 import com.sent.sports.finance.mapper.po.ReceivableListRow;
+import com.sent.sports.finance.service.InvoiceNotificationService;
 import com.sent.sports.finance.service.impl.FinanceQueryServiceImpl;
 import com.sent.sports.support.BaseUseCaseTest;
 import org.junit.jupiter.api.DisplayName;
@@ -50,6 +51,8 @@ class FinanceQueryServiceTest extends BaseUseCaseTest {
     private ReceivableMapper receivableMapper;
     @Mock
     private PaymentRecordMapper paymentRecordMapper;
+    @Mock
+    private InvoiceNotificationService invoiceNotificationService;
     @InjectMocks
     private FinanceQueryServiceImpl queryService;
 
@@ -191,6 +194,7 @@ class FinanceQueryServiceTest extends BaseUseCaseTest {
         assertEquals("SO-APPLY-1", vo.orderNo());
         assertEquals("ISSUED", vo.status());
         verify(invoiceMapper).markIssued(77L, "INV-77", "/files/inv.pdf");
+        verify(invoiceNotificationService).issued(77L);
     }
 
     @Test
@@ -218,6 +222,7 @@ class FinanceQueryServiceTest extends BaseUseCaseTest {
 
         assertEquals("/api/admin/invoices/4/pdf",
                 ((java.util.Map<?, ?>) snapshot).get("pdfUrl"));
+        verify(invoiceNotificationService).issued(4L);
     }
 
     @Test
@@ -276,6 +281,7 @@ class FinanceQueryServiceTest extends BaseUseCaseTest {
 
         assertEquals(ErrorCode.NOT_FOUND, ex.getErrorCode());
         assertTrue(ex.resolvedMessage().contains("开票申请不存在"));
+        verify(invoiceNotificationService, org.mockito.Mockito.never()).issued(anyLong());
     }
 
     @Test

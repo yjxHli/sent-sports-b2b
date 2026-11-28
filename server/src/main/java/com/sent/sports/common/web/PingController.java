@@ -1,5 +1,6 @@
 package com.sent.sports.common.web;
 
+import com.sent.sports.common.anno.PublicEndpoint;
 import com.sent.sports.common.web.R;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -9,12 +10,14 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * 骨架健康检查端点：返回 traceId，用于验证过滤器链路打通（plan T-01）。
+ * <p>2026-11-28 批次 1：管理端改为「默认拒绝」后，公开端点必须显式声明，故补 {@link PublicEndpoint}。</p>
  */
 @RestController
 @Tag(name = "系统", description = "健康检查")
 public class PingController {
 
     @GetMapping("/api/ping")
+    @PublicEndpoint
     @Operation(summary = "健康检查", description = "返回当前请求的 traceId")
     public R<String> ping() {
         return R.ok(MDC.get("traceId"));

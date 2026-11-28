@@ -214,7 +214,7 @@ const valuePlaceholder = computed(() => {
 const unitHint = computed(() => {
   if (!editing.value) return '';
   if (editing.value.valueType === 'PERCENT') return '填 0~100 的整数，13 表示 13%';
-  if (editing.value.unit === '分') return '以「分」为单位：5000000 分 = 50000.00 元';
+  if (editing.value.unit === '分') return '以「分」为单位：200000 分 = 2000.00 元（企业授信上限）';
   return '';
 });
 

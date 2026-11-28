@@ -12,8 +12,23 @@ import java.util.List;
  */
 public interface ChatQueryService {
 
-    /** 历史消息补拉：返回会话内序号大于 afterSeq 的消息。 */
-    List<ChatDtos.MessageVO> history(long sessionId, int afterSeq);
+    /**
+     * 历史消息补拉（不限归属，仅供管理端审查/工作台内部复用）。
+     * <p>默认实现等价于「管理端视角」，HTTP 入口禁止直接调用——用户端必须走带
+     * {@code viewerCustomerId} 的重载，否则就是 P0-04 的越权读。
+     */
+    default List<ChatDtos.MessageVO> history(long sessionId, int afterSeq) {
+        return history(sessionId, afterSeq, null);
+    }
+
+    /**
+     * 历史消息补拉（带归属校验，2026-11-28 批次 1 / P0-04）。
+     *
+     * @param viewerCustomerId 查看人客户号；{@code null} 表示员工/管理端（客服工作台是共享队列，
+     *                         排队会话尚未分配坐席，坐席必须先能看历史才能接待）。
+     *                         非空且与会话归属不一致抛 {@code FORBIDDEN(40301)}。
+     */
+    List<ChatDtos.MessageVO> history(long sessionId, int afterSeq, Long viewerCustomerId);
 
     /** 已读上报：记录该会话已读到的消息序号。 */
     void reportRead(long sessionId, int seq);

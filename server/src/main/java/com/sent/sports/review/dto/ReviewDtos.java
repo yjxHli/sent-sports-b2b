@@ -69,4 +69,67 @@ public final class ReviewDtos {
      */
     public record ReviewEligibilityVO(boolean eligible, boolean reviewed) {
     }
+
+    /**
+     * 评价中心顶部三项统计（2026-11-28）。
+     * <p>只给三项：已写评论条数、评价累计被浏览数、评价累计获赞数。
+     * 「待评价」由订单侧算，不在这里混算——本接口只统计「已经写出去的」。</p>
+     */
+    public record MyReviewSummaryVO(long reviewCount, long viewCount, long likeCount) {
+    }
+
+    /**
+     * 我写过的一条评价（评价中心列表项）。
+     *
+     * @param productId    被评价商品（点卡片跳详情页）
+     * @param productTitle 商品标题（商品被删时为空串，前端回退「商品已下架」）
+     * @param status       NORMAL / HIDDEN：被运营隐藏的评价仍属于「我写过的」，卡片要标记出来
+     * @param viewCount    该评价被浏览次数
+     * @param likeCount    该评价获赞次数
+     */
+    public record MyReviewVO(
+            String reviewId,
+            String productId,
+            String productTitle,
+            String mainImage,
+            int rating,
+            String content,
+            List<String> images,
+            boolean anonymous,
+            String status,
+            long viewCount,
+            long likeCount,
+            long createdAt) {
+    }
+
+    /** 评价中心列表 + 三项统计一趟返回：打开页面即完整渲染，不必二次请求。 */
+    public record MyReviewPageVO(MyReviewSummaryVO summary, List<MyReviewVO> list,
+                                 long total, long page, long size, long pages) {
+    }
+
+    /**
+     * 评价中心「待评价」的一条：已完成订单里尚未评价的商品。
+     *
+     * @param orderNo      来源订单号（评价时前端要回传给 {@code POST /api/reviews} 的资格判定）
+     * @param productId    被评价商品（点卡片跳详情页、提交评价都要用）
+     * @param productTitle 商品标题（快照优先，商品被删时为空串）
+     * @param paidCent     该行实付（分）
+     * @param paidYuan     该行实付（元字符串，前端直接展示）
+     * @param completedAt  订单完成时间（毫秒）：列表按它倒序，「最近买的排前面」
+     */
+    public record MyPendingReviewVO(
+            String orderNo,
+            String productId,
+            String productTitle,
+            String mainImage,
+            int qty,
+            long paidCent,
+            String paidYuan,
+            long completedAt) {
+    }
+
+    /** 待评价分页（2026-11-28）：与「已评价」分页同构，前端一套翻页逻辑复用。 */
+    public record MyPendingPageVO(List<MyPendingReviewVO> list,
+                                  long total, long page, long size, long pages) {
+    }
 }

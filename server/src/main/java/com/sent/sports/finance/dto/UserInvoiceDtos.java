@@ -37,4 +37,31 @@ public final class UserInvoiceDtos {
             String pdfUrl,
             Long createdAtMillis) {
     }
+
+    /**
+     * 「我的发票」列表行（已开具 / 申请中）。
+     * <p>{@code status} 原样返回 APPLIED / ISSUED / REJECTED / EXCEPTION，
+     * 前端据此显示进度标签；票面金额以订单应付为准。</p>
+     */
+    public record InvoiceRowVO(
+            String invoiceId,
+            String orderNo,
+            String invoiceNo,
+            String status,
+            String title,
+            String type,
+            Long amountCent,
+            String amountYuan,
+            Long createdAtMillis,
+            Long issuedAtMillis) {
+    }
+
+    /** 「我的发票 — 未申请」行：可开票但还没有有效申请的订单，{@code firstTitle} 用于列表显示首个商品。 */
+    public record PendingInvoiceVO(
+            String orderNo,
+            Long amountCent,
+            String amountYuan,
+            String firstTitle,
+            Long completedAtMillis) {
+    }
 }

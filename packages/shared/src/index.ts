@@ -46,17 +46,11 @@ export enum ErrorCode {
   SYSTEM_ERROR = 50001,
 }
 
-/** 需要触发刷新流程的错误码 */
-export const REFRESH_CODES = [ErrorCode.TOKEN_EXPIRED];
-/** 需要直接登出的错误码 */
-export const LOGOUT_CODES = [ErrorCode.REFRESH_TOKEN_INVALID, ErrorCode.UNAUTHENTICATED];
+/**
+ * 2026-11-28：删除三个零引用导出（TOKEN_KEYS / REFRESH_CODES / LOGOUT_CODES）。
+ * HTTP 内核 http.ts 自带局部 KEYS 与刷新/登出判定，这三份常量从未被任何端使用，
+ * 留着会让人误以为改这里就能改令牌行为——真正的真源只有 http.ts。
+ */
 
 /** 当前环境 API 基地址（Vite 在构建时替换 import.meta.env） */
 export const API_BASE = import.meta.env?.VITE_API_BASE ?? '/api';
-
-/** 双令牌默认存储键（各端必须再叠加自己的前缀，见 VITE_TOKEN_STORAGE_PREFIX） */
-export const TOKEN_KEYS = {
-  access: 'sent_access_token',
-  refresh: 'sent_refresh_token',
-  expiresIn: 'sent_expires_in',
-} as const;

@@ -10,6 +10,7 @@
  * - 从未申请时 `latest` 返回 `null`，不要当成错误处理。
  */
 import { http } from '@/utils/http';
+import type { PageQuery, PageResult } from '@sent/shared';
 
 /** 发票类型：普通发票 / 增值税专用发票（专用票必须带税号） */
 export type InvoiceType = 'NORMAL' | 'SPECIAL';
@@ -30,6 +31,30 @@ export interface InvoiceVO {
   createdAtMillis?: number | null;
 }
 
+/** 「我的发票」列表行（已开具 / 申请中）。 */
+export interface InvoiceRowVO {
+  invoiceId?: string | null;
+  orderNo?: string | null;
+  invoiceNo?: string | null;
+  /** APPLIED / ISSUED / REJECTED / EXCEPTION */
+  status?: string | null;
+  title?: string | null;
+  type?: string | null;
+  amountCent?: number | null;
+  amountYuan?: string | null;
+  createdAtMillis?: number | null;
+  issuedAtMillis?: number | null;
+}
+
+/** 「我的发票 — 未申请」行：可开票但还没有有效申请的订单。 */
+export interface PendingInvoiceVO {
+  orderNo?: string | null;
+  amountCent?: number | null;
+  amountYuan?: string | null;
+  firstTitle?: string | null;
+  completedAtMillis?: number | null;
+}
+
 export const invoiceApi = {
   /** 提交开票申请（已支付订单；重复提交返回已有申请） */
   apply: (cmd: {
@@ -43,4 +68,25 @@ export const invoiceApi = {
   /** 查询该订单最新开票申请；从未申请返回 null */
   latest: (orderNo: string) =>
     http.get<InvoiceVO | null>(`/invoices/order/${orderNo}`),
+
+  /**
+   * 我的发票分页。
+   * @param status ISSUED=已开具 / OPEN=申请中（待开 + 驳回 + 异常）/ 不传=全部
+   */
+  mine: (query: PageQuery & { status?: string; keyword?: string }) =>
+    http.get<PageResult<InvoiceRowVO>>('/invoices', query),
+
+  /** 未申请开票的订单（已完成且仍可开票，排除已有有效申请的） */
+  pending: (query: PageQuery) =>
+    http.get<PageResult<PendingInvoiceVO>>('/invoices/pending', query),
+
+  /** 发票 PDF（带令牌以 blob 取回，再交给浏览器预览 / 下载） */
+  pdfBlob: (invoiceId: number | string) =>
+    http.getBlob(`/invoices/${invoiceId}/pdf`),
+
+  downloadPdf: (invoiceId: number | string, invoiceNo?: string | null) =>
+    http.download(
+      `/invoices/${invoiceId}/pdf?download=true`,
+      `发票-${invoiceNo && invoiceNo.trim() ? invoiceNo.trim() : invoiceId}.pdf`,
+    ),
 };

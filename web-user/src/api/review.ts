@@ -59,10 +59,74 @@ export interface CreateReviewPayload {
   anonymous: boolean;
 }
 
+/** 评价中心（2026-11-28）：顶部三项统计 + 我写过的评价 */
+export interface MyReviewVO {
+  reviewId: string;
+  productId: string;
+  productTitle: string;
+  mainImage?: string | null;
+  rating: number;
+  content: string;
+  images: string[];
+  anonymous: boolean;
+  /** NORMAL / HIDDEN：被运营隐藏的评价仍属于「我写过的」，卡片上要标记 */
+  status: string;
+  viewCount: number | string;
+  likeCount: number | string;
+  createdAt: number | string;
+}
+
+export interface MyReviewSummaryVO {
+  reviewCount: number | string;
+  viewCount: number | string;
+  likeCount: number | string;
+}
+
+export interface MyReviewPageVO {
+  summary: MyReviewSummaryVO;
+  list: MyReviewVO[];
+  total: number | string;
+  page: number | string;
+  size: number | string;
+  pages: number | string;
+}
+
+/** 评价中心排序（服务端白名单，非法值后端按最新处理） */
+export type ReviewSort = 'latest' | 'earliest' | 'comprehensive';
+
+/** 待评价的一条：已完成订单里尚未评价的商品 */
+export interface MyPendingReviewVO {
+  orderNo: string;
+  productId: string;
+  productTitle: string;
+  mainImage?: string | null;
+  qty: number | string;
+  paidCent: number | string;
+  paidYuan?: string | null;
+  completedAt: number | string;
+}
+
+export interface MyPendingPageVO {
+  list: MyPendingReviewVO[];
+  total: number | string;
+  page: number | string;
+  size: number | string;
+  pages: number | string;
+}
+
 export const reviewApi = {
   list: (productId: number | string, query: PageQuery) =>
     http.get<ReviewPageVO>(`/products/${productId}/reviews`, query),
   eligibility: (productId: number | string) =>
     http.get<ReviewEligibilityVO>(`/products/${productId}/review-eligibility`),
   submit: (payload: CreateReviewPayload) => http.post<ReviewVO>('/reviews', payload),
+  /**
+   * 评价中心「已评价」：已写评论 / 浏览数 / 获赞数 + 我的评价列表（必须登录）。
+   * `sort` 走服务端白名单：latest / earliest / comprehensive。
+   */
+  mine: (query: PageQuery & { sort?: ReviewSort }) => http.get<MyReviewPageVO>('/me/reviews', query),
+  /** 评价中心「待评价」：已完成订单里尚未评价的商品（与详情页「去评价」资格同源） */
+  pending: (query: PageQuery) => http.get<MyPendingPageVO>('/me/reviews/pending', query),
+  /** 删除我自己的一条评价（删不到行后端回 404） */
+  remove: (reviewId: number | string) => http.delete<void>(`/me/reviews/${reviewId}`),
 };

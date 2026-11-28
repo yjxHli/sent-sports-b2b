@@ -409,6 +409,7 @@ import {
   fmtDateTime,
   isCustomRefundBlocked,
   isCustomRefundManual,
+  maskPhone,
   statusLabel,
   statusTone,
   type StatusTone,
@@ -422,6 +423,7 @@ import { customApi, type OrderCustomVO } from '@/api/custom';
 import { fileApi } from '@/api/file';
 import ProductThumb from '@/components/ProductThumb.vue';
 import InvoiceApplyDialog from '@/components/InvoiceApplyDialog.vue';
+import { openInNewTab } from '@/utils/link';
 
 const route = useRoute();
 const router = useRouter();
@@ -721,14 +723,6 @@ const address = computed<AddressView | null>(() => {
  * 手机号中间脱敏（淘宝同款：138****8000）。
  * 订单详情页常被截图分享给客服，完整号码没必要露出；不足 7 位的老脏数据按首末各留一位处理。
  */
-function maskPhone(phone: string | null | undefined): string {
-  const p = (phone ?? '').trim();
-  if (p.length <= 4) return p;
-  if (p.length === 11) return `${p.slice(0, 3)}****${p.slice(7)}`;
-  if (p.length > 7) return `${p.slice(0, 3)}****${p.slice(-2)}`;
-  return `${p.slice(0, 1)}****${p.slice(-1)}`;
-}
-
 /** 右栏「收货信息」一行文本：地址 + 收件人 + 电话（同样脱敏） */
 const addressText = computed(() => {
   const a = address.value;
@@ -779,7 +773,7 @@ function openProduct(it: OrderItemLine): void {
     ElMessage.warning('该商品已下架，无法查看详情');
     return;
   }
-  router.push(`/product/${pid}`);
+  openInNewTab(router, { path: `/product/${pid}` });
 }
 
 function scrollToLogistics(): void {

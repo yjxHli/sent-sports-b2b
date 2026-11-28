@@ -22,7 +22,9 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -113,9 +115,9 @@ class FootprintServiceTest extends BaseUnitTest {
     @Test
     @DisplayName("我的足迹：按最近浏览时间倒序返回，带商品快照与收藏态")
     void listMapsRowsWithFavoriteFlag() {
-        when(footprintMapper.selectMyPage(CUSTOMER_ID, 0, 20))
+        when(footprintMapper.selectMyPage(eq(CUSTOMER_ID), any(LocalDateTime.class), eq(0), eq(20)))
                 .thenReturn(List.of(row(9107L, 12900L), row(9110L, 5900L)));
-        when(footprintMapper.countMy(CUSTOMER_ID)).thenReturn(2L);
+        when(footprintMapper.countMy(eq(CUSTOMER_ID), any(LocalDateTime.class))).thenReturn(2L);
         // 9107 已收藏、9110 未收藏
         when(favoriteMapper.selectFavoritedProductIds(CUSTOMER_ID, List.of(9107L, 9110L)))
                 .thenReturn(List.of(9107L));
@@ -140,8 +142,8 @@ class FootprintServiceTest extends BaseUnitTest {
 
         assertEquals(0L, page.getTotal());
         assertEquals(0, page.getList().size());
-        verify(footprintMapper, never()).selectMyPage(anyLong(), org.mockito.ArgumentMatchers.anyInt(),
-                org.mockito.ArgumentMatchers.anyInt());
+        verify(footprintMapper, never()).selectMyPage(anyLong(), any(LocalDateTime.class),
+                org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.anyInt());
     }
 
     @Test
@@ -157,8 +159,48 @@ class FootprintServiceTest extends BaseUnitTest {
     @DisplayName("足迹计数：未登录为 0")
     void countForAnonymous() {
         assertEquals(0L, service.count(0L));
-        when(footprintMapper.countMy(CUSTOMER_ID)).thenReturn(7L);
+        when(footprintMapper.countMy(eq(CUSTOMER_ID), any(LocalDateTime.class))).thenReturn(7L);
         assertEquals(7L, service.count(CUSTOMER_ID));
+    }
+
+    // ---------- 只保留一个月（2026-11-28） ----------
+
+    @Test
+    @DisplayName("列表与计数都带「一个月」截止时间：过期记录既看不到也不算进 total")
+    void listAndCountFilterByRetentionWindow() {
+        when(footprintMapper.selectMyPage(eq(CUSTOMER_ID), any(LocalDateTime.class), eq(0), eq(20)))
+                .thenReturn(List.of());
+        when(footprintMapper.countMy(eq(CUSTOMER_ID), any(LocalDateTime.class))).thenReturn(0L);
+
+        service.list(CUSTOMER_ID, new PageQuery());
+        service.count(CUSTOMER_ID);
+
+        org.mockito.ArgumentCaptor<LocalDateTime> listCutoff = org.mockito.ArgumentCaptor.forClass(LocalDateTime.class);
+        org.mockito.ArgumentCaptor<LocalDateTime> countCutoff = org.mockito.ArgumentCaptor.forClass(LocalDateTime.class);
+        verify(footprintMapper).selectMyPage(eq(CUSTOMER_ID), listCutoff.capture(), eq(0), eq(20));
+        // list() 内部会为 total 调一次 countMy，外面又单独调了 count() → 两次
+        verify(footprintMapper, org.mockito.Mockito.times(2))
+                .countMy(eq(CUSTOMER_ID), countCutoff.capture());
+
+        LocalDateTime expected = LocalDateTime.now().minusDays(30);
+        org.junit.jupiter.api.Assertions.assertTrue(
+                Math.abs(java.time.Duration.between(expected, listCutoff.getValue()).getSeconds()) < 60,
+                "列表截止时间应是「当前 - 30 天」");
+        countCutoff.getAllValues().forEach(value -> org.junit.jupiter.api.Assertions.assertTrue(
+                Math.abs(java.time.Duration.between(expected, value).getSeconds()) < 60,
+                "计数与列表必须用同一个截止时间，否则 total 与实际条数对不上"));
+    }
+
+    @Test
+    @DisplayName("清理过期足迹：按「当前 - 30 天」删除，返回删除条数（0 条也不报错）")
+    void cleanupExpiredDeletesOlderThanOneMonth() {
+        org.mockito.ArgumentCaptor<LocalDateTime> cutoff = org.mockito.ArgumentCaptor.forClass(LocalDateTime.class);
+        when(footprintMapper.deleteViewedBefore(cutoff.capture())).thenReturn(4);
+        assertEquals(4, service.cleanupExpired());
+
+        LocalDateTime expected = LocalDateTime.now().minusDays(30);
+        org.junit.jupiter.api.Assertions.assertTrue(
+                Math.abs(java.time.Duration.between(expected, cutoff.getValue()).getSeconds()) < 60);
     }
 
     @Test

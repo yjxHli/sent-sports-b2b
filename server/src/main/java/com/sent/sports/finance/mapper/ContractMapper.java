@@ -5,11 +5,14 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.sent.sports.finance.mapper.po.ContractListItemPO;
 import com.sent.sports.finance.mapper.po.ContractPO;
+import com.sent.sports.finance.mapper.po.ContractRemindRow;
+import com.sent.sports.finance.mapper.po.MyContractRow;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -71,4 +74,32 @@ public interface ContractMapper extends BaseMapper<ContractPO> {
             + "<foreach collection='nos' item='no' open='(' separator=',' close=')'>#{no}</foreach>)"
             + "</script>")
     int batchMarkDeleted(@Param("nos") List<String> nos);
+
+    /** 30 天内到期的未删除合同 + 当前提醒档位（V67）；档位计算与过滤留给 finance service。 */
+    @Select("SELECT c.id AS contractId, c.customer_id AS customerId, c.contract_no AS contractNo, "
+            + "COALESCE(c.amount_cent, 0) AS amountCent, c.expire_date AS expireDate, "
+            + "c.expire_remind_level AS remindLevel "
+            + "FROM contract c WHERE c.deleted = 0 AND c.expire_date IS NOT NULL "
+            + "AND DATEDIFF(c.expire_date, #{today}) BETWEEN 0 AND 30 "
+            + "ORDER BY c.expire_date, c.id")
+    List<ContractRemindRow> selectExpiring(@Param("today") LocalDate today);
+
+    /**
+     * 条件抢占：只有当前档位低于目标档位才写入，返回 0 表示并发下已被别的任务提醒过。
+     * 时间列只做留痕，不参与条件，避免时钟回拨导致重复提醒。
+     */
+    @Update("UPDATE contract SET expire_remind_level = #{level}, expire_reminded_at = NOW(3) "
+            + "WHERE id = #{contractId} AND expire_remind_level < #{level}")
+    int updateRemindLevel(@Param("contractId") long contractId, @Param("level") int level);
+
+    /**
+     * 用户端「我的合同」：按客户收口，软删合同不展示；新签的排前面。
+     * <p>只取展示需要的列，合同文件地址不在此投影内（演示地址多为占位值）。</p>
+     */
+    @Select("SELECT c.id AS contractId, c.contract_no AS contractNo, "
+            + "COALESCE(c.amount_cent, 0) AS amountCent, c.status AS status, "
+            + "c.sign_date AS signDate, c.expire_date AS expireDate, c.discount_rate AS discountRate "
+            + "FROM contract c WHERE c.customer_id = #{customerId} AND c.deleted = 0 "
+            + "ORDER BY c.sign_date IS NULL, c.sign_date DESC, c.id DESC")
+    List<MyContractRow> selectMyContracts(@Param("customerId") long customerId);
 }

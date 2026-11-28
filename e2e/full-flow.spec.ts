@@ -158,6 +158,10 @@ async function loginUser(page: Page): Promise<void> {
     (r) => r.url().includes('/api/auth/login') && r.request().method() === 'POST',
     { timeout: 20_000 },
   );
+  // 2026-11-28：登录页新增协议勾选（默认未勾选），E2E 必须先确认协议
+  if (await page.getByTestId('auth-agree').count()) {
+    await page.getByTestId('auth-agree').locator('.el-checkbox__inner').click();
+  }
   await page.getByRole('button', { name: '登录' }).click();
   const body: any = await (await resp).json().catch(() => null);
   expect(body?.code, `用户端登录失败：${JSON.stringify(body)}`).toBe(0);
@@ -173,14 +177,19 @@ async function loginAdmin(page: Page, username: string, password: string, roleLa
     (r) => r.url().includes('/api/auth/login') && r.request().method() === 'POST',
     { timeout: 20_000 },
   );
+  // 2026-11-28：登录页新增协议勾选（默认未勾选），E2E 必须先确认协议
+  if (await page.getByTestId('auth-agree').count()) {
+    await page.getByTestId('auth-agree').locator('.el-checkbox__inner').click();
+  }
   await page.getByRole('button', { name: '登录' }).click();
   const body: any = await (await resp).json().catch(() => null);
   expect(body?.code, `${roleLabel}登录失败：${JSON.stringify(body)}`).toBe(0);
   await expect(page).toHaveURL(/\/admin\/dashboard/, { timeout: 20_000 });
 }
 
-async function orderStatus(request: APIRequestContext, orderNo: string): Promise<string> {
-  const body = await apiGet(request, `/orders/${orderNo}`);
+async function orderStatus(request: APIRequestContext, orderNo: string, token?: string): Promise<string> {
+  // 2026-11-28 批次 1 / P0-02：订单详情已收口为「必须登录 + 归属校验」，匿名读取 401
+  const body = await apiGet(request, `/orders/${orderNo}`, token);
   return body?.data?.status ?? '';
 }
 
@@ -330,7 +339,7 @@ test('全链路多角色终极验收：用户下单 → 客服实时会话 → �
       const deadline = Date.now() + 15_000;
       let status = '';
       while (Date.now() < deadline) {
-        status = await orderStatus(request, orderNo);
+        status = await orderStatus(request, orderNo, userToken);
         if (status === 'WAIT_SHIP') break;
         await new Promise((r) => setTimeout(r, 400));
       }
@@ -341,7 +350,7 @@ test('全链路多角色终极验收：用户下单 → 客服实时会话 → �
           sign: notifySign,
         });
         expect(cb?.code, `兜底支付回调失败：${JSON.stringify(cb)}`).toBe(0);
-        status = await orderStatus(request, orderNo);
+        status = await orderStatus(request, orderNo, userToken);
       }
       expect(status, '支付后订单应为 WAIT_SHIP').toBe('WAIT_SHIP');
 
@@ -631,7 +640,7 @@ test('全链路多角色终极验收：用户下单 → 客服实时会话 → �
       await expect(confirmBtn, '发货后订单应处于待收货，显示「确认收货」').toBeVisible({ timeout: 20_000 });
       await confirmBtn.click();
       await expect(card.getByText('已完成')).toBeVisible({ timeout: 20_000 });
-      expect(await orderStatus(request, orderNo), '确认收货后订单应为 COMPLETED').toBe('COMPLETED');
+      expect(await orderStatus(request, orderNo, userToken), '确认收货后订单应为 COMPLETED').toBe('COMPLETED');
     });
 
     // =====================================================================
@@ -732,7 +741,7 @@ test('全链路多角色终极验收：用户下单 → 客服实时会话 → �
         return `${target.status}|${outstanding}`;
       }, { timeout: 25_000, message: '核销后应收应为 CLOSED 且未核销金额为 0' }).toBe('CLOSED|0');
 
-      expect(await orderStatus(request, orderNo), '终态订单应为 COMPLETED').toBe('COMPLETED');
+      expect(await orderStatus(request, orderNo, userToken), '终态订单应为 COMPLETED').toBe('COMPLETED');
     });
   } finally {
     await Promise.allSettled([userCtx.close(), serviceCtx.close(), warehouseCtx.close(), financeCtx.close()]);

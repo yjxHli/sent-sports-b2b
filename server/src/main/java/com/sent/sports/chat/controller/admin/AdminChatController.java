@@ -67,6 +67,7 @@ public class AdminChatController {
     }
 
     @GetMapping("/sessions")
+    @RequirePerm("chat:view")
     public R<PageResult<?>> sessions(@ModelAttribute PageQuery page) {
         return R.ok(chatAdminQueryService.sessions(page));
     }
@@ -76,11 +77,13 @@ public class AdminChatController {
      * <p>不做分页：进行中上限就是并发上限（3），排队栏由服务端限长。
      */
     @GetMapping("/sessions/open")
+    @RequirePerm("chat:view")
     public R<OpenSessionsResult> openSessions(@RequestParam long staffId) {
         return R.ok(chatAdminQueryService.openSessions(staffId));
     }
 
     @GetMapping("/workload")
+    @RequirePerm("chat:view")
     public R<java.util.List<?>> workload() {
         return R.ok(chatAdminQueryService.workload());
     }
@@ -90,6 +93,7 @@ public class AdminChatController {
      * <p>口径：该客服今天结束（CLOSED）的会话数，按本地自然日 half-open 区间统计。
      */
     @GetMapping("/stats/today")
+    @RequirePerm("chat:view")
     public R<TodayStatsResult> todayStats(@RequestParam long staffId) {
         return R.ok(chatAdminQueryService.todayStats(staffId));
     }

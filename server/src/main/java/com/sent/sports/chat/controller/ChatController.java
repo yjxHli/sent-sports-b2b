@@ -13,11 +13,15 @@ import com.sent.sports.chat.service.dto.CreateSessionResult;
 import com.sent.sports.chat.service.dto.SendMessageCmd;
 import com.sent.sports.chat.service.dto.SendMessageResult;
 import com.sent.sports.common.anno.RequirePerm;
+import com.sent.sports.common.error.BizException;
+import com.sent.sports.common.error.ErrorCode;
+import com.sent.sports.common.web.CurrentUser;
 import com.sent.sports.common.web.R;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -57,15 +61,30 @@ public class ChatController {
      * 客户必须发出首条消息才算咨询；工作台只展示已有客户消息的会话。
      */
     @GetMapping("/sessions/current")
-    public R<ChatDtos.SessionVO> currentOpen(@RequestParam long customerId) {
-        return R.ok(chatQueryService.currentOpen(customerId));
+    @RequirePerm("chat:read")
+    public R<ChatDtos.SessionVO> currentOpen(@RequestParam long customerId,
+                                             @RequestAttribute(value = CurrentUser.ATTR, required = false) CurrentUser user) {
+        return R.ok(chatQueryService.currentOpen(resolveCustomerId(customerId, user)));
     }
 
     /** 历史咨询 / 服务进度列表：只返回会话摘要，正文按需再用 /sessions/{id}/messages 拉。 */
     @GetMapping("/sessions")
+    @RequirePerm("chat:read")
     public R<List<ChatDtos.SessionSummaryVO>> sessions(@RequestParam long customerId,
-                                                       @RequestParam(defaultValue = "20") int limit) {
-        return R.ok(chatQueryService.listSessions(customerId, limit));
+                                                       @RequestParam(defaultValue = "20") int limit,
+                                                       @RequestAttribute(value = CurrentUser.ATTR, required = false) CurrentUser user) {
+        return R.ok(chatQueryService.listSessions(resolveCustomerId(customerId, user), limit));
+    }
+
+    /**
+     * P0-补漏：客户侧会话归属只认令牌。Query 的 customerId 仅对员工（客服工作台共享队列）有效；
+     * 客户传他人 ID 一律改回自己的 ID，匿名直接 401，杜绝靠改 URL 参数横向查看别人会话。
+     */
+    private static long resolveCustomerId(long queryCustomerId, CurrentUser user) {
+        if (user == null) {
+            throw new BizException(ErrorCode.UNAUTHENTICATED);
+        }
+        return user.isAdmin() ? queryCustomerId : user.userId();
     }
 
     @PostMapping("/sessions")
@@ -81,18 +100,33 @@ public class ChatController {
     @PostMapping("/sessions/{sessionId}/messages")
     @RequirePerm("chat:send")
     public R<ChatDtos.MessageVO> sendMessage(@PathVariable long sessionId,
-                                            @Valid @RequestBody ChatDtos.SendCmd cmd) {
+                                            @Valid @RequestBody ChatDtos.SendCmd cmd,
+                                            @RequestAttribute(value = CurrentUser.ATTR, required = false) CurrentUser user) {
+        // P0-04：发送方由令牌身份决定，**不读报文里的 senderType**。
+        // 此前直接透传，客户可以发 senderType=STAFF/SYSTEM 冒充客服或系统通知；
+        // WS 链路一直按连接身份归一（ChatWebSocketHandler:192），这里补齐 REST 兜底链路的同一口径。
+        SenderType senderType = resolveSenderType(user);
+        long operatorId = user == null ? CURRENT_USER_PLACEHOLDER : user.userId();
         SendMessageResult r = sendMessageUseCase.send(new SendMessageCmd(
-                sessionId, cmd.senderType(), cmd.content(), cmd.clientMsgId(), CURRENT_USER_PLACEHOLDER,
+                sessionId, senderType, cmd.content(), cmd.clientMsgId(), operatorId,
                 cmd.msgType()));
-        return R.ok(new ChatDtos.MessageVO(r.messageId(), r.sessionId(), cmd.senderType().name(),
+        return R.ok(new ChatDtos.MessageVO(r.messageId(), r.sessionId(), senderType.name(),
                 cmd.msgType() == null ? "TEXT" : cmd.msgType(), cmd.content(), cmd.clientMsgId(), r.seq(), 0L));
     }
 
     @GetMapping("/sessions/{sessionId}/messages")
+    @RequirePerm("chat:serve")
     public R<List<ChatDtos.MessageVO>> history(@PathVariable long sessionId,
-                                               @RequestParam(defaultValue = "0") int afterSeq) {
-        return R.ok(chatQueryService.history(sessionId, afterSeq));
+                                               @RequestParam(defaultValue = "0") int afterSeq,
+                                               @RequestAttribute(value = CurrentUser.ATTR, required = false) CurrentUser user) {
+        // P0-04：客户只能拉自己的会话；员工（客服工作台共享队列）不限制具体会话
+        Long viewerCustomerId = user == null || user.isAdmin() ? null : user.userId();
+        return R.ok(chatQueryService.history(sessionId, afterSeq, viewerCustomerId));
+    }
+
+    /** 发送方身份：管理端令牌 = 客服，用户端令牌 = 客户；匿名在拦截器已 401，这里按最保守的客户处理。 */
+    private static SenderType resolveSenderType(CurrentUser user) {
+        return user != null && user.isAdmin() ? SenderType.STAFF : SenderType.CUSTOMER;
     }
 
     /** 排队状态（用户端轮询）：WAITING 时返回前方人数 +1 的位置，已接入返回 position=0。 */
@@ -115,7 +149,10 @@ public class ChatController {
     @PostMapping("/sessions/{sessionId}/satisfaction")
     @RequirePerm("chat:send")
     public R<SatisfactionDtos.RateResult> rate(@PathVariable long sessionId,
-                                               @Valid @RequestBody SatisfactionDtos.RateCmd cmd) {
-        return R.ok(rateSatisfactionUseCase.rate(sessionId, cmd.score()));
+                                               @Valid @RequestBody SatisfactionDtos.RateCmd cmd,
+                                               @RequestAttribute(value = CurrentUser.ATTR, required = false) CurrentUser user) {
+        // P0-补漏：评价归属只认令牌，员工/系统内部口径传 null（用例入口按库里的真实归属复核客户身份）。
+        Long viewerCustomerId = user == null || user.isAdmin() ? null : user.userId();
+        return R.ok(rateSatisfactionUseCase.rate(sessionId, cmd.score(), viewerCustomerId));
     }
 }

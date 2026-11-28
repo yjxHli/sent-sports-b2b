@@ -59,15 +59,23 @@ public interface StockMapper extends BaseMapper<SkuStockPO> {
     @Select("SELECT * FROM sku_stock WHERE sku_id = #{skuId}")
     SkuStockPO selectBySkuId(@Param("skuId") long skuId);
 
-    /** 以绝对值覆盖台账（仓储 save 使用，字段与领域对象一一对应）。 */
+    /**
+     * 以绝对值覆盖台账（仓储 save 使用，字段与领域对象一一对应）。
+     *
+     * <p><b>2026-11-28 批次 1 / P0-05</b>：增加 {@code version} 条件。此前无版本校验，
+     * 「先查后写」的窗口里如果有并发的 {@link #lockStock} / {@link #releaseStock}，
+     * 覆盖写会把预占量抹回去，可用量虚高 → 超卖。影响 0 行说明行在本事务读完之后被改过，
+     * 由调用方转成 {@code STATE_CONFLICT(40901)} 让客户端重试，绝不静默丢更新。</p>
+     */
     @Update("UPDATE sku_stock SET physical_qty = #{physicalQty}, locked_qty = #{lockedQty}, "
             + "pending_qty = #{pendingQty}, frozen_qty = #{frozenQty}, version = version + 1 "
-            + "WHERE sku_id = #{skuId}")
+            + "WHERE sku_id = #{skuId} AND version = #{version}")
     int updateLedger(@Param("skuId") long skuId,
                      @Param("physicalQty") long physicalQty,
                      @Param("lockedQty") long lockedQty,
                      @Param("pendingQty") long pendingQty,
-                     @Param("frozenQty") long frozenQty);
+                     @Param("frozenQty") long frozenQty,
+                     @Param("version") long version);
 
     /**
      * 某订单的预占明细（SKU + 数量），用于整单释放预占。

@@ -71,6 +71,15 @@ public class Order {
         return customerId;
     }
 
+    /**
+     * 归属判定（2026-11-28 批次 1 / P0-02）：订单是否属于该客户。
+     * <p>用户端「看详情 / 取消 / 确认收货」必须先过这一关：单号可预测（{@code SO + 日期 + 序列}），
+     * 只凭单号就能操作他人订单。判定留在领域层，Controller 与用例共用同一口径，避免各写一份。</p>
+     */
+    public boolean isOwnedBy(long viewerCustomerId) {
+        return customerId == viewerCustomerId;
+    }
+
     public String getIdemKey() {
         return idemKey;
     }

@@ -183,4 +183,32 @@ class ConfirmReceiptUseCaseTest extends BaseUseCaseTest {
         verify(orderRepository, never()).save(any());
         verify(memberRewardService, never()).grantOrderCompleted(anyLong(), anyString(), anyLong());
     }
+
+    // ---------------- P0-02：确认收货归属校验 ----------------
+
+    @Test
+    void confirmRejectsOtherCustomer() {
+        Order order = waitReceiveOrder(new OrderItem(1L, 5));
+        when(orderRepository.findByOrderNo("SO20240101000099")).thenReturn(Optional.of(order));
+
+        BizException ex = assertThrows(BizException.class, () -> useCase.confirm(
+                new ConfirmReceiptCmd("SO20240101000099", List.of(new ReceiveLineCmd(1L, 5))), 999L));
+
+        assertEquals(ErrorCode.FORBIDDEN, ex.getErrorCode());
+        verify(orderRepository, never()).save(any());
+        verify(memberRewardService, never()).grantOrderCompleted(anyLong(), anyString(), anyLong());
+        verify(orderSettlementService, never()).onOrderCompleted(anyString(), anyLong(), anyLong());
+    }
+
+    @Test
+    void confirmAllowsOwner() {
+        Order order = waitReceiveOrder(new OrderItem(1L, 5));
+        when(orderRepository.findByOrderNo("SO20240101000099")).thenReturn(Optional.of(order));
+
+        ConfirmReceiptResult result = useCase.confirm(
+                new ConfirmReceiptCmd("SO20240101000099", List.of(new ReceiveLineCmd(1L, 5))), 1L);
+
+        assertEquals("COMPLETED", result.status());
+        verify(orderRepository).save(any());
+    }
 }

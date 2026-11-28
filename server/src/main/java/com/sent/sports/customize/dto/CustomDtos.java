@@ -82,6 +82,15 @@ public final class CustomDtos {
     }
 
     /**
+     * 「我的定制」四类筛选卡的角标（2026-11-28）。
+     * <p>四个数字与列表用同一份桶定义（{@code CustomStatusBucket}）：点卡片筛出来的单数
+     * 必须等于卡片上的数字，否则「点进去只有 1 单」比不显示数字更糟。</p>
+     * <p>{@code total} 含「已取消」，所以可能大于四桶之和——取消的单不属于任何一类。</p>
+     */
+    public record MyCustomSummaryVO(long todo, long review, long producing, long done, long total) {
+    }
+
+    /**
      * 订单详情页的定制单条目（2026-11-21）。
      * <p>用户反馈「商品页勾了 UV 定制，提示下单后上传图稿，但订单详情里根本没有上传入口」。
      * 订单详情只有订单号，这里按订单号把该单的定制单（可能多行、多张）带出，

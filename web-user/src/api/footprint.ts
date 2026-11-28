@@ -21,7 +21,6 @@ export interface FootprintVO {
 
 export const footprintApi = {
   list: (query: PageQuery) => http.get<PageResult<FootprintVO>>('/footprints', query),
-  count: () => http.get<number | string>('/footprints/count'),
   record: (productId: number | string) => http.post<void>(`/footprints/${productId}`),
   clear: () => http.delete<number>('/footprints'),
 };

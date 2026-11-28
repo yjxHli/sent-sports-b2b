@@ -48,6 +48,10 @@ async function loginUserUi(page: Page): Promise<void> {
   await page.goto(join(USER_URL, '/login'));
   await page.getByPlaceholder('请输入11位手机号').fill(CUSTOMER_PHONE);
   await page.getByPlaceholder('请输入密码').fill(CUSTOMER_PASSWORD);
+  // 2026-11-28：登录页新增协议勾选（默认未勾选），E2E 必须先确认协议
+  if (await page.getByTestId('auth-agree').count()) {
+    await page.getByTestId('auth-agree').locator('.el-checkbox__inner').click();
+  }
   await page.getByRole('button', { name: '登录' }).click();
   await expect(page).toHaveURL(/\/(home|products)(\?|$)/, { timeout: 20_000 });
 }

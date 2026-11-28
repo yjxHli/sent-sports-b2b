@@ -4,9 +4,13 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.sent.sports.review.mapper.po.AdminReviewRow;
+import com.sent.sports.review.mapper.po.MyPendingReviewRow;
+import com.sent.sports.review.mapper.po.MyReviewRow;
+import com.sent.sports.review.mapper.po.MyReviewSummaryRow;
 import com.sent.sports.review.mapper.po.ProductReviewPO;
 import com.sent.sports.review.mapper.po.ReviewRow;
 import com.sent.sports.review.mapper.po.ReviewSummaryRow;
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -110,6 +114,74 @@ public interface ReviewMapper extends BaseMapper<ProductReviewPO> {
                         @Param("afterJson") String afterJson,
                         @Param("reason") String reason,
                         @Param("operatorId") Long operatorId);
+
+    /**
+     * 评价中心：我写过的评价分页。
+     * <p>不按 {@code status} 过滤：被运营隐藏的评价也是「我写的」，
+     * 列表要能看到并标记「已隐藏」，否则用户会以为评价凭空消失了。</p>
+     * <p>商品信息 LEFT JOIN 带出（商品被物理删除时仍能出行，标题为空由 service 兜）。</p>
+     * <p>2026-11-28 加排序：{@code sort} 由 service 归一成白名单常量再下推，
+     * <b>不接受前端传裸 SQL</b>；三种口径分别是最新（id 倒序）、最早（id 正序）、
+     * 综合（获赞多的在前，同赞数按时间倒序）。</p>
+     */
+    @Select({"<script>",
+            "SELECT r.id AS id, r.product_id AS productId, p.title AS productTitle, ",
+            "p.main_image AS mainImage, r.rating AS rating, r.content AS content, ",
+            "r.images_json AS imagesJson, r.is_anonymous AS isAnonymous, r.status AS status, ",
+            "r.view_count AS viewCount, r.like_count AS likeCount, r.created_at AS createdAt ",
+            "FROM product_review r ",
+            "LEFT JOIN product p ON p.id = r.product_id ",
+            "WHERE r.customer_id = #{customerId} ",
+            "<choose>",
+            "<when test=\"sort == 'EARLIEST'\"> ORDER BY r.id ASC </when>",
+            "<when test=\"sort == 'COMPREHENSIVE'\"> ORDER BY r.like_count DESC, r.id DESC </when>",
+            "<otherwise> ORDER BY r.id DESC </otherwise>",
+            "</choose>",
+            "</script>"})
+    IPage<MyReviewRow> selectMinePage(Page<MyReviewRow> page, @Param("customerId") long customerId,
+                                      @Param("sort") String sort);
+
+    /**
+     * 评价中心「待评价」：已完成订单里、该商品尚未评价的行。
+     * <p>「有没有评过」按 {@code order_no + product_id} 判断（与 {@code uk_review_order_product} 同口径），
+     * 这样同一订单买了两个商品时，评过的那个就自动从待评价里消失。</p>
+     * <p>商品 id 走 {@code sku.spu_id} 取：{@code order_item} 只存 sku_id，
+     * 只按 sku 比对会让「买的是规格 A、评的是商品」永远对不上。</p>
+     */
+    @Select("SELECT o.order_no AS orderNo, p.id AS productId, "
+            + "COALESCE(oi.spu_title_snap, p.title) AS productTitle, p.main_image AS mainImage, "
+            + "oi.qty AS qty, (oi.amount_cent - oi.discount_alloc_cent) AS paidCent, "
+            + "o.completed_at AS completedAt "
+            + "FROM orders o "
+            + "JOIN order_item oi ON oi.order_id = o.id "
+            + "LEFT JOIN sku sk ON sk.id = oi.sku_id "
+            + "LEFT JOIN product p ON p.id = sk.spu_id "
+            + "WHERE o.customer_id = #{customerId} AND o.status = 'COMPLETED' "
+            + "AND o.customer_deleted_at IS NULL "
+            + "AND p.id IS NOT NULL "
+            + "AND NOT EXISTS (SELECT 1 FROM product_review r "
+            + "WHERE r.order_no = o.order_no AND r.product_id = p.id) "
+            + "ORDER BY o.completed_at DESC, oi.id DESC")
+    IPage<MyPendingReviewRow> selectMyPendingPage(Page<MyPendingReviewRow> page,
+                                                 @Param("customerId") long customerId);
+
+    /**
+     * 删除「我自己的」一条评价：SQL 带 {@code customer_id} 条件，越权删别人的永远影响 0 行。
+     * <p>物理删除而不是软删：{@code uk_review_order_product} 会随之释放，
+     * 用户删掉后可以重新评价同一订单商品（软删会让用户被唯一键卡住、又没有入口可改）。</p>
+     */
+    @Delete("DELETE FROM product_review WHERE id = #{id} AND customer_id = #{customerId}")
+    int deleteMine(@Param("id") long id, @Param("customerId") long customerId);
+
+    /**
+     * 评价中心顶部统计：条数 / 浏览数合计 / 获赞数合计。
+     * <p>{@code COALESCE} 兜住空集：没写过评价时 SUM 返回 NULL，不兜底前端会拿到 null 数字。</p>
+     */
+    @Select("SELECT COUNT(*) AS reviewCount, "
+            + "COALESCE(SUM(view_count), 0) AS viewCount, "
+            + "COALESCE(SUM(like_count), 0) AS likeCount "
+            + "FROM product_review WHERE customer_id = #{customerId}")
+    MyReviewSummaryRow selectMineSummary(@Param("customerId") long customerId);
 
     /**
      * 该订单是否已评价过此商品（资格查询用）。

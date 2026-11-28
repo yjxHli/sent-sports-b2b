@@ -94,7 +94,7 @@ class OrderApiTest extends BaseApiTest {
     @Test
     @DisplayName("取消订单返回 200")
     void cancelOrderReturns200() throws Exception {
-        when(cancelOrderUseCase.cancel(any())).thenReturn(new CancelOrderResult("O1", "CANCELLED"));
+        when(cancelOrderUseCase.cancel(any(), any())).thenReturn(new CancelOrderResult("O1", "CANCELLED"));
         mvc.perform(post("/api/orders/O1/cancel")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
@@ -105,7 +105,7 @@ class OrderApiTest extends BaseApiTest {
     @Test
     @DisplayName("不可取消状态返回 STATE_CONFLICT 40901")
     void cancelNonCancelableReturns40901() throws Exception {
-        when(cancelOrderUseCase.cancel(any()))
+        when(cancelOrderUseCase.cancel(any(), any()))
                 .thenThrow(new BizException(ErrorCode.STATE_CONFLICT));
         mvc.perform(post("/api/orders/O1/cancel")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -117,7 +117,7 @@ class OrderApiTest extends BaseApiTest {
     @Test
     @DisplayName("确认收货返回 200")
     void confirmReceiptReturns200() throws Exception {
-        when(confirmReceiptUseCase.confirm(any()))
+        when(confirmReceiptUseCase.confirm(any(), any()))
                 .thenReturn(new ConfirmReceiptResult("O1", "WAIT_RECEIVE", false));
         mvc.perform(post("/api/orders/O1/confirm")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -168,10 +168,45 @@ class OrderApiTest extends BaseApiTest {
     @Test
     @DisplayName("订单详情无数据返回 NOT_FOUND 40401")
     void detailNotFoundReturns40401() throws Exception {
-        when(orderQueryService.getDetail("O1")).thenThrow(new BizException(ErrorCode.NOT_FOUND));
+        when(orderQueryService.getDetail("O1", null)).thenThrow(new BizException(ErrorCode.NOT_FOUND));
         mvc.perform(get("/api/orders/O1"))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value(40401));
+    }
+
+    @Test
+    @DisplayName("P0-02 客户令牌查看订单：viewerId 取令牌主体，透传给查询门面做归属校验")
+    void detailPassesViewerFromToken() throws Exception {
+        mvc.perform(get("/api/orders/O1")
+                        .requestAttr(CurrentUser.ATTR, new CurrentUser(CurrentUser.AUD_USER, 9002L, "jti")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+
+        verify(orderQueryService).getDetail("O1", 9002L);
+    }
+
+    @Test
+    @DisplayName("P0-02 管理端令牌查看订单：不传 viewer（null = 管理端不校验归属）")
+    void adminDetailPassesNullViewer() throws Exception {
+        mvc.perform(get("/api/orders/O1")
+                        .requestAttr(CurrentUser.ATTR, new CurrentUser(CurrentUser.AUD_ADMIN, 9001L, "jti")))
+                .andExpect(status().isOk());
+
+        verify(orderQueryService).getDetail("O1", null);
+    }
+
+    @Test
+    @DisplayName("P0-02 取消订单：客户令牌主体作为归属校验入参传给用例")
+    void cancelPassesViewerFromToken() throws Exception {
+        when(cancelOrderUseCase.cancel(any(), eq(9002L)))
+                .thenReturn(new CancelOrderResult("O1", "CANCELLED"));
+
+        mvc.perform(post("/api/orders/O1/cancel")
+                        .requestAttr(CurrentUser.ATTR, new CurrentUser(CurrentUser.AUD_USER, 9002L, "jti")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(0));
+
+        verify(cancelOrderUseCase).cancel(any(), eq(9002L));
     }
 
     @Test

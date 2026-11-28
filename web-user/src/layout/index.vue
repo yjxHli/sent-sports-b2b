@@ -1,66 +1,7 @@
 <template>
   <div class="site" :class="{ 'site--no-search': hideSearchbar }">
-    <!-- 顶部窄条：右侧 账户/订单/会员中心/在线客服/消息/购物车 -->
-    <div class="topbar">
-      <div class="container topbar__inner">
-        <span class="topbar__welcome">您好，欢迎来到森特体育商城！专业运动装备 · 企业团购 · 会员专享</span>
-        <div class="topbar__links">
-          <!-- 首页放最前（淘宝顶栏就是「淘宝网首页」开头），未登录也能回首页 -->
-          <router-link to="/home" class="topbar__link topbar__home">首页</router-link>
-          <span class="topbar__sep"></span>
-          <template v-if="auth.isLoggedIn">
-            <div class="topbar__account" data-testid="topbar-account">
-              <span class="topbar__link topbar__account-trigger" data-testid="topbar-account-name">
-                {{ accountName }}<i class="topbar__account-arrow">▾</i>
-              </span>
-              <div class="topbar__account-menu">
-                <router-link to="/mine" class="topbar__account-item" data-testid="topbar-account-link">个人账户</router-link>
-                <button type="button" class="topbar__account-item" data-testid="topbar-logout" @click="onLogout">
-                  退出登录
-                </button>
-              </div>
-            </div>
-          </template>
-          <template v-else>
-            <router-link to="/login" class="topbar__link">请登录</router-link>
-            <router-link to="/login" class="topbar__link">免费注册</router-link>
-          </template>
-          <span class="topbar__sep"></span>
-          <router-link to="/favorites" class="topbar__link topbar__fav">收藏夹</router-link>
-          <span class="topbar__sep"></span>
-          <div class="topbar__orders">
-            <router-link to="/orders" class="topbar__link">我的订单<i class="topbar__orders-arrow">▾</i></router-link>
-            <div class="topbar__orders-menu">
-              <router-link class="topbar__orders-item" data-nav="goods-orders" to="/orders">商品订单</router-link>
-              <router-link class="topbar__orders-item" data-nav="custom-orders" to="/custom">定制订单</router-link>
-            </div>
-          </div>
-          <span class="topbar__sep"></span>
-          <router-link to="/member" class="topbar__link topbar__member">会员中心</router-link>
-          <span class="topbar__sep"></span>
-          <!-- 在线客服 / 购物车：新开标签页（用户 2026-11-25 口径 —— 不打断正在浏览的商品页） -->
-          <router-link to="/chat" target="_blank" rel="noopener" class="topbar__link topbar__chat">在线客服</router-link>
-          <span class="topbar__sep"></span>
-          <router-link to="/messages" class="topbar__link topbar__msg">
-            消息<i v-if="msg.unreadCount > 0" class="msg-badge">{{ msg.unreadCount > 99 ? '99+' : msg.unreadCount }}</i>
-          </router-link>
-          <span class="topbar__sep"></span>
-          <router-link to="/cart" target="_blank" rel="noopener" class="topbar__link topbar__cart">
-            购物车<i v-if="cartCount > 0" class="cart-badge">{{ cartCount > 99 ? '99+' : cartCount }}</i>
-          </router-link>
-          <span class="topbar__sep"></span>
-          <div class="topbar__help">
-            <span class="topbar__link topbar__help-trigger">帮助中心<i class="topbar__help-arrow">▾</i></span>
-            <div class="topbar__help-menu">
-              <router-link class="topbar__help-item" data-category="shopping-guide" to="/help/category/shopping-guide">购物指南</router-link>
-              <router-link class="topbar__help-item" data-category="delivery" to="/help/category/delivery">配送方式</router-link>
-              <router-link class="topbar__help-item" data-category="after-sales" to="/help/category/after-sales">售后服务</router-link>
-              <router-link class="topbar__help-item" data-category="about" to="/help/category/about">关于森特</router-link>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <!-- 顶部窄条：2026-11-27 抽成共享组件，个人中心外壳（layout/mine.vue）也用同一份 -->
+    <ShopTopbar />
 
     <!-- 搜索区：左 Logo / 中加粗搜索框 / 下方热搜词
          在线客服与帮助中心分类页是「专注阅读 / 专注沟通」的场景，整块搜索区（含品牌标识）不展示。 -->
@@ -142,22 +83,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { ElMessage, ElMessageBox } from 'element-plus';
-import { useAuthStore } from '@/store/modules/useAuthStore';
-import { useCartStore } from '@/store/modules/useCartStore';
-import { useMessageStore } from '@/store/modules/useMessageStore';
+import ShopTopbar from '@/components/ShopTopbar.vue';
 import { productApi } from '@/api/product';
-import { profileApi } from '@/api/profile';
 import { unwrap } from '@/utils/http';
 import { openInNewTab } from '@/utils/link';
 
 const route = useRoute();
 const router = useRouter();
-const auth = useAuthStore();
-const cart = useCartStore();
-const msg = useMessageStore();
 
 const keyword = ref('');
 
@@ -181,33 +115,7 @@ const isChatPage = computed(() => route.path === '/chat');
 const HIDE_SEARCHBAR_PREFIXES = ['/chat', '/help/', '/messages', '/product/'];
 const hideSearchbar = computed(() => HIDE_SEARCHBAR_PREFIXES.some((p) => route.path.startsWith(p)));
 
-/** 顶栏账户名：真源是 GET /api/me，不写死、不读本地缓存。 */
-const accountName = ref('我的账户');
-
-async function loadAccountName(): Promise<void> {
-  if (!auth.isLoggedIn) {
-    accountName.value = '我的账户';
-    return;
-  }
-  try {
-    const me = await unwrap(profileApi.me());
-    accountName.value = me?.nickname || '我的账户';
-  } catch {
-    accountName.value = '我的账户';
-  }
-}
-
-async function onLogout(): Promise<void> {
-  try {
-    await ElMessageBox.confirm('确认退出登录？', '提示', { type: 'warning' });
-  } catch {
-    return;
-  }
-  await auth.logout();
-  accountName.value = '我的账户';
-  ElMessage.success('已退出登录');
-  await router.replace('/login');
-}
+/** 顶栏账户名等逻辑已迁到 `components/ShopTopbar.vue`（个人中心外壳也用那一份）。 */
 
 const HOT_WORDS = ['篮球', '瑜伽垫', '跑步鞋', '定制球衣', '哑铃', '泳镜'];
 
@@ -282,21 +190,6 @@ function clickSuggestion(item: SuggestItem): void {
   openInNewTab(router, { path: '/products', query });
 }
 
-const cartCount = computed(() => cart.totalQty);
-
-/**
- * 站内信未读数（顶栏红点）。
- * 真源是 {@link useMessageStore}：消息页标记已读/全部已读/删除后都会刷新同一个 ref，
- * 顶栏红点随点击实时变化，不必等 60s 轮询或路由切换。
- */
-async function loadUnread(): Promise<void> {
-  if (!auth.isLoggedIn) {
-    msg.reset();
-    return;
-  }
-  await msg.refresh();
-}
-
 function onSearch(): void {
   const kw = keyword.value.trim();
   rememberSearch(kw);
@@ -310,54 +203,8 @@ function searchWord(word: string): void {
   onSearch();
 }
 
-onMounted(() => {
-  void loadAccountName();
-  if (auth.isLoggedIn) {
-    cart.load().catch(() => { /* 购物车拉取失败不阻塞浏览 */ });
-    void loadUnread();
-    startUnreadPoll();
-  }
-});
-
-/**
- * 未读红点轮询：站内信是「别人触发」的（客服审核驳回退款、订单发货……），
- * 只在进入页面时拉一次的话，用户停在订单详情页就永远看不到驳回通知。
- * 60s 一次、页面不可见时跳过，成本可忽略。
- */
-const UNREAD_POLL_MS = 60_000;
-let unreadTimer: number | undefined;
-
-function startUnreadPoll(): void {
-  stopUnreadPoll();
-  unreadTimer = window.setInterval(() => {
-    if (document.visibilityState === 'visible') void loadUnread();
-  }, UNREAD_POLL_MS);
-}
-
-function stopUnreadPoll(): void {
-  if (unreadTimer !== undefined) {
-    window.clearInterval(unreadTimer);
-    unreadTimer = undefined;
-  }
-}
-
-onBeforeUnmount(stopUnreadPoll);
 onBeforeUnmount(() => {
   if (suggestTimer) clearTimeout(suggestTimer);
   if (blurTimer) clearTimeout(blurTimer);
 });
-
-/** 切回标签页时立刻补一次，避免「刚切回来还是旧数字」 */
-function onVisible(): void {
-  if (document.visibilityState === 'visible' && auth.isLoggedIn) void loadUnread();
-}
-window.addEventListener('visibilitychange', onVisible);
-onBeforeUnmount(() => window.removeEventListener('visibilitychange', onVisible));
-
-/** 从消息中心返回时红点要跟着变；个人中心改昵称后顶栏也跟着刷新 */
-watch(() => route.fullPath, (path) => {
-  if (path.startsWith('/messages')) void loadUnread();
-  if (path.startsWith('/mine') || path.startsWith('/profile')) void loadAccountName();
-});
-watch(() => auth.isLoggedIn, () => void loadAccountName());
 </script>

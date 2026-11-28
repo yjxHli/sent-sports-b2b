@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -40,11 +41,27 @@ public class CustomOrderUserController {
 
     @GetMapping("/my")
     public R<PageResult<CustomDtos.MyCustomOrderVO>> my(@RequestAttribute(value = CurrentUser.ATTR,
-            required = false) CurrentUser user, @ModelAttribute PageQuery pageQuery) {
+            required = false) CurrentUser user,
+                                                        @RequestParam(required = false) String bucket,
+                                                        @ModelAttribute PageQuery pageQuery) {
         if (user == null || !CurrentUser.AUD_USER.equals(user.aud())) {
             throw new BizException(ErrorCode.UNAUTHENTICATED);
         }
-        return R.ok(customQueryService.myOrders(user.userId(), pageQuery));
+        return R.ok(customQueryService.myOrders(user.userId(), bucket, pageQuery));
+    }
+
+    /**
+     * 「我的定制」四类筛选卡的角标：{@code GET /api/custom-orders/my/summary}。
+     * <p>必须写在 {@code /my} 旁边而不是 {@code /{no}} 之后——Spring 的路径匹配
+     * 会把 {@code summary} 当作定制单号。</p>
+     */
+    @GetMapping("/my/summary")
+    public R<CustomDtos.MyCustomSummaryVO> mySummary(@RequestAttribute(value = CurrentUser.ATTR,
+            required = false) CurrentUser user) {
+        if (user == null || !CurrentUser.AUD_USER.equals(user.aud())) {
+            throw new BizException(ErrorCode.UNAUTHENTICATED);
+        }
+        return R.ok(customQueryService.mySummary(user.userId()));
     }
 
     /**

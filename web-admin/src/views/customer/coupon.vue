@@ -183,7 +183,7 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { fmtCent, fmtDateTime, statusLabel } from '@sent/shared';
+import { fmtCent, fmtDateTime, statusLabel, yuanToCent } from '@sent/shared';
 import type { CustomerVO } from '@sent/shared';
 import { unwrap } from '@/utils/http';
 import { useIdempotencyKey } from '@/utils/idempotent';
@@ -363,7 +363,7 @@ async function submit(): Promise<void> {
       templateId: form.templateId,
       customerIds: form.scope === 'ALL' ? [] : form.customerIds,
       thresholdCent: thresholdYuan.value === undefined
-        ? null : Math.round(Number(thresholdYuan.value) * 100),
+        ? null : yuanToCent(thresholdYuan.value),
       reason: form.reason.trim() || undefined,
       scene: form.scene,
     }, { headers: idem.headers() }));

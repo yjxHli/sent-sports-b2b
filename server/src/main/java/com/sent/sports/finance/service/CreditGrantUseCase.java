@@ -38,7 +38,7 @@ public class CreditGrantUseCase {
         if (cmd.customerId() <= 0) {
             throw new BizException(ErrorCode.PARAM_INVALID);
         }
-        if (cmd.totalCent() <= 0) {
+        if (cmd.totalCent() <= 0 || cmd.totalCent() > CreditLine.MAX_TOTAL_CENT) {
             throw new BizException(ErrorCode.PARAM_INVALID);
         }
         if (cmd.validToMillis() <= cmd.validFromMillis()) {
